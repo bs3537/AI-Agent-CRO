@@ -1,0 +1,53 @@
+# Per-ticker sidecar. Copy to {TICKER}.yaml (e.g. MRNA.yaml) and fill in.
+# Files starting with '_' are ignored by the loader, so this stays as a template.
+# Tier definitions: data/portfolio/CONVICTION_TIERS.md
+# Stage definitions: data/portfolio/STAGE_CLASSIFICATION.md
+
+ticker: EXAMPLE
+
+# 1 (watchlist) — 5 (core conviction). See CONVICTION_TIERS.md.
+conviction_tier: 3
+
+# clinical_stage | commercial_stage | hybrid
+stage: clinical_stage
+
+thesis: >
+  One to three sentences. The agent reads this back into the evening digest
+  and uses it to anchor red-team output to the original long view.
+
+# Entity identifiers used by Phase 2 news queries. Expand recall so we catch
+# articles that only mention the brand name, the INN, the parent company, etc.
+company_name: "Example Therapeutics, Inc."
+aliases:
+  - "Example Therapeutics"
+  - "Example Tx"
+brands:
+  - "BrandName"           # commercial drug brand(s)
+products:
+  - "ABCD-101"            # development codes / INN names
+indications:
+  - "non-small cell lung cancer"
+  - "second-line NSCLC"
+
+catalysts:
+  - date: 2026-07-15
+    type: clinical          # clinical | regulatory | commercial | corporate | other
+    description: Phase 3 ABCD-101 topline readout
+    confidence: high        # high | medium | low
+    resolved: false
+
+  - date: 2026-09-30
+    type: regulatory
+    description: PDUFA on XYZ for second-line indication
+    confidence: high
+    resolved: false
+
+  # When a date passes without the event, do not delete — mark resolved with
+  # a note, or roll forward with a new date and a resolution_note explaining
+  # the slip. (Phase 1 sidecar maintenance protocol.)
+  # - date: 2026-03-01
+  #   type: clinical
+  #   description: Interim look — slipped to Q3
+  #   confidence: medium
+  #   resolved: true
+  #   resolution_note: Slipped to 2026-09; new catalyst entry added above.

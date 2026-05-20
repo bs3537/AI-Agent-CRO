@@ -1,0 +1,74 @@
+# Calibration set (PLAN.MD §3).
+# Hold a small set of historical events from the last ~6 months. Score them
+# and check rank order against your post-hoc judgment before going live.
+# Every entry must have a real basis — invented examples corrupt calibration.
+#
+# expected_band:  above_t  — should have fired a real-time alert
+#                 t2_to_t  — digest red-team only, no real-time alert
+#                 below_t2 — stored, no escalation
+#
+# Replace these placeholders with real events before relying on calibration
+# results. Three entries below seed the shape.
+
+entries:
+  - name: "vrtx_casgevy_label_expansion_2026q2"
+    ticker: VRTX
+    article:
+      title: "FDA accepts BLA for Vertex's CASGEVY label expansion, PDUFA in Q4 2026"
+      excerpt: |
+        The FDA today accepted Vertex Pharmaceuticals' BLA for a label
+        expansion of CASGEVY into beta thalassemia subpopulations. A PDUFA
+        date has been set for Q4 2026.
+      source: fda.gov
+      source_tier: 2
+    primary_bucket_id: 2
+    primary_bucket_confidence: 0.85
+    context:
+      pct_nav: 0.24
+      conviction_tier: 5
+      stage: commercial_stage
+      thesis: "Trikafta franchise + Casgevy commercialization + VX-548 pain pipeline"
+      nearest_catalyst_days: 60
+    expected_band: above_t
+    note: "PLACEHOLDER — replace with a real historical event from your portfolio"
+
+  - name: "mrna_phase2_miss_placeholder"
+    ticker: MRNA
+    article:
+      title: "Moderna mRNA-1283 Phase 2 misses primary endpoint, company to consult FDA"
+      excerpt: |
+        Moderna announced today that its Phase 2 trial of mRNA-1283 in
+        immunocompromised adults did not meet its primary endpoint. The
+        company plans Type B FDA meeting. Safety remained unchanged.
+      source: fiercebiotech.com
+      source_tier: 4
+    primary_bucket_id: 1
+    primary_bucket_confidence: 0.9
+    context:
+      pct_nav: 0.072
+      conviction_tier: 3
+      stage: commercial_stage
+      thesis: "Commercial COVID/RSV/flu franchise; next-gen mRNA pipeline optionality"
+      nearest_catalyst_days: 10
+    expected_band: above_t
+    note: "PLACEHOLDER — replace with a real historical event"
+
+  - name: "policy_ira_expansion_proposal"
+    ticker: MRNA
+    article:
+      title: "Senate moves IRA negotiation expansion bill out of committee"
+      excerpt: |
+        The Senate Finance Committee advanced legislation expanding the IRA
+        negotiation list. Inflation rebate triggers would be lowered.
+      source: reuters.com
+      source_tier: 5
+    primary_bucket_id: 11
+    primary_bucket_confidence: 0.6
+    context:
+      pct_nav: 0.072
+      conviction_tier: 3
+      stage: commercial_stage
+      thesis: "Commercial COVID/RSV/flu franchise; next-gen mRNA pipeline optionality"
+      nearest_catalyst_days: null
+    expected_band: t2_to_t
+    note: "Policy news, no immediate action — should land in digest, not real-time"

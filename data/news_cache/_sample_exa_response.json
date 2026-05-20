@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "title": "Moderna reports positive Phase 3 topline data for mRNA-1283 next-gen COVID booster",
+      "url": "https://www.fiercebiotech.com/biotech/moderna-mrna-1283-phase3",
+      "publishedDate": "2026-05-19T13:30:00Z",
+      "text": "Moderna (NASDAQ: MRNA) announced positive Phase 3 topline data today for its next-generation COVID-19 vaccine candidate mRNA-1283. The Phase 3 trial met its primary endpoint with statistical significance over the comparator. Safety profile was consistent with prior studies; no new serious adverse events were reported. The DSMB did not recommend any protocol amendment.",
+      "score": 0.94
+    },
+    {
+      "title": "FDA accepts BLA for Vertex's CASGEVY label expansion, PDUFA date set for Q4 2026",
+      "url": "https://www.fda.gov/news-events/press-announcements/casgevy-bla-acceptance",
+      "publishedDate": "2026-05-20T10:00:00Z",
+      "text": "The U.S. Food and Drug Administration today accepted Vertex Pharmaceuticals' BLA for a label expansion of CASGEVY into beta thalassemia subpopulations. A PDUFA date has been set for Q4 2026. The company indicated AdCom is not expected. The submission includes confirmatory overall survival data from the pivotal trial.",
+      "score": 0.91
+    },
+    {
+      "title": "Vertex announces $500M convertible note offering to fund pipeline programs",
+      "url": "https://www.businesswire.com/news/vertex-convertible-2026",
+      "publishedDate": "2026-05-19T18:00:00Z",
+      "text": "Vertex Pharmaceuticals (NASDAQ: VRTX) today announced a $500 million convertible note offering. Proceeds will fund continued development of VX-548 and the company's broader pipeline. The company stated cash runway remains strong following the financing, with no going-concern issues.",
+      "score": 0.89
+    },
+    {
+      "title": "Senate moves IRA negotiation expansion bill out of committee, second tranche of drugs named",
+      "url": "https://www.reuters.com/business/healthcare/ira-negotiation-expansion-2026",
+      "publishedDate": "2026-05-20T08:00:00Z",
+      "text": "The Senate Finance Committee voted to advance legislation expanding the IRA negotiation list. The inflation rebate trigger thresholds would be lowered under the proposal. Industry groups warned of Part D redesign knock-on effects across pharma.",
+      "score": 0.86
+    },
+    {
+      "title": "Short interest in biotech sector hits 18-month high amid FDA budget uncertainty",
+      "url": "https://seekingalpha.com/article/biotech-short-interest-may-2026",
+      "publishedDate": "2026-05-19T22:00:00Z",
+      "text": "Aggregate short interest across biotech tickers climbed to an 18-month high last week, with several names showing days-to-cover exceeding 8. Unusual options activity was observed in mid-cap biotech ahead of an expected government shutdown vote that could affect FDA budget allocation.",
+      "score": 0.78
+    }
+  ]
+}

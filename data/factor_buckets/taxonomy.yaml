@@ -1,0 +1,301 @@
+# Factor bucket taxonomy (PLAN.MD §2A). 12 buckets, all v1.
+# Edit search_terms to tune query reach AND the keyword tagger together —
+# these terms feed both the Exa query and tagger/store.py classification.
+#
+# build_tier:
+#   A = rich queries day 1   — buckets 1, 2, 7, 9
+#   B = moderate build       — buckets 3, 4, 5, 6, 8
+#   C = heavy build, late    — bucket 10
+#   D = sector-level, not per-holding — buckets 11, 12
+#
+# scope:
+#   per_holding = one query per (ticker × bucket)
+#   sector      = one query per bucket, no ticker filter (Tier D only)
+
+version: 1
+
+buckets:
+  - id: 1
+    name: "Clinical Development"
+    short_name: clinical
+    build_tier: A
+    scope: per_holding
+    description: |
+      Trial conduct and readout events. Enrollment pace, protocol amendments,
+      DSMB/IDMC decisions, primary/secondary/subgroup readouts, OS updates,
+      safety signals, site GCP issues, investigator-initiated trials. Includes
+      competitor trial events when MoA-adjacent (read-through risk).
+    search_terms:
+      - "Phase 3 topline"
+      - "Phase 2 readout"
+      - "Phase 1 data"
+      - "DSMB"
+      - "clinical hold"
+      - "protocol amendment"
+      - "primary endpoint"
+      - "overall survival"
+      - "progression-free survival"
+      - "topline data"
+      - "safety signal"
+      - "serious adverse event"
+      - "dose-limiting toxicity"
+      - "interim analysis"
+
+  - id: 2
+    name: "Regulatory Interaction"
+    short_name: regulatory
+    build_tier: A
+    scope: per_holding
+    description: |
+      FDA/EMA/PMDA actions and pathway state changes. PDUFA actions and
+      delays, CRLs, AdCom scheduling and outcomes, BTD/RMAT grants,
+      accelerated-approval confirmatory-trial status, label negotiations,
+      REMS modifications, post-marketing requirements, Type A/B/C meetings.
+    search_terms:
+      - "PDUFA"
+      - "complete response letter"
+      - "CRL"
+      - "AdCom"
+      - "advisory committee"
+      - "breakthrough therapy"
+      - "BTD"
+      - "RMAT"
+      - "accelerated approval"
+      - "label expansion"
+      - "REMS"
+      - "post-marketing requirement"
+      - "Type A meeting"
+      - "Type B meeting"
+
+  - id: 3
+    name: "Manufacturing, CMC & Supply"
+    short_name: manufacturing
+    build_tier: B
+    scope: per_holding
+    description: |
+      Production capability and continuity. Form 483 observations, Warning
+      Letters (sponsor or CMO), drug-shortage list movements, CMO bankruptcy
+      or consolidation, API single-sourcing events, comparability issues,
+      batch failures, cold-chain disruptions, BIOSECURE-driven CDMO churn.
+    search_terms:
+      - "Form 483"
+      - "Warning Letter"
+      - "drug shortage"
+      - "CMO"
+      - "CDMO"
+      - "API single source"
+      - "comparability"
+      - "batch failure"
+      - "cold chain"
+      - "BIOSECURE"
+
+  - id: 4
+    name: "Commercial Performance & Revenue Quality"
+    short_name: commercial
+    build_tier: B
+    scope: per_holding
+    description: |
+      Unit economics underneath net product revenue. Gross-to-net drift,
+      channel inventory days, specialty pharmacy / distributor concentration,
+      formulary changes, prior-auth dynamics, 340B, copay assistance, IRA
+      negotiation exposure, new patient starts vs refills, pricing actions.
+    search_terms:
+      - "gross-to-net"
+      - "channel inventory"
+      - "specialty pharmacy"
+      - "formulary change"
+      - "prior authorization"
+      - "340B"
+      - "copay assistance"
+      - "IRA negotiation"
+      - "net product revenue"
+      - "new patient starts"
+      - "refill rates"
+      - "WAC"
+      - "launch trajectory"
+
+  - id: 5
+    name: "Competitive Landscape"
+    short_name: competitive
+    build_tier: B
+    scope: per_holding
+    description: |
+      Structural threat to TAM/share. Competitor approvals and label
+      expansions, biosimilar/generic ANDA filings and launches, head-to-head
+      trials, KOL preference shifts in treatment guidelines, new MoA
+      entrants, pricing wars in shared indications.
+    search_terms:
+      - "biosimilar"
+      - "ANDA"
+      - "generic launch"
+      - "head-to-head"
+      - "treatment guideline"
+      - "NCCN guideline"
+      - "ESMO guideline"
+      - "label expansion"
+      - "share gain"
+      - "pricing war"
+
+  - id: 6
+    name: "Intellectual Property & Litigation"
+    short_name: ip_litigation
+    build_tier: B
+    scope: per_holding
+    description: |
+      Defensibility and overhang. Patent expiry runway, IPR institutions and
+      outcomes, ANDA/Paragraph IV filings, Orange Book disputes, infringement
+      suits, securities class actions, derivative suits, FDA citizen
+      petitions, DOJ/HHS-OIG/SEC investigations, qui tam unsealings.
+    search_terms:
+      - "patent expiry"
+      - "Paragraph IV"
+      - "Orange Book"
+      - "inter partes review"
+      - "IPR"
+      - "infringement suit"
+      - "securities class action"
+      - "DOJ investigation"
+      - "SEC investigation"
+      - "qui tam"
+      - "subpoena"
+
+  - id: 7
+    name: "Capital Structure & Liquidity"
+    short_name: capital
+    build_tier: A
+    scope: per_holding
+    description: |
+      Financing capacity and dilution risk. Runway disclosures and delta, ATM
+      activations, S-3 shelf filings, definitive offerings (secondary,
+      convertible, royalty financing, PIPE), debt covenants, going-concern
+      language, NOL commentary, royalty/milestone monetization. Leads other
+      buckets for clinical-stage names.
+    search_terms:
+      - "cash runway"
+      - "ATM offering"
+      - "at-the-market"
+      - "S-3"
+      - "shelf registration"
+      - "secondary offering"
+      - "convertible note"
+      - "PIPE financing"
+      - "royalty financing"
+      - "going concern"
+      - "debt covenant"
+      - "monetization"
+
+  - id: 8
+    name: "Corporate Governance & Insider Behavior"
+    short_name: governance
+    build_tier: B
+    scope: per_holding
+    description: |
+      Signal from people closest to the company. Form 4 clusters, 10b5-1
+      modifications, C-suite departures (CEO/CFO/CMO/CSO), board
+      resignations, auditor change, material weakness or restatement,
+      related-party transactions, whistleblower disclosures, unusual 8-K
+      activity outside earnings windows. Cyber/breach folds here for now.
+    search_terms:
+      - "Form 4"
+      - "10b5-1"
+      - "insider sale"
+      - "CEO departure"
+      - "CFO departure"
+      - "Chief Medical Officer"
+      - "board resignation"
+      - "auditor change"
+      - "material weakness"
+      - "restatement"
+      - "whistleblower"
+      - "8-K"
+      - "data breach"
+
+  - id: 9
+    name: "Strategic Transactions & Partnerships"
+    short_name: strategic
+    build_tier: A
+    scope: per_holding
+    description: |
+      Corporate-action surface. M&A rumors and definitive deals (your name as
+      target or acquirer), license deals in/out, partnership terminations,
+      option exercise/non-exercise, milestone triggers paid or missed,
+      royalty step-up triggers, collaboration scope changes, opt-in/opt-out.
+    search_terms:
+      - "acquisition"
+      - "merger agreement"
+      - "license agreement"
+      - "partnership termination"
+      - "option exercise"
+      - "milestone payment"
+      - "royalty step-up"
+      - "collaboration"
+      - "opt-in"
+      - "opt-out"
+      - "definitive agreement"
+
+  - id: 10
+    name: "Scientific Literature & KOL Discourse"
+    short_name: literature
+    build_tier: C
+    scope: per_holding
+    description: |
+      Independent third-party signal that can move standard of care. NEJM,
+      JAMA, Lancet, JCO, Blood. Conference presentations and abstracts (ASCO,
+      ASH, AACR, ESMO, EASL, AASLD, ADA, AHA). Real-world evidence,
+      meta-analyses, guideline-body updates, KOL editorials. Timing detached
+      from sponsor disclosure cycles.
+    search_terms:
+      - "NEJM"
+      - "New England Journal of Medicine"
+      - "JAMA"
+      - "Lancet"
+      - "JCO"
+      - "ASCO"
+      - "ASH"
+      - "AACR"
+      - "ESMO"
+      - "real-world evidence"
+      - "meta-analysis"
+      - "guideline update"
+
+  - id: 11
+    name: "Policy & Regulatory Environment"
+    short_name: policy
+    build_tier: D
+    scope: sector
+    description: |
+      Rule-of-the-road changes affecting the asset class. IRA negotiation
+      lists and inflation rebate triggers, Part D redesign mechanics, FDA
+      budget or shutdown risk, BIOSECURE Act, tariffs on pharma APIs, PBM
+      reform, 340B revisions, ACA coverage changes, election-cycle proposals.
+    search_terms:
+      - "IRA negotiation list"
+      - "inflation rebate"
+      - "Part D redesign"
+      - "FDA budget"
+      - "government shutdown"
+      - "BIOSECURE Act"
+      - "pharma tariff"
+      - "PBM reform"
+      - "340B revision"
+
+  - id: 12
+    name: "Market Microstructure & Flow"
+    short_name: microstructure
+    build_tier: D
+    scope: sector
+    description: |
+      Positioning extremes. Short interest extremes and days-to-cover,
+      unusual options activity, 13F filings showing concentrated
+      buying/selling, index inclusion/exclusion, sell-side rating-distribution
+      extremes, borrow-cost spikes. Mostly lagging or noisy; down-weighted by
+      design in Phase 3.
+    search_terms:
+      - "short interest"
+      - "days to cover"
+      - "unusual options activity"
+      - "13F filing"
+      - "index inclusion"
+      - "index exclusion"
+      - "rating downgrade"
+      - "borrow cost"

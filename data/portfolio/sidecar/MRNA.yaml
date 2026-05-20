@@ -1,0 +1,33 @@
+# Placeholder sidecar — REPLACE with real thesis & catalysts before going live.
+ticker: MRNA
+conviction_tier: 3
+stage: commercial_stage
+thesis: >
+  PLACEHOLDER thesis. Replace with your actual long view in 1-3 sentences.
+
+company_name: "Moderna, Inc."
+aliases:
+  - "Moderna"
+brands:
+  - "Spikevax"
+  - "mResvia"
+products:
+  - "mRNA-1273"
+  - "mRNA-1283"
+  - "mRNA-1345"
+indications:
+  - "COVID-19"
+  - "RSV"
+  - "influenza"
+
+catalysts:
+  - date: 2026-08-15
+    type: clinical
+    description: PLACEHOLDER — Phase 3 readout
+    confidence: medium
+    resolved: false
+  - date: 2026-11-01
+    type: regulatory
+    description: PLACEHOLDER — PDUFA date
+    confidence: high
+    resolved: false

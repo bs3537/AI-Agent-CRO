@@ -1,0 +1,22 @@
+# Placeholder sidecar — REPLACE with real thesis & catalysts before going live.
+ticker: EXAMPLE
+conviction_tier: 2
+stage: clinical_stage
+thesis: >
+  PLACEHOLDER thesis. Replace with your actual long view in 1-3 sentences.
+
+company_name: "Example Therapeutics, Inc."
+aliases:
+  - "Example Therapeutics"
+brands: []
+products:
+  - "ABCD-101"
+indications:
+  - "non-small cell lung cancer"
+
+catalysts:
+  - date: 2026-05-01
+    type: clinical
+    description: PLACEHOLDER — past-due, demonstrates the overdue flag
+    confidence: medium
+    resolved: false

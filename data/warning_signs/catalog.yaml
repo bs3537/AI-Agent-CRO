@@ -1,0 +1,449 @@
+# Warning signs library (PLAN.MD §4).
+# Initial seed — 25 patterns. Density per PLAN: bucket #4 carries the most;
+# #1, #2, #8 get 3-5 each; others get 1-2 to start. Library grows in Phase 7
+# from misses ("I wish I'd noticed earlier"), NOT invented prospectively.
+#
+# Bump catalog_version on any structural change — the red team pipeline keys
+# idempotency off this string so updates trigger a fresh pass over all
+# above-T₂ scores.
+
+version: 1
+catalog_version: "v1.0-2026.05"
+
+warning_signs:
+
+  # === Bucket #4 — Commercial Performance & Revenue Quality (7) ===
+
+  - id: channel_inventory_build
+    name: "Channel inventory build / channel stuffing"
+    buckets: [4]
+    definition: |
+      Wholesaler or distributor inventory days expanding faster than demand
+      growth. Often masked by gross-revenue beats that fall apart on
+      inventory-turns analysis.
+    keywords:
+      - "channel inventory"
+      - "wholesaler stocking"
+      - "distributor inventory"
+      - "inventory days"
+      - "wholesaler purchases"
+    historical_example: |
+      Valeant Pharmaceuticals (2015) — Philidor specialty pharmacy
+      relationship masked revenue recognition; net revenue per script
+      diverged from prescription growth several quarters before the unwind.
+    invalidator: "Inventory days flat or declining + distributor mix unchanged."
+
+  - id: gross_to_net_drift
+    name: "Gross-to-net erosion outpacing list-price growth"
+    buckets: [4]
+    definition: |
+      Net realized price falling materially faster than list-price growth.
+      Suggests rising rebate / discount stack, often a leading indicator of
+      formulary pressure.
+    keywords:
+      - "gross-to-net"
+      - "GTN ratio"
+      - "rebate increase"
+      - "net realized price"
+      - "net selling price"
+    historical_example: |
+      Insulin franchise (2017-2019) — rising PBM rebate share progressively
+      eroded net revenue per unit despite WAC increases.
+    invalidator: "GTN ratio stable QoQ + no new mandatory rebate exposure."
+
+  - id: specialty_pharmacy_concentration
+    name: "Specialty pharmacy concentration (>40% via single channel)"
+    buckets: [4]
+    definition: |
+      Single specialty pharmacy or distributor accounts for materially
+      greater than 40% of net product revenue. Single point of failure for
+      the franchise.
+    keywords:
+      - "specialty pharmacy"
+      - "single distributor"
+      - "channel concentration"
+      - "exclusive distribution"
+    historical_example: |
+      Valeant / Philidor (2015) — single specialty pharmacy disclosure
+      triggered a multi-month franchise revaluation.
+    invalidator: "Diversified channel disclosure + multi-pharmacy expansion."
+
+  - id: formulary_step_edit
+    name: "Major payor adds step edit / prior authorization"
+    buckets: [4]
+    definition: |
+      Commercial, Medicare Part D, or large Medicaid payor adds step
+      therapy, prior authorization, or moves the drug to a non-preferred
+      tier.
+    keywords:
+      - "formulary change"
+      - "step edit"
+      - "prior authorization"
+      - "non-preferred tier"
+      - "step therapy"
+    historical_example: |
+      Multiple ESI / Cigna formulary changes have knocked down launch
+      trajectories with no clinical news.
+    invalidator: "Formulary placement maintained or improved at next P&T cycle."
+
+  - id: ira_negotiation_exposure
+    name: "Drug enters next IRA negotiation tranche"
+    buckets: [4, 11]
+    definition: |
+      Drug is named, projected, or moves up significantly in the IRA
+      Maximum Fair Price negotiation lists for an upcoming negotiation
+      year.
+    keywords:
+      - "IRA negotiation"
+      - "Maximum Fair Price"
+      - "MFP"
+      - "Medicare negotiation list"
+    historical_example: |
+      First IRA tranche (2023) disclosure — multi-week revaluation across
+      affected manufacturers.
+    invalidator: "Drug removed from list or volume offset assumptions confirmed."
+
+  - id: launch_undershoot
+    name: "Launch trajectory undershooting consensus"
+    buckets: [4]
+    definition: |
+      New product launch new-patient-starts, scripts, or initial revenue
+      falling below consensus by a material margin in early quarters.
+    keywords:
+      - "launch trajectory"
+      - "new patient starts"
+      - "script volume"
+      - "below consensus"
+      - "launch miss"
+    historical_example: |
+      Numerous slow launches in quarters 1-2 have correctly forecasted the
+      full ramp curve — recovery to consensus is rare.
+    invalidator: "Subsequent quarter shows step-change in scripts or NPS."
+
+  - id: copay_assistance_changes
+    name: "Reduction in patient affordability programs"
+    buckets: [4]
+    definition: |
+      Manufacturer reduces copay-card maximums, narrows eligibility, or
+      ends a bridge program — leading indicator of abandonment-rate rise.
+    keywords:
+      - "copay assistance"
+      - "copay card"
+      - "patient assistance"
+      - "affordability program"
+    historical_example: |
+      Several specialty franchises curtailed copay assistance ahead of
+      IRA-driven pricing changes; abandonment rose 200-400bps the
+      following quarter.
+    invalidator: "Patient adherence / refill rates unchanged QoQ."
+
+  # === Bucket #1 — Clinical Development (4) ===
+
+  - id: dsmb_protocol_modification
+    name: "DSMB / IDMC requires mid-trial protocol change"
+    buckets: [1]
+    definition: |
+      Independent DSMB or IDMC recommends a protocol amendment, dose
+      modification, or partial hold mid-trial. Often a precursor to a
+      formal safety disclosure.
+    keywords:
+      - "DSMB recommendation"
+      - "data safety monitoring board"
+      - "IDMC"
+      - "protocol amendment"
+      - "partial clinical hold"
+    historical_example: |
+      Multiple Phase 3 trials have had a DSMB-driven amendment precede a
+      formal safety disclosure by 1-3 months.
+    invalidator: "Sponsor confirms amendment was administrative / no safety signal."
+
+  - id: enrollment_pace_slowdown
+    name: "Enrollment significantly behind plan"
+    buckets: [1]
+    definition: |
+      Sponsor materially slips enrollment timelines or quietly extends an
+      enrollment window. Often a leading indicator of unfavorable site
+      experience or competitive enrollment pressure.
+    keywords:
+      - "enrollment delay"
+      - "enrollment behind"
+      - "trial timeline slip"
+      - "primary completion extended"
+    historical_example: |
+      Multiple oncology trials slipped enrollment 6+ months ahead of a
+      soft readout — signaled by quiet clinicaltrials.gov updates rather
+      than press releases.
+    invalidator: "Sponsor confirms enrollment on plan with primary completion date intact."
+
+  - id: competitor_moa_readthrough_fail
+    name: "Adjacent MoA fails — read-through risk"
+    buckets: [1, 5]
+    definition: |
+      A competitor in the same mechanism-of-action class fails its
+      readout. Often re-prices the entire class even before the sponsor's
+      own data arrives.
+    keywords:
+      - "class effect"
+      - "mechanism of action"
+      - "read-through"
+      - "competitor failed"
+      - "class read-through"
+    historical_example: |
+      Alzheimer's anti-amyloid class (2019-2022) — multiple competitor
+      failures progressively de-rated the entire mechanism class.
+    invalidator: "Sponsor's MoA differentiates on biomarker, dose, or population."
+
+  - id: accelerated_approval_confirmatory_slip
+    name: "Accelerated-approval confirmatory trial slipping"
+    buckets: [1, 2]
+    definition: |
+      Drug under accelerated approval has its confirmatory trial slip,
+      enrollment behind, or interim readout pushed. FDA has been more
+      willing to use 506(c) withdrawal authority post-Aduhelm.
+    keywords:
+      - "accelerated approval"
+      - "confirmatory trial"
+      - "post-marketing requirement"
+      - "506(c)"
+    historical_example: |
+      Multiple oncology accelerated-approval drugs have had confirmatory
+      trial slips followed by formal withdrawal proceedings.
+    invalidator: "Confirmatory trial primary completion date maintained + interim positive."
+
+  # === Bucket #2 — Regulatory Interaction (4) ===
+
+  - id: pdufa_extension
+    name: "FDA extends PDUFA review period"
+    buckets: [2]
+    definition: |
+      FDA extends the PDUFA action date by 3 months for a major amendment.
+      Often signals additional CMC or efficacy questions not yet disclosed
+      by the sponsor.
+    keywords:
+      - "PDUFA extension"
+      - "PDUFA date extended"
+      - "major amendment"
+      - "review period extended"
+    historical_example: |
+      Multiple drugs have received a 3-month PDUFA extension that preceded
+      a CRL or a narrower-than-expected label.
+    invalidator: "Sponsor discloses the specific amendment and it is administrative / CMC-only."
+
+  - id: adcom_briefing_doc_concerns
+    name: "FDA briefing doc highlights efficacy / safety concerns"
+    buckets: [2]
+    definition: |
+      FDA briefing document for an upcoming AdCom raises substantive
+      efficacy or safety concerns. Briefing docs typically prefigure the
+      committee outcome.
+    keywords:
+      - "FDA briefing document"
+      - "advisory committee briefing"
+      - "AdCom concerns"
+      - "briefing document"
+    historical_example: |
+      Multiple AdCom cycles where the FDA briefing doc strongly anticipated
+      a negative committee vote.
+    invalidator: "Briefing-doc concerns are explicitly resolved during committee discussion."
+
+  - id: crl_signal
+    name: "Complete Response Letter or pre-CRL Type A meeting"
+    buckets: [2]
+    definition: |
+      Complete Response Letter received, or sponsor schedules a Type A
+      meeting (typically reserved for clinical-hold / CRL response
+      planning).
+    keywords:
+      - "complete response letter"
+      - "CRL received"
+      - "Type A meeting"
+      - "response strategy meeting"
+    historical_example: |
+      Many CRLs have been immediately preceded by a Type A meeting schedule
+      disclosure 1-2 weeks earlier.
+    invalidator: "Type A meeting is for an unrelated label discussion or post-marketing item."
+
+  - id: label_narrower_than_expected
+    name: "Label negotiation breakdown — narrower indication"
+    buckets: [2]
+    definition: |
+      FDA pushes a materially narrower indication or population than the
+      sponsor's intended label. Can halve peak-sales expectations.
+    keywords:
+      - "label negotiation"
+      - "narrower label"
+      - "restricted indication"
+      - "carve-out"
+    historical_example: |
+      Several oncology approvals have been label-restricted to subgroups,
+      sharply re-pricing TAM expectations.
+    invalidator: "Sponsor confirms the proposed label matches commercial expectations."
+
+  # === Bucket #8 — Governance & Insider Behavior (3) ===
+
+  - id: insider_selling_cluster
+    name: "Insider selling cluster (≥3 in 30 days)"
+    buckets: [8]
+    definition: |
+      Three or more named insiders sell within a 30-day window outside of
+      pre-scheduled 10b5-1 plan windows.
+    keywords:
+      - "insider sale"
+      - "Form 4 filing"
+      - "insider selling"
+      - "10b5-1 plan"
+    historical_example: |
+      Multiple distressed names have had a 30-day cluster of insider sales
+      precede a material disclosure by 4-12 weeks.
+    invalidator: "Sales explained by pre-scheduled 10b5-1 plans filed >6 months prior."
+
+  - id: cfo_departure_pre_earnings
+    name: "CFO departure within 90 days of earnings"
+    buckets: [8]
+    definition: |
+      Sudden CFO departure announced within 90 days of an earnings call.
+      Higher signal-to-noise than CEO departure for accounting concerns.
+    keywords:
+      - "CFO departure"
+      - "Chief Financial Officer resigns"
+      - "interim CFO"
+      - "CFO transition"
+    historical_example: |
+      Multiple restatement and material-weakness cases were preceded by a
+      CFO change in the prior 90 days.
+    invalidator: "Successor named with clean background and overlap period."
+
+  - id: material_weakness_disclosure
+    name: "Material weakness in ICFR disclosed"
+    buckets: [8]
+    definition: |
+      Auditor identifies a material weakness in internal controls over
+      financial reporting, or company self-discloses.
+    keywords:
+      - "material weakness"
+      - "ICFR"
+      - "internal controls"
+      - "restatement"
+    historical_example: |
+      Material-weakness disclosures have repeatedly correlated with
+      subsequent revenue / EPS restatement within 6 months.
+    invalidator: "Specific weakness remediated and confirmed by auditor in next 10-Q."
+
+  # === Other buckets (1-2 each) ===
+
+  - id: cmo_form_483
+    name: "Sponsor's CMO receives Form 483 / Warning Letter"
+    buckets: [3]
+    definition: |
+      Contract manufacturer or critical CDMO for a sponsor's product
+      receives FDA Form 483 observations or a Warning Letter.
+    keywords:
+      - "Form 483 observation"
+      - "Warning Letter"
+      - "FDA inspection"
+      - "CMO facility"
+      - "CDMO facility"
+    historical_example: |
+      Multiple specialty pharma franchises have had supply disruptions
+      following CMO inspection findings.
+    invalidator: "Sponsor confirms alternative manufacturing capacity in place."
+
+  - id: biosimilar_anda_filing
+    name: "Biosimilar / generic ANDA filing for key product"
+    buckets: [5, 6]
+    definition: |
+      First-in-class biosimilar or generic competitor files ANDA / BLA for
+      a sponsor's revenue-driving product.
+    keywords:
+      - "biosimilar"
+      - "ANDA filing"
+      - "BLA biosimilar"
+      - "generic filing"
+    historical_example: |
+      Humira, Lantus, Neulasta — biosimilar filings progressively compressed
+      branded share faster than IP runway suggested.
+    invalidator: "Sponsor confirms IP defensibility through next launch window."
+
+  - id: paragraph_iv_certification
+    name: "Paragraph IV certification on key product"
+    buckets: [6]
+    definition: |
+      ANDA filer challenges a sponsor's Orange Book-listed patent. Triggers
+      30-month stay clock and IP-litigation overhang.
+    keywords:
+      - "Paragraph IV"
+      - "Orange Book challenge"
+      - "30-month stay"
+      - "ANDA challenge"
+    historical_example: |
+      Multi-quarter overhang for products from Paragraph IV notice through
+      district-court ruling — material to terminal-value multiples.
+    invalidator: "Sponsor obtains favorable district-court ruling or settlement extends exclusivity."
+
+  - id: runway_under_12mo
+    name: "Cash runway disclosed under 12 months"
+    buckets: [7]
+    definition: |
+      Sponsor discloses a cash runway estimate of less than 12 months
+      without a concurrent financing announcement.
+    keywords:
+      - "12 months of cash"
+      - "going concern"
+      - "going-concern doubt"
+      - "limited runway"
+      - "runway extension"
+    historical_example: |
+      Clinical-stage names with sub-12-month runway have averaged 30%+
+      dilution within 6 months of disclosure.
+    invalidator: "Concurrent or scheduled financing closes the gap to >18 months."
+
+  - id: atm_acceleration
+    name: "ATM facility usage accelerating"
+    buckets: [7]
+    definition: |
+      At-the-market offering usage rate accelerating quarter-over-quarter
+      faster than historical pace. Often a leading indicator of dilution
+      stack-up before a definitive offering.
+    keywords:
+      - "ATM facility"
+      - "at-the-market offering"
+      - "shelf takedown"
+      - "ATM usage"
+    historical_example: |
+      Multiple clinical-stage names have had ATM acceleration precede a
+      larger definitive offering by 1-2 quarters.
+    invalidator: "ATM usage rate flat or declining + non-dilutive funding announced."
+
+  - id: license_termination_undisclosed_reason
+    name: "License / partnership terminated without explanation"
+    buckets: [9]
+    definition: |
+      Partner terminates a development collaboration, opts out, or returns
+      rights without disclosing a clinical or commercial reason.
+    keywords:
+      - "license terminated"
+      - "collaboration terminated"
+      - "opt-out"
+      - "returned rights"
+      - "partnership ended"
+    historical_example: |
+      Multiple "strategic prioritization" terminations were later attributed
+      to undisclosed data trouble in the returned program.
+    invalidator: "Partner discloses non-program-specific portfolio rationalization with continued positive remarks on the asset."
+
+  - id: journal_critical_editorial
+    name: "Critical peer-reviewed editorial / commentary"
+    buckets: [10]
+    definition: |
+      NEJM, JAMA, Lancet, JCO, or guideline-body editorial critical of the
+      sponsor's drug, indication-fit, or trial design.
+    keywords:
+      - "NEJM editorial"
+      - "Lancet editorial"
+      - "JAMA editorial"
+      - "guideline criticism"
+      - "critical editorial"
+    historical_example: |
+      Critical NEJM / JAMA editorials have repeatedly preceded guideline
+      downgrades or restricted prescriber adoption.
+    invalidator: "Subsequent peer-reviewed publication or guideline update endorses the drug position."

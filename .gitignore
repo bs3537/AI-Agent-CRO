@@ -1,0 +1,41 @@
+# Secrets — never commit
+.env
+.env.local
+*.pem
+*.key
+
+# Runtime SQLite DB (regenerated on bootstrap)
+data/sma.db
+data/sma.db-*
+
+# Runtime outputs
+data/digests/*.md
+data/digests/alerts/
+data/logs/
+
+# Real Exa responses; keep '_' -prefixed demo fixtures
+data/news_cache/*
+!data/news_cache/_*
+
+# Sidecar files contain manual thesis text. The placeholders in this repo are
+# safe; if you later put REAL thesis text into a sidecar and want to keep it
+# local, either add it to .gitignore or run:
+#   git update-index --skip-worktree data/portfolio/sidecar/<TICKER>.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Local Claude Code settings (per-machine paths)
+.claude/

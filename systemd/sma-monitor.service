@@ -1,0 +1,33 @@
+# Install: copy to /etc/systemd/system/sma-monitor.service
+# Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-monitor
+# Logs:    journalctl -u sma-monitor -f
+#
+# Phase 0 note: ExecStart currently runs the bootstrap and exits cleanly.
+# Phase 6 will replace it with the long-running APScheduler loop.
+
+[Unit]
+Description=SMA news/event monitoring agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
