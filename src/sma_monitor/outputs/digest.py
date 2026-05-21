@@ -40,6 +40,7 @@ def assemble_digest(
     *,
     date_iso: str | None = None,
     with_narrative: bool = False,
+    skip_opus: bool = False,
     api_key: str | None = None,
     channels: list[Channel] | None = None,
 ) -> dict:
@@ -121,7 +122,10 @@ def assemble_digest(
     structured_md = render_digest_markdown(summary, holdings_index)
     used_narrative = False
     if with_narrative:
-        narrative = _synthesize_narrative(structured_md, summary, api_key=api_key)
+        narrative = _synthesize_narrative(
+            structured_md, summary,
+            api_key=api_key, skip_opus=skip_opus,
+        )
         if narrative:
             summary.narrative = narrative
             used_narrative = True
@@ -154,15 +158,17 @@ def assemble_digest(
 
 
 # Try Opus first; fall back to a deterministic template paragraph if Opus
-# is unavailable or fails. The template uses only the structured summary
-# so it stays meaningful without LLM access.
+# is unavailable, fails, or the budget cascade has told us to skip the
+# Opus call (cascade step 2 at 75% spend). The template uses only the
+# structured summary so it stays meaningful without LLM access.
 def _synthesize_narrative(
     structured_md: str,
     summary: DigestSummary,
     *,
     api_key: str | None,
+    skip_opus: bool = False,
 ) -> str | None:
-    if not api_key:
+    if not api_key or skip_opus:
         return _template_narrative(summary)
     try:
         import anthropic

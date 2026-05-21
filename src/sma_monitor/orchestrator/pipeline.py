@@ -104,14 +104,18 @@ def run_collect_cycle(*, offline: bool = False) -> dict:
 # Daily 9 PM ET dispatch — assemble the digest with the Opus narrative and
 # send via every configured channel (email + file). Uses the ET-local
 # today so the events filter matches the collect cycle's ET date even
-# when dispatch crosses UTC midnight.
+# when dispatch crosses UTC midnight. When the budget cascade has tripped
+# step 2 (75%), the Opus call is skipped and the template fallback is used.
 def run_dispatch_cycle(*, offline: bool = False) -> dict:
     """Daily 9 PM ET dispatch step. Returns a state dict for logging."""
     state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    degrade = current_degrade_state()
+    state["degrade"] = _degrade_dict(degrade)
     et_today = datetime.now(tz=ET).date().isoformat()
     state["digest"] = assemble_digest(
         date_iso=et_today,
-        with_narrative=True,  # PLAN §3: Opus synthesis for the evening digest
+        with_narrative=True,  # PLAN §3: synthesis paragraph on the evening digest
+        skip_opus=degrade.skip_opus_narrative,  # cascade step 2: template fallback
         api_key=settings.anthropic_api_key,
     )
     state["finished_at"] = datetime.now(timezone.utc).isoformat()
@@ -207,7 +211,7 @@ def _degrade_dict(d: DegradeState) -> dict:
         "budget_usd": d.budget_usd,
         "fraction": round(d.fraction_spent, 3),
         "skip_red_team_t2_t_band": d.skip_red_team_t2_t_band,
-        "reduce_poll_frequency": d.reduce_poll_frequency,
+        "skip_opus_narrative": d.skip_opus_narrative,
         "drop_buckets_10_11": d.drop_buckets_10_11,
         "drop_bucket_12": d.drop_bucket_12,
     }

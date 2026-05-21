@@ -93,7 +93,7 @@ def cmd_status(args, log):
           f"({degrade.fraction_spent*100:.1f}%)")
     print(f"Degrade cascade:")
     print(f"  step 1 — skip red team T₂–T band:  {degrade.skip_red_team_t2_t_band}")
-    print(f"  step 2 — reduce poll frequency:    {degrade.reduce_poll_frequency}")
+    print(f"  step 2 — skip Opus narrative:      {degrade.skip_opus_narrative}")
     print(f"  step 3 — drop buckets #10/#11:     {degrade.drop_buckets_10_11}")
     print(f"  step 4 — drop bucket #12:          {degrade.drop_bucket_12}")
     print()

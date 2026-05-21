@@ -665,6 +665,6 @@ CREATE TABLE dead_letters (
 | Cascade step | Trigger | Effect |
 |---|---|---|
 | 1 | 60% budget | Red-team only above T (skip T₂–T band) |
-| 2 | 75% budget | Poll interval doubles |
+| 2 | 75% budget | Skip Opus narrative on the daily digest (template fallback) |
 | 3 | 85% budget | Skip buckets #10 (literature) + #11 (policy) |
 | 4 | 95% budget | Skip bucket #12 (microstructure) |

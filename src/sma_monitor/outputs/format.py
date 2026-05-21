@@ -174,8 +174,8 @@ def render_digest_markdown(summary: DigestSummary, holdings_index: dict[str, dic
         )
         if degrade.skip_red_team_t2_t_band:
             parts.append("- ⚠ Budget cascade step 1: red team limited to composite ≥ T only")
-        if degrade.reduce_poll_frequency:
-            parts.append("- ⚠ Budget cascade step 2: poll frequency halved")
+        if degrade.skip_opus_narrative:
+            parts.append("- ⚠ Budget cascade step 2: Opus narrative skipped (template fallback)")
         if degrade.drop_buckets_10_11:
             parts.append("- ⚠ Budget cascade step 3: buckets #10, #11 not queried")
         if degrade.drop_bucket_12:

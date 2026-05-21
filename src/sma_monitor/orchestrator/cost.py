@@ -3,9 +3,9 @@
 Per-call token usage from the Anthropic SDK lands here. today_spent_usd()
 sums the ledger; DegradeState applies the cascade thresholds.
 
-Cascade (per PLAN):
+Cascade (post-batch-model):
   60% budget → drop red team on T₂-T band (still red-team above T)
-  75% budget → reduce poll frequency
+  75% budget → skip Opus narrative on the daily digest (template fallback)
   85% budget → drop bucket #10 (literature) + #11 (policy) query templates
   95% budget → drop bucket #12 (microstructure)
 
@@ -121,7 +121,7 @@ class DegradeState:
     budget_usd: float
     # Cascade flags
     skip_red_team_t2_t_band: bool   # step 1 (60%): only red-team above T
-    reduce_poll_frequency: bool     # step 2 (75%): half cadence
+    skip_opus_narrative: bool       # step 2 (75%): skip Opus, use template narrative
     drop_buckets_10_11: bool        # step 3 (85%): skip literature + policy queries
     drop_bucket_12: bool            # step 4 (95%): skip microstructure queries
 
@@ -157,7 +157,7 @@ def current_degrade_state(
         spent_usd=round(spent, 4),
         budget_usd=budget_usd,
         skip_red_team_t2_t_band=spent >= budget_usd * 0.60,
-        reduce_poll_frequency=spent >= budget_usd * 0.75,
+        skip_opus_narrative=spent >= budget_usd * 0.75,
         drop_buckets_10_11=spent >= budget_usd * 0.85,
         drop_bucket_12=spent >= budget_usd * 0.95,
     )
