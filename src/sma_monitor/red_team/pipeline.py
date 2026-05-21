@@ -35,7 +35,11 @@ def run_red_team(
     offline: bool = False,
     model: str = DEFAULT_MODEL,
     limit: int | None = None,
+    min_composite_override: float | None = None,
 ) -> dict:
+    """min_composite_override raises the effective floor from T₂. Phase 6
+    degrade cascade passes T here when budget pressure is on, so only the
+    real-time-alert band (composite ≥ T) gets red-teamed."""
     init_red_team_schema()
     catalog = load_catalog()
     buckets = load_buckets()
@@ -52,7 +56,8 @@ def run_red_team(
         runner = lambda c, cat: red_team_with_claude(c, cat, api_key=api_key, model=model)
         runner_label = model
 
-    rows = pick_candidates(T2, catalog.catalog_version, limit=limit)
+    floor = T2 if min_composite_override is None else max(T2, min_composite_override)
+    rows = pick_candidates(floor, catalog.catalog_version, limit=limit)
     ran = errors = skipped = 0
     for row in rows:
         ticker = row["ticker"]

@@ -11,6 +11,7 @@ DIGESTS_DIR = DATA_ROOT / "digests"
 WARNING_SIGNS_DIR = DATA_ROOT / "warning_signs"
 LOGS_DIR = DATA_ROOT / "logs"
 FACTOR_BUCKETS_DIR = DATA_ROOT / "factor_buckets"
+TUNING_DIR = DATA_ROOT / "tuning"
 
 DB_PATH = DATA_ROOT / "sma.db"
 
@@ -22,6 +23,7 @@ ALL_DIRS = [
     WARNING_SIGNS_DIR,
     LOGS_DIR,
     FACTOR_BUCKETS_DIR,
+    TUNING_DIR,
 ]
 
 

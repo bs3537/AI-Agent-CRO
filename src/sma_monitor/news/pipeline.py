@@ -35,8 +35,13 @@ def poll(
     filter_bucket: int | None = None,
     num_results: int = 5,
     lookback_hours: int = 24,
+    skip_bucket_ids: set[int] | None = None,
 ) -> dict:
-    """Run one poll cycle. Returns a summary dict for logging."""
+    """Run one poll cycle. Returns a summary dict for logging.
+
+    skip_bucket_ids: Phase 6 degrade cascade — when budget pressure is on,
+    the orchestrator passes the bucket ids to drop (10/11 at 85%, 12 at 95%).
+    """
     init_news_schema()
     holdings, missing, _ = latest_joined()
     if not holdings:
@@ -52,6 +57,8 @@ def poll(
         buckets = {filter_bucket: all_buckets[filter_bucket]} if filter_bucket in all_buckets else {}
     else:
         buckets = all_buckets
+    if skip_bucket_ids:
+        buckets = {bid: b for bid, b in buckets.items() if bid not in skip_bucket_ids}
 
     if not buckets or not holdings:
         log.warning("poll_filtered_to_empty",
@@ -90,6 +97,7 @@ def poll(
         "missing_sidecars": missing,
         "queries": queries,
         "articles_new": articles_new,
+        "skipped_bucket_ids": sorted(skip_bucket_ids or []),
     }
 
 

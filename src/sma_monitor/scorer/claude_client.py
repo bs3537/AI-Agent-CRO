@@ -54,6 +54,14 @@ def score_with_claude(
     except Exception as e:
         raise ClaudeError(f"Claude API call failed: {e}") from e
 
+    # Phase 6: record token usage for the cost ledger / degrade cascade.
+    try:
+        from ..orchestrator.cost import record_usage
+        record_usage(kind="score", model=model, usage=getattr(resp, "usage", None),
+                     related_event_id=candidate.article_event_id)
+    except Exception:
+        pass  # cost recording must never break the scoring path
+
     text = "".join(
         block.text for block in resp.content if getattr(block, "type", "") == "text"
     )

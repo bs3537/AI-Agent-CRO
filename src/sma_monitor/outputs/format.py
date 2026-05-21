@@ -145,6 +145,39 @@ def render_digest_markdown(summary: DigestSummary, holdings_index: dict[str, dic
             )
     parts.append("")
 
+    # --- System flags + today's spend (Phase 6) ---
+    try:
+        from ..orchestrator.cost import current_degrade_state
+        from ..orchestrator.flags import get_active_flags
+        flags = get_active_flags()
+        degrade = current_degrade_state()
+    except Exception:
+        flags, degrade = [], None
+
+    parts.append("## System status")
+    parts.append("")
+    if degrade is not None:
+        parts.append(
+            f"- Today's spend: **${degrade.spent_usd:.4f}** of ${degrade.budget_usd:.2f} "
+            f"({degrade.fraction_spent * 100:.1f}%)"
+        )
+        if degrade.skip_red_team_t2_t_band:
+            parts.append("- ⚠ Budget cascade step 1: red team limited to composite ≥ T only")
+        if degrade.reduce_poll_frequency:
+            parts.append("- ⚠ Budget cascade step 2: poll frequency halved")
+        if degrade.drop_buckets_10_11:
+            parts.append("- ⚠ Budget cascade step 3: buckets #10, #11 not queried")
+        if degrade.drop_bucket_12:
+            parts.append("- ⚠ Budget cascade step 4: bucket #12 not queried")
+    if flags:
+        parts.append("")
+        parts.append("**Active flags:**")
+        for f in flags:
+            parts.append(f"- `{f['flag_name']}` (since {f['set_at']})")
+    if not flags and degrade is not None and degrade.fraction_spent < 0.60:
+        parts.append("- No active flags, no cascade pressure.")
+    parts.append("")
+
     # --- Narrative ---
     if summary.narrative:
         parts.append("## Synthesis")

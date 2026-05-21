@@ -11,6 +11,7 @@ data/sma.db-*
 # Runtime outputs
 data/digests/*.md
 data/digests/alerts/
+data/tuning/*.md
 data/logs/
 
 # Real Exa responses; keep '_' -prefixed demo fixtures

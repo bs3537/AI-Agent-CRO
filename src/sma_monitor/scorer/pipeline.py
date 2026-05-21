@@ -102,6 +102,15 @@ def score_unscored(
         try:
             axes, model_used = scorer(candidate)
         except (ClaudeError, ValueError) as e:
+            try:
+                from ..orchestrator.dead_letter import record_failure
+                record_failure(
+                    kind="score",
+                    article_event_id=candidate.article_event_id,
+                    ticker=ticker, error=str(e)[:500],
+                )
+            except Exception:
+                pass  # dead-letter recording must not break scoring
             log.error(
                 "scorer_failed",
                 extra={"article_event_id": candidate.article_event_id,
@@ -109,6 +118,13 @@ def score_unscored(
             )
             errors += 1
             continue
+        # Successful (re)try — clear any dead-letter row for this pair.
+        try:
+            from ..orchestrator.dead_letter import clear_on_success
+            from ..orchestrator.store import dead_letter_event_id
+            clear_on_success(dead_letter_event_id("score", candidate.article_event_id, ticker))
+        except Exception:
+            pass
 
         composite = _compose(axes, candidate)
         save_score(_to_row(candidate, axes, composite, model_used))
