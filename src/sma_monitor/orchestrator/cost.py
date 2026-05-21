@@ -24,9 +24,12 @@ from .store import cost_sum_since, save_cost_row
 
 log = logging.getLogger("sma_monitor.orchestrator.cost")
 
+# Daily spending cap that the cascade thresholds are computed against.
+# Tune once you have empirical data on per-day spend.
 DAILY_BUDGET_USD = 5.00
 
-# Per-million-token prices, USD. Cache-write is ~1.25× input; cache-read is 0.10× input.
+# Per-million-token prices in USD. cache_write ≈ 1.25× input;
+# cache_read ≈ 0.10× input. Unknown models conservatively assume Sonnet.
 _PRICING: dict[str, dict[str, float]] = {
     "claude-sonnet-4-6": {
         "input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75,
@@ -40,6 +43,9 @@ _PRICING: dict[str, dict[str, float]] = {
 }
 
 
+# Compute the dollar cost of one Claude call from its token breakdown.
+# Falls back to Sonnet rates for unknown models (conservative — Sonnet is
+# cheaper than Opus so this won't under-bill against a hidden Opus call).
 def estimate_cost_usd(
     model: str,
     *,
@@ -61,6 +67,8 @@ def estimate_cost_usd(
     )
 
 
+# Translate an Anthropic SDK Usage object into a cost_ledger row. Returns
+# the USD cost recorded. Heuristic calls write nothing and return 0.
 def record_usage(
     *,
     kind: str,
@@ -94,6 +102,8 @@ def record_usage(
     return cost_usd
 
 
+# Sum today's spend from the cost ledger (UTC midnight forward). Used by
+# the cascade and the digest's System status section.
 def today_spent_usd(now: datetime | None = None) -> float:
     now = now or datetime.now(timezone.utc)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -101,6 +111,8 @@ def today_spent_usd(now: datetime | None = None) -> float:
     return float(summary["total_cost"])
 
 
+# Snapshot of today's cost vs budget plus the four cascade boolean flags.
+# Frozen so any code path holding a snapshot won't see it mutate mid-cycle.
 @dataclass(frozen=True)
 class DegradeState:
     """Operational decisions based on today's cumulative cost vs. budget."""
@@ -113,12 +125,15 @@ class DegradeState:
     drop_buckets_10_11: bool        # step 3 (85%): skip literature + policy queries
     drop_bucket_12: bool            # step 4 (95%): skip microstructure queries
 
+    # Fraction of daily budget spent. 0 when budget_usd is unset.
     @property
     def fraction_spent(self) -> float:
         if self.budget_usd <= 0:
             return 0.0
         return self.spent_usd / self.budget_usd
 
+    # Set of bucket ids the news poll should skip given the current cascade
+    # state. Empty until step 3 kicks in at 85% spend.
     @property
     def skipped_bucket_ids(self) -> set[int]:
         out: set[int] = set()
@@ -129,6 +144,9 @@ class DegradeState:
         return out
 
 
+# Compute today's DegradeState. Pure function over today's cost ledger;
+# called by every orchestration step that needs to decide whether to
+# degrade gracefully.
 def current_degrade_state(
     *,
     budget_usd: float = DAILY_BUDGET_USD,

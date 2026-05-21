@@ -11,9 +11,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# Which side of the thresholds a composite score falls on. above_t fires a
+# real-time alert; t2_to_t gets red-teamed for the digest; below_t2 is dropped.
 ThresholdBand = Literal["above_t", "t2_to_t", "below_t2"]
 
 
+# Direct output of the scorer (LLM or heuristic). Three axes 0–10 plus a
+# one-sentence rationale and confidence. Validated against the rubric.
 class AxisScores(BaseModel):
     """Direct output of the LLM / heuristic scorer."""
 
@@ -24,6 +28,8 @@ class AxisScores(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+# Everything needed to score one (article, ticker) pair. The pipeline
+# assembles this from articles + article_buckets + the joined Holding view.
 class ScoreCandidate(BaseModel):
     """Everything needed to score one (article, ticker) pair."""
 
@@ -48,6 +54,9 @@ class ScoreCandidate(BaseModel):
     secondary_buckets: list[tuple[int, float]] = Field(default_factory=list)
 
 
+# Fully-resolved score row, persisted to the scores table. Captures the
+# axes, every multiplier value, the final composite, and the inputs_hash
+# that determines when re-scoring should occur.
 class CompositeScore(BaseModel):
     """Fully-resolved score row. Persisted into scores table."""
 

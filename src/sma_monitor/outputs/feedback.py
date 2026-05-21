@@ -18,10 +18,14 @@ from .store import (
     save_missed,
 )
 
+# Mark values allowed for the `mark` field on feedback rows.
 Mark = Literal["useful", "noise"]
+# Artifact kinds a feedback row can target.
 Kind = Literal["alert", "score", "digest_event"]
 
 
+# Record one feedback mark against a past event_id. Persists via store.save_feedback
+# with a stable feedback_event_id so re-marking the same target replaces cleanly.
 def mark(
     target_id: str,
     mark: Mark,
@@ -36,6 +40,9 @@ def mark(
     )
 
 
+# Record a missed event — something the agent should have surfaced but
+# didn't. Feeds Phase 7 library-growth: each row is a candidate for a new
+# warning-sign entry once the user adds keywords + invalidator.
 def mark_missed(
     *,
     ticker: str | None = None,

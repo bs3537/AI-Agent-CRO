@@ -26,10 +26,16 @@ from .store import (
 
 log = logging.getLogger("sma_monitor.outputs.digest")
 
+# Opus 4.7 for the synthesis paragraph (PLAN §3). Higher cost is acceptable
+# because there's exactly one synthesis per day.
 OPUS_MODEL = "claude-opus-4-7"
+# Window for the bucket-coverage audit + silent-bucket flag.
 SILENT_DAYS = 14
 
 
+# Assemble and dispatch one day's digest. Pulls today's scores, the joined
+# holdings snapshot, and bucket-coverage stats; renders markdown; sends
+# via every configured channel; persists the digest row.
 def assemble_digest(
     *,
     date_iso: str | None = None,
@@ -147,6 +153,9 @@ def assemble_digest(
             "narrative": used_narrative}
 
 
+# Try Opus first; fall back to a deterministic template paragraph if Opus
+# is unavailable or fails. The template uses only the structured summary
+# so it stays meaningful without LLM access.
 def _synthesize_narrative(
     structured_md: str,
     summary: DigestSummary,
@@ -186,6 +195,8 @@ def _synthesize_narrative(
         return _template_narrative(summary)
 
 
+# Strip leading/trailing markdown fences from a synthesis response so the
+# paragraph fits cleanly into the digest markdown.
 def _strip_markdown_fence(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -194,6 +205,9 @@ def _strip_markdown_fence(text: str) -> str:
     return text
 
 
+# Deterministic narrative generator used when Opus isn't available. Picks
+# the lead item, the top concentration, the silent-bucket list, and any
+# near-catalyst quiet holdings.
 def _template_narrative(summary: DigestSummary) -> str:
     """Offline narrative built from the structured payload only."""
     n_tickers = len(summary.events_by_ticker)

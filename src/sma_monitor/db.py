@@ -5,8 +5,9 @@ from contextlib import contextmanager
 from .paths import DB_PATH
 
 # Universal idempotency table. Every artifact across all phases registers
-# its event_id here on creation. Per-phase tables (articles, scores, alerts,
-# feedback) will be added in their respective phases and reference event_id.
+# its event_id here on creation. Per-phase tables (articles, scores,
+# alerts, feedback, etc.) are defined in each phase's store.py and
+# reference back into this table via event_id.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     event_id    TEXT PRIMARY KEY,
@@ -22,6 +23,9 @@ CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen);
 """
 
 
+# Context manager that yields a SQLite connection with WAL + foreign-key
+# pragmas enabled. Commits on normal exit, rolls back on exception, and
+# always closes the connection. Used by every phase's store.py module.
 @contextmanager
 def connection() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(DB_PATH)
@@ -38,6 +42,8 @@ def connection() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Create the universal events table. Per-phase init_*_schema() functions
+# are called alongside this one by the bootstrap and each CLI's main().
 def init_db() -> None:
     with connection() as conn:
         conn.executescript(SCHEMA)

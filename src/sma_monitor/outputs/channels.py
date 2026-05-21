@@ -22,9 +22,12 @@ from ..paths import DIGESTS_DIR
 
 log = logging.getLogger("sma_monitor.outputs.channels")
 
+# Subdirectory of digests/ used by FileChannel for the per-day alert archive.
 ALERTS_DIR = DIGESTS_DIR / "alerts"
 
 
+# Abstract base for every delivery channel. Subclasses implement send_alert
+# (per-event) and send_digest (per-day). Channels are stateless.
 class Channel(ABC):
     name: str
 
@@ -35,11 +38,14 @@ class Channel(ABC):
     def send_digest(self, date_iso: str, rendered_md: str) -> None: ...
 
 
+# Always-on channel that appends alerts to a per-day markdown file and
+# writes the digest as one file per day. Used as the offline review trail.
 class FileChannel(Channel):
     """Append alerts to per-day file; write digest as one file per day."""
 
     name = "file"
 
+    # Append the rendered alert text to data/digests/alerts/YYYY-MM-DD.md.
     def send_alert(self, ticker: str, rendered_text: str) -> None:
         ALERTS_DIR.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timezone
@@ -49,6 +55,8 @@ class FileChannel(Channel):
         with p.open("a") as f:
             f.write(f"{sep}{rendered_text}\n")
 
+    # Write the digest markdown to data/digests/YYYY-MM-DD.md. Overwrites
+    # any prior digest for that date so re-runs produce one canonical file.
     def send_digest(self, date_iso: str, rendered_md: str) -> Path:
         DIGESTS_DIR.mkdir(parents=True, exist_ok=True)
         p = DIGESTS_DIR / f"{date_iso}.md"
@@ -57,6 +65,8 @@ class FileChannel(Channel):
         return p
 
 
+# Channel that prints to stdout. Useful for testing and for tee'ing the
+# digest to a terminal when invoked manually.
 class StdoutChannel(Channel):
     name = "stdout"
 
@@ -67,11 +77,16 @@ class StdoutChannel(Channel):
         print(rendered_md, file=sys.stdout, flush=True)
 
 
+# SMTP-over-STARTTLS email channel. Only configured when every SMTP_*
+# credential is present. Plain-text body (no HTML) so it renders well on
+# every mail client including mobile.
 class EmailChannel(Channel):
     """SMTP STARTTLS. Only configured when SMTP_* creds are present."""
 
     name = "email"
 
+    # Capture SMTP credentials + addresses at init so send_* can be called
+    # without re-reading settings each time.
     def __init__(
         self,
         *,
@@ -89,13 +104,18 @@ class EmailChannel(Channel):
         self.from_addr = from_addr
         self.to_addr = to_addr
 
+    # Send one alert as a separate email. Subject derived from the title
+    # line of the rendered alert (first line, truncated to 120 chars).
     def send_alert(self, ticker: str, rendered_text: str) -> None:
         subject = rendered_text.split("\n", 1)[0][:120]
         self._send(subject=subject, text_body=rendered_text)
 
+    # Send the digest as one email with a stable subject.
     def send_digest(self, date_iso: str, rendered_md: str) -> None:
         self._send(subject=f"SMA digest — {date_iso}", text_body=rendered_md)
 
+    # Internal SMTP helper used by both alert and digest paths. Raises so
+    # the pipeline can log + record channel-send failures.
     def _send(self, *, subject: str, text_body: str) -> None:
         msg = MIMEMultipart("alternative")
         msg["From"] = self.from_addr
@@ -112,6 +132,9 @@ class EmailChannel(Channel):
             raise
 
 
+# Build the default channel set. FileChannel is always included; add
+# StdoutChannel when prefer_stdout; add EmailChannel when SMTP creds are
+# all present. Add Slack/SMS by registering another Channel subclass here.
 def build_channels(*, prefer_stdout: bool = False) -> list[Channel]:
     """Default set. FileChannel is always included (archive)."""
     channels: list[Channel] = [FileChannel()]

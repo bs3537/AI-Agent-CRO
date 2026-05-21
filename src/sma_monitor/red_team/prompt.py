@@ -11,6 +11,9 @@ from .schema import RedTeamCandidate
 
 # --- System prompt -----------------------------------------------------------
 
+# Voice constraints baked into the system prompt. Pattern-cite by id only,
+# no directional verbs, invalidator required. Voice enforcement protects
+# the digest's neutral tone from leaking into a "watch list" of trades.
 _VOICE = """\
 You are the red team for a biotech-heavy SMA. Your job is to argue the SHORT \
 case against ONE existing long position based on a single news article. \
@@ -37,6 +40,8 @@ fit. That is a valid outcome — return an empty matched_warning_signs list \
 and a low severity_of_concern.
 """
 
+# Output schema embedded in the system prompt so Claude knows exactly what
+# JSON shape to emit. Parsed and validated in claude_client._parse_result.
 _OUTPUT_SCHEMA = """\
 OUTPUT — valid JSON only, no preamble, no markdown fences:
 {
@@ -52,6 +57,9 @@ OUTPUT — valid JSON only, no preamble, no markdown fences:
 """
 
 
+# Assemble the full system prompt: voice + catalog (every entry rendered)
+# + output schema. Sent with cache_control=ephemeral so the catalog text
+# is cached across red-team calls within the 5-min TTL.
 def build_system_prompt(catalog: Catalog) -> str:
     lines = [f"[{ws.id}] bucket #{','.join(str(b) for b in ws.buckets)} — "
              f"{ws.name}. PATTERN: {ws.definition.strip()} "
@@ -66,6 +74,8 @@ def build_system_prompt(catalog: Catalog) -> str:
     )
 
 
+# Build the user-side message for one candidate: holding, scorer's view,
+# and the article excerpt. Compact label format so Claude parses reliably.
 def build_user_message(c: RedTeamCandidate) -> str:
     nearest = (
         f"{c.nearest_catalyst_days}d"

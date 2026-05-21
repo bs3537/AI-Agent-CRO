@@ -11,6 +11,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+# One warning-sign citation. The red team must cite a real catalog id —
+# fabricated ids are silently dropped by claude_client._parse_result.
 class MatchedWarningSign(BaseModel):
     id: str
     name: str = ""
@@ -18,6 +20,8 @@ class MatchedWarningSign(BaseModel):
     fit_strength: float = Field(ge=0, le=1)
 
 
+# Direct output of the red team — bearish thesis plus zero-or-more cited
+# patterns, the buckets they evidence, severity 1–5, and an invalidator.
 class RedTeamResult(BaseModel):
     """Direct output of the red team — what the scorer / heuristic produces."""
 
@@ -29,6 +33,8 @@ class RedTeamResult(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+# Everything the red team needs to argue the short case for one score.
+# Includes the scorer's view so the red team can challenge or amplify.
 class RedTeamCandidate(BaseModel):
     """Everything the red team needs to argue the short case for one score."""
 

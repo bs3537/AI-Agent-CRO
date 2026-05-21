@@ -13,14 +13,21 @@ from typing import Any
 from .prompt import SYSTEM_PROMPT, build_user_message
 from .schema import AxisScores, ScoreCandidate
 
+# Default model for severity scoring. Sonnet 4.6 balances cost and judgment.
+# Opus is reserved for the digest narrative (Phase 5).
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 512
 
 
+# Exception raised for any Claude API failure (SDK, parsing, validation).
+# Caller catches this to dead-letter the (article, ticker) pair.
 class ClaudeError(RuntimeError):
     pass
 
 
+# Score one candidate via Claude. Returns (axes, model_used) so the caller
+# can persist which model produced the row. Records token usage to the
+# Phase 6 cost ledger as a side-effect.
 def score_with_claude(
     candidate: ScoreCandidate,
     *,
@@ -68,6 +75,8 @@ def score_with_claude(
     return _parse_json(text), model
 
 
+# Extract and validate the JSON object from Claude's text response.
+# Tolerates markdown fences and stray preamble before/after the object.
 def _parse_json(text: str) -> AxisScores:
     """Extract the JSON object from the response and validate it.
 

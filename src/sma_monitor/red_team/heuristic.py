@@ -14,10 +14,15 @@ from __future__ import annotations
 from .catalog import Catalog
 from .schema import MatchedWarningSign, RedTeamCandidate, RedTeamResult
 
+# Label persisted in red_team_passes.model_used.
 MODEL_LABEL = "heuristic-v1"
+# Minimum fit_strength before a catalog entry counts as matched.
 _MIN_FIT = 0.3
 
 
+# Deterministic offline red team. Keyword-matches each catalog entry's
+# `keywords` against title+excerpt; scales severity by top fit + the
+# composite band. Used in --offline mode and as the cost-degrade fallback.
 def red_team_heuristically(
     c: RedTeamCandidate,
     catalog: Catalog,

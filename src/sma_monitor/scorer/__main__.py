@@ -26,6 +26,8 @@ from .rubric import RUBRIC_TEXT
 from .store import init_scores_schema, recent_scores
 
 
+# CLI: score every (article, ticker) pair lacking a row at the current
+# MULTIPLIERS_VERSION. Pass --offline to force the heuristic scorer.
 def cmd_score(args, log):
     res = score_unscored(
         api_key=settings.anthropic_api_key,
@@ -36,6 +38,8 @@ def cmd_score(args, log):
     return 0
 
 
+# CLI: print a recent-scores table. Optional filters on ticker, band,
+# and minimum composite.
 def cmd_show(args, log):
     rows = recent_scores(
         ticker=args.ticker,
@@ -60,11 +64,15 @@ def cmd_show(args, log):
     return 0
 
 
+# CLI: dump the rubric text to stdout. Useful for verifying what the
+# scorer model is being told to do.
 def cmd_show_rubric(args, log):
     print(RUBRIC_TEXT)
     return 0
 
 
+# CLI: dump every multiplier + threshold value + the position-weight curve.
+# Use after changing multipliers.py to sanity-check the numbers.
 def cmd_show_multipliers(args, log):
     print(f"MULTIPLIERS_VERSION: {MULTIPLIERS_VERSION}")
     print(f"Thresholds:  T (alert) = {T}    T₂ (digest red-team) = {T2}")
@@ -83,6 +91,8 @@ def cmd_show_multipliers(args, log):
     return 0
 
 
+# CLI: run the calibration harness against data/scores/calibration_set.yaml.
+# Exits non-zero on any band mismatch so it's safe to use in CI.
 def cmd_calibrate(args, log):
     rows = calib.run(api_key=settings.anthropic_api_key, offline=args.offline)
     if not rows:
@@ -106,6 +116,7 @@ def cmd_calibrate(args, log):
     return 0 if misses == 0 else 1
 
 
+# Phase 3 CLI entry point. Wires the five subcommands to their handlers.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

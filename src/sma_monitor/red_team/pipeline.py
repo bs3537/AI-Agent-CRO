@@ -26,9 +26,14 @@ from .store import init_red_team_schema, pick_candidates, save_red_team_pass
 
 log = logging.getLogger("sma_monitor.red_team.pipeline")
 
+# Signature shared by Claude + heuristic red-team runners so the pipeline
+# can swap them based on --offline / cost-degrade state.
 RedTeamFn = Callable[[RedTeamCandidate, Catalog], tuple[RedTeamResult, str]]
 
 
+# Run the red team across every above-T₂ score lacking a pass at the
+# current catalog_version. min_composite_override raises the floor — Phase 6
+# passes T here when budget pressure is on so only alert-band scores run.
 def run_red_team(
     *,
     api_key: str | None,
@@ -133,6 +138,7 @@ def run_red_team(
     return {"ran": ran, "errors": errors, "skipped": skipped}
 
 
+# Lenient ISO-8601 parser; returns None for missing/unparseable input.
 def _parse_dt(s: str | None):
     if not s:
         return None

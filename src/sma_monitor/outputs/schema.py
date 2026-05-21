@@ -11,6 +11,9 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+# Fully-resolved alert payload. Everything format.render_alert() needs to
+# emit mobile-glanceable text in one pass. red_team fields are optional
+# because a score above T may not have a pass yet at the current catalog.
 class AlertRecord(BaseModel):
     """Everything format.render_alert() needs to produce alert text."""
 
@@ -45,6 +48,8 @@ class AlertRecord(BaseModel):
     invalidator: str | None = None
 
 
+# One row in the digest's "today's events" table. Same shape as AlertRecord
+# but without the identity/URL fields needed for alert routing.
 class DigestEvent(BaseModel):
     """One row in the digest's events table."""
 
@@ -64,6 +69,8 @@ class DigestEvent(BaseModel):
     matched_warning_signs: list[dict]
 
 
+# Compact holding snapshot used in the "quiet holdings" section of the
+# digest. Just enough fields to flag near catalysts and overdue ones.
 class HoldingSnapshot(BaseModel):
     ticker: str
     pct_nav: float
@@ -73,6 +80,8 @@ class HoldingSnapshot(BaseModel):
     has_overdue_catalyst: bool
 
 
+# Full digest payload assembled by digest.py before rendering. Sections
+# map to the markdown headers in format.render_digest_markdown().
 class DigestSummary(BaseModel):
     """Full assembled digest before rendering."""
 

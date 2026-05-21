@@ -17,9 +17,13 @@ from datetime import datetime, timedelta, timezone
 from ..db import connection
 from ..news.buckets import load_buckets
 
+# Keyword set used to detect cyber/breach articles inside bucket #8. Drives
+# the "should cyber be its own bucket?" PLAN §7 question.
 CYBER_BREACH_TERMS = ("cyber", "breach", "ransomware", "data leak", "data breach")
 
 
+# Return the bucket ids that saw zero articles in the window — probable
+# ingestion gaps. Used by the bucket-review section of the tuning report.
 def silent_buckets(*, days: int = 14) -> list[int]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     sql = """
@@ -34,6 +38,9 @@ def silent_buckets(*, days: int = 14) -> list[int]:
     return sorted(set(load_buckets()) - active)
 
 
+# Compute the fraction of bucket-#10 (literature) articles in the window
+# that also carry a #1 or #5 tag. ≥70% suggests #10 is folding into the
+# clinical/competitive read-through buckets — PLAN §7 4-week decision.
 def bucket_10_overlap(*, days: int = 28) -> dict:
     """% of bucket-10 articles in window also tagged into #1 or #5."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -64,6 +71,9 @@ def bucket_10_overlap(*, days: int = 28) -> dict:
     }
 
 
+# Average distinct tickers per bucket-#11 article. When this approaches
+# the total holding count, #11 is behaving like a sector overlay — PLAN §7
+# 8-week decision point.
 def bucket_11_cluster_shape(*, days: int = 56) -> dict:
     """Are #11 articles consistently tagged across MOST holdings?
 
@@ -112,6 +122,8 @@ def bucket_11_cluster_shape(*, days: int = 56) -> dict:
     }
 
 
+# Fraction of bucket-#8 (governance) articles in the window that mention
+# cyber/breach terms. ≥40% triggers a "promote to own bucket" suggestion.
 def cyber_breach_density(*, days: int = 60) -> dict:
     """#8 articles with cyber/breach terms — PLAN §7 own-bucket candidate."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -146,6 +158,8 @@ def cyber_breach_density(*, days: int = 60) -> dict:
             "cyber_pct": round(pct, 3), "promotion_suggestion": suggestion}
 
 
+# Render the bucket-review section of the tuning report: silent buckets +
+# the three PLAN §7 architectural questions with their current answers.
 def render_bucket_review_markdown(
     silent: Sequence[int],
     overlap_10: dict,

@@ -37,9 +37,14 @@ from .store import (
 
 log = logging.getLogger("sma_monitor.scorer.pipeline")
 
+# Signature shared by the Claude scorer and the heuristic scorer so the
+# pipeline can swap them transparently based on --offline / cost-degrade.
 Scorer = Callable[[ScoreCandidate], tuple[AxisScores, str]]
 
 
+# Score every (article, ticker) pair that lacks a score row at the current
+# MULTIPLIERS_VERSION. Routes to Claude or heuristic based on `offline`
+# and API-key presence. Returns a counts summary for logging.
 def score_unscored(
     *,
     api_key: str | None,
@@ -146,6 +151,8 @@ def score_unscored(
     return {"scored": scored, "errors": errors, "skipped": skipped}
 
 
+# Apply the five multipliers + threshold-band classification to the LLM's
+# raw axis output. Returns the dict that becomes the persisted score row.
 def _compose(axes: AxisScores, c: ScoreCandidate) -> dict:
     raw_avg = (axes.financial_impact + axes.narrative_shift + axes.time_criticality) / 3
     bw = BUCKET_WEIGHTS.get(c.primary_bucket_id, 0.7)
@@ -166,6 +173,9 @@ def _compose(axes: AxisScores, c: ScoreCandidate) -> dict:
     }
 
 
+# Build the CompositeScore row from the candidate + axes + composite.
+# Computes the inputs_hash so the row is keyed on every value that should
+# trigger a re-score.
 def _to_row(
     c: ScoreCandidate,
     axes: AxisScores,
@@ -207,6 +217,8 @@ def _to_row(
     )
 
 
+# Lenient ISO-8601 parser; returns None for missing/unparseable input so
+# the caller can keep the field optional.
 def _parse_dt(s: str | None):
     if not s:
         return None

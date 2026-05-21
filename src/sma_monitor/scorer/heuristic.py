@@ -13,9 +13,12 @@ from __future__ import annotations
 
 from .schema import AxisScores, ScoreCandidate
 
+# Label persisted in scores.model_used so heuristic-scored rows are
+# distinguishable from Claude-scored rows in audits.
 MODEL_LABEL = "heuristic-v1"
 
-# Strong textual signals — substring match on title+excerpt.
+# Substrings that strongly imply high financial impact. Lowercase only —
+# matched via `in` against the lowercased title+excerpt.
 _HIGH_SEVERITY_SIGNALS = (
     "complete response letter",
     " crl ",
@@ -30,6 +33,7 @@ _HIGH_SEVERITY_SIGNALS = (
     "subpoena",
     "going-concern",
 )
+# Substrings that imply imminent time pressure. Catalyst-adjacent vocabulary.
 _TIME_CRITICAL_SIGNALS = (
     "pdufa",
     "adcom",
@@ -40,13 +44,17 @@ _TIME_CRITICAL_SIGNALS = (
     "merger agreement",
 )
 
-# Per-bucket narrative ceilings — keeps low-narrative buckets honest.
+# Per-bucket narrative ceilings. Flow data (#12) can't shift a thesis as
+# hard as a clinical readout (#1), so cap it lower.
 _NARRATIVE_CAP: dict[int, float] = {
     1: 9.0, 2: 9.0, 3: 7.0, 4: 8.0, 5: 7.0, 6: 6.0, 7: 8.0, 8: 6.0,
     9: 8.0, 10: 6.0, 11: 5.0, 12: 4.0,
 }
 
 
+# Deterministic offline scorer. Conservative baseline + bumps for strong
+# textual signals. Used in --offline mode and as the Phase 6 cost-degrade
+# fallback when the daily budget is exhausted.
 def score_heuristically(c: ScoreCandidate) -> AxisScores:
     text = f"{c.title} {c.excerpt}".lower()
 

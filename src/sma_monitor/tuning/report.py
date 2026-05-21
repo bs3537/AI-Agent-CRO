@@ -37,6 +37,9 @@ from .weights import (
 )
 
 
+# Assemble the full tuning report markdown. Five sections in fixed order:
+# precision, weight/threshold suggestions, library growth, conviction review,
+# bucket architecture. Each section names the exact file to edit if you act.
 def assemble_report(*, window_days: int = 14) -> str:
     today = datetime.now(timezone.utc).date().isoformat()
     parts: list[str] = []
@@ -101,6 +104,8 @@ def assemble_report(*, window_days: int = 14) -> str:
     return "\n".join(parts)
 
 
+# Persist the assembled report to data/tuning/YYYY-MM-DD.md. Returns the
+# path so the CLI can echo it back to the user.
 def write_report(*, window_days: int = 14) -> Path:
     TUNING_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now(timezone.utc).date().isoformat()

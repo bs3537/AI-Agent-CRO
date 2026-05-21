@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+# (tier, host fragments) pairs evaluated top-down. First matching tier wins.
+# Adding a new source: append to the existing tier's list, do not invent
+# tiers between the canonical 1–6.
 _TIERS: list[tuple[int, list[str]]] = [
     (1, ["sec.gov", "businesswire.com", "prnewswire.com", "globenewswire.com",
          "ir.", "investors."]),
@@ -30,9 +33,12 @@ _TIERS: list[tuple[int, list[str]]] = [
          "investorshub.advfn.com"]),
 ]
 
+# Tier assigned when the host doesn't match any known matcher.
 DEFAULT_TIER = 5
 
 
+# Return the source tier (1..6) for the given URL. Falls back to DEFAULT_TIER
+# (5 = general press) when no matcher fires.
 def source_tier(url: str) -> int:
     try:
         host = urlparse(url).netloc.lower()
@@ -46,6 +52,8 @@ def source_tier(url: str) -> int:
     return DEFAULT_TIER
 
 
+# Return a short, human-readable source label (the URL's host, stripped of
+# `www.`). Used in alert and digest renderings.
 def source_label(url: str) -> str:
     try:
         return urlparse(url).netloc.lower().removeprefix("www.")

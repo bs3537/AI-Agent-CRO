@@ -26,11 +26,15 @@ from .store import (
 
 log = logging.getLogger("sma_monitor.outputs.alerts")
 
-# PLAN §5: same bucket+ticker within N hours requires escalation to re-alert.
+# Suppression window — same (ticker, bucket) needs +20% composite jump
+# inside this window to re-alert. PLAN §5 escalation rule.
 SUPPRESSION_WINDOW_HOURS = 6
 ESCALATION_RATIO = 1.20  # need >20% composite jump within the window to break suppression
 
 
+# Process every above-T score lacking an alert row. For each, apply the
+# suppression check, dispatch via configured channels (unless --dry-run),
+# and persist the alert row including suppressed/no-fire decisions.
 def run_alerts(
     *,
     min_composite: float | None = None,
@@ -116,6 +120,9 @@ def run_alerts(
             "threshold": threshold}
 
 
+# Assemble the AlertRecord pydantic model from a sqlite Row + Holding +
+# bucket short_name. matched_warning_signs is stored as JSON in the
+# red-team table; parsed here for the renderer.
 def _build_record(row, holding, bucket_short_name: str) -> AlertRecord:
     try:
         matched = json.loads(row["matched_warning_signs"] or "[]")

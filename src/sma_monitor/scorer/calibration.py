@@ -23,11 +23,15 @@ from .multipliers import (
 )
 from .schema import ScoreCandidate
 
+# Path to the user-maintained calibration set. Each entry pairs a historical
+# article with the user's post-hoc expected_band.
 CALIBRATION_FILE = DATA_ROOT / "scores" / "calibration_set.yaml"
 
 ExpectedBand = Literal["above_t", "t2_to_t", "below_t2"]
 
 
+# Per-entry holding context passed to the scorer. A simplified Holding for
+# calibration purposes (no live position data required).
 class CalibrationContext(BaseModel):
     pct_nav: float
     conviction_tier: int
@@ -36,6 +40,7 @@ class CalibrationContext(BaseModel):
     nearest_catalyst_days: int | None = None
 
 
+# Per-entry article fields. Source + tier feed the heuristic's signal bumps.
 class CalibrationArticle(BaseModel):
     title: str
     excerpt: str
@@ -43,6 +48,8 @@ class CalibrationArticle(BaseModel):
     source_tier: int | None = None
 
 
+# One calibration entry: a historical (article, holding, bucket) plus the
+# expected band. The harness checks each entry's actual band against this.
 class CalibrationEntry(BaseModel):
     name: str
     ticker: str
@@ -54,10 +61,14 @@ class CalibrationEntry(BaseModel):
     note: str | None = None
 
 
+# The full calibration set parsed from YAML. Empty by default — the user
+# populates it with historical events from their own portfolio.
 class CalibrationSet(BaseModel):
     entries: list[CalibrationEntry]
 
 
+# Load the calibration YAML. Returns an empty set if the file is absent so
+# the CLI can handle "you haven't built a calibration set yet" gracefully.
 def load_set(path: Path = CALIBRATION_FILE) -> CalibrationSet:
     if not path.exists():
         return CalibrationSet(entries=[])
@@ -65,6 +76,9 @@ def load_set(path: Path = CALIBRATION_FILE) -> CalibrationSet:
         return CalibrationSet.model_validate(yaml.safe_load(f))
 
 
+# Run the full calibration: score each entry, compute the composite,
+# classify the band, compare against expected_band. Returns a list of
+# per-entry result dicts the CLI prints.
 def run(*, api_key: str | None, offline: bool = False) -> list[dict]:
     cset = load_set()
     if not cset.entries:

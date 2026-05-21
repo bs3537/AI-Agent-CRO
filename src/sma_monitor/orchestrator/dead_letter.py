@@ -22,6 +22,8 @@ from .store import (
 )
 
 
+# Record a per-(kind, article, ticker) failure. First failure → 'pending';
+# second → 'abandoned' + a system flag. Returns the new state for logging.
 def record_failure(
     *,
     kind: str,
@@ -50,13 +52,17 @@ def record_failure(
     return {"event_id": eid, "attempt_count": 1, "status": "pending"}
 
 
+# Remove a dead-letter row after a retry succeeds. Called from each
+# pipeline immediately after a successful (re)run.
 def clear_on_success(event_id_str: str) -> None:
     clear_dead_letter(event_id_str)
 
 
+# List dead-letter rows still in 'pending' state. Used by the retry CLI.
 def pending(kind: str | None = None) -> list[dict]:
     return pending_dead_letters(kind=kind)
 
 
+# List recent dead-letter rows (pending + abandoned) for the status CLI.
 def all_recent(limit: int = 30) -> list[dict]:
     return all_dead_letters(limit=limit)

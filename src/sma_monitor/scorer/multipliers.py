@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import math
 
-# Phase 7 will tune. Bump this string on every change so re-scoring triggers.
+# Version string the pipeline keys idempotency off. Bump on every value
+# change so all existing (article, ticker) pairs get re-scored cleanly.
 MULTIPLIERS_VERSION = "v1.0-2026.05"
 
 # --- Thresholds -------------------------------------------------------------
@@ -25,7 +26,8 @@ T: float = 15.0
 T2: float = 8.0
 
 # --- Bucket weights ---------------------------------------------------------
-# Mean ~ 0.85. #12 deliberately low so noise is visible-and-suppressed (PLAN §3).
+# Per-bucket scalar multiplier. Mean ~ 0.85. #12 deliberately low so noise
+# is visible-and-suppressed rather than invisible (PLAN §3).
 BUCKET_WEIGHTS: dict[int, float] = {
     1: 1.00,   # Clinical Development
     2: 1.00,   # Regulatory Interaction
@@ -42,14 +44,18 @@ BUCKET_WEIGHTS: dict[int, float] = {
 }
 
 # --- Conviction tier → multiplier (PLAN §3) ---------------------------------
+# Conviction tier (sidecar) → multiplier. Higher conviction = bigger weight
+# on the holding's news because mistakes there hurt more.
 CONVICTION_MULT: dict[int, float] = {1: 0.70, 2: 0.85, 3: 1.00, 4: 1.20, 5: 1.50}
 
 # --- Catalyst proximity (only buckets 1 & 2 per PLAN §3) --------------------
-# Other buckets do NOT get the boost — applying to #4 near earnings creates
-# false urgency the digest will struggle to suppress.
+# Catalyst boost only applies to clinical (#1) + regulatory (#2) events.
+# Applying it to #4 near earnings would create false urgency.
 CATALYST_BUCKETS: set[int] = {1, 2}
 
 
+# Compute the catalyst-proximity multiplier for a given (days, bucket).
+# Only applies to buckets in CATALYST_BUCKETS — otherwise returns 1.0.
 def catalyst_boost(days_to_catalyst: int | None, bucket_id: int) -> float:
     if days_to_catalyst is None or bucket_id not in CATALYST_BUCKETS:
         return 1.0
@@ -61,6 +67,8 @@ def catalyst_boost(days_to_catalyst: int | None, bucket_id: int) -> float:
 
 
 # --- Stage interaction (PLAN §3) --------------------------------------------
+# Stage-aware multiplier. clinical-stage names are more sensitive to capital
+# events (#7), commercial-stage names to revenue-quality events (#4).
 def stage_interaction(stage: str | None, bucket_id: int) -> float:
     if stage == "clinical_stage" and bucket_id == 7:
         return 1.3
@@ -72,13 +80,15 @@ def stage_interaction(stage: str | None, bucket_id: int) -> float:
 
 
 # --- Position weight (log-scale on %NAV) ------------------------------------
+# Log-scale curve so a 24% position doesn't drown a 1% position's CRL.
 # At pct_nav=0.01 → ~0.53; 0.05 → ~0.90; 0.10 → ~1.11; 0.24 → ~1.39.
-# Log so a 24% position doesn't drown a 1% position's CRL (PLAN §3).
 _POS_BASE = 0.30
 _POS_SLOPE = 1.10
 _POS_DENOM = math.log1p(25)  # normalize against a 25% reference
 
 
+# Return the log-scaled position weight for a given %NAV in [0, 1]. Clamped
+# to [0.30, 1.50] so extreme positions don't blow up the composite.
 def position_weight(pct_nav: float) -> float:
     if pct_nav <= 0:
         return _POS_BASE
@@ -87,6 +97,8 @@ def position_weight(pct_nav: float) -> float:
 
 
 # --- Threshold band classification ------------------------------------------
+# Classify a composite into one of three bands. Phase 5 gates alerts on
+# above_t; Phase 4 picks t2_to_t + above_t for red-teaming.
 def threshold_band(composite: float) -> str:
     if composite >= T:
         return "above_t"

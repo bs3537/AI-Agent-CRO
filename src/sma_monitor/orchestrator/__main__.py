@@ -35,6 +35,8 @@ from .store import (
 )
 
 
+# CLI: run exactly one full orchestration cycle. Prints the cycle state as
+# JSON so the user can see what happened in each stage.
 def cmd_tick(args, log):
     state = run_one_cycle(
         offline=args.offline,
@@ -46,6 +48,8 @@ def cmd_tick(args, log):
     return 0
 
 
+# CLI: start the long-running scheduler loop. Intended to run under
+# systemd or another process supervisor.
 def cmd_run(args, log):
     log.info("run_loop_starting", extra={"offline": args.offline,
                                          "interval_override": args.interval})
@@ -54,6 +58,8 @@ def cmd_run(args, log):
     return 0
 
 
+# CLI: print today's operational state — spend vs budget, cascade flags,
+# spend by kind, active system flags, and dead-letter rows.
 def cmd_status(args, log):
     flags = get_active_flags()
     degrade = current_degrade_state()
@@ -95,12 +101,16 @@ def cmd_status(args, log):
     return 0
 
 
+# CLI: emit a crontab snippet for the cron-driven deployment. Pipe through
+# `crontab -` or paste into `crontab -e`.
 def cmd_install_cron(args, log):
     for line in crontab_lines():
         print(line)
     return 0
 
 
+# CLI: re-run scorer + red-team pipelines so 'pending' dead-letter rows
+# get one more attempt. A second failure transitions them to 'abandoned'.
 def cmd_retry_dead_letters(args, log):
     """Re-run scorer + red-team pipelines; rows still failing will bump
     attempt_count and (on second failure) be marked 'abandoned'."""
@@ -118,6 +128,9 @@ def cmd_retry_dead_letters(args, log):
     return 0
 
 
+# CLI: insert a synthetic cost ledger row to exercise the degrade cascade
+# without actually burning Claude tokens. Tagged 'synthetic_simulation' so
+# real cost analysis can filter it out.
 def cmd_simulate_spend(args, log):
     """Append a synthetic cost row — useful for testing the degrade cascade.
 
@@ -142,12 +155,15 @@ def cmd_simulate_spend(args, log):
     return 0
 
 
+# CLI: manually clear a system flag by name. Useful when an external
+# condition has resolved but the orchestrator hasn't observed it yet.
 def cmd_clear_flag(args, log):
     clear_flag(args.name)
     log.info("flag_cleared", extra={"flag_name": args.name})
     return 0
 
 
+# Phase 6 CLI entry point. Wires every subcommand to its handler.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

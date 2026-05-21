@@ -43,6 +43,8 @@ from .weights import (
 )
 
 
+# CLI: write the full tuning report to data/tuning/YYYY-MM-DD.md. Pass
+# --print to also dump the markdown to stdout.
 def cmd_report(args, log):
     p = write_report(window_days=args.days)
     log.info("report_written", extra={"path": str(p), "days": args.days})
@@ -53,6 +55,7 @@ def cmd_report(args, log):
     return 0
 
 
+# CLI: print only the precision table + weight/threshold suggestions.
 def cmd_precision(args, log):
     rows = alert_precision_by_bucket(days=args.days)
     print(render_precision_markdown(rows, days=args.days))
@@ -63,17 +66,21 @@ def cmd_precision(args, log):
     return 0
 
 
+# CLI: print library-growth candidates (missed events → draft YAML blocks).
 def cmd_library_candidates(args, log):
     candidates = library_growth_candidates(days=args.days)
     print(render_candidates_markdown(candidates))
     return 0
 
 
+# CLI: print the conviction-review section — tier distribution + stale sidecars.
 def cmd_conviction_review(args, log):
     print(render_tier_markdown(tier_distribution(), stale_sidecars()))
     return 0
 
 
+# CLI: print the bucket-architecture review section — silent buckets +
+# the three PLAN §7 questions.
 def cmd_bucket_review(args, log):
     print(render_bucket_review_markdown(
         silent_buckets(days=args.days),
@@ -85,6 +92,7 @@ def cmd_bucket_review(args, log):
     return 0
 
 
+# Phase 7 CLI entry point. Wires all subcommands to their handlers.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

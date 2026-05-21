@@ -16,6 +16,9 @@ from datetime import datetime
 from ..db import connection
 from ..identity import event_id
 
+# DDL for the Phase 6 tables. Three independent tables: cost_ledger
+# (append-only spend), system_flags (current operational flags),
+# dead_letters (failed work + retry state).
 ORCHESTRATOR_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cost_ledger (
     event_id            TEXT PRIMARY KEY,
@@ -56,6 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_dead_letters_status ON dead_letters(status);
 """
 
 
+# Create the Phase 6 tables. Safe to call repeatedly.
 def init_orchestrator_schema() -> None:
     with connection() as conn:
         conn.executescript(ORCHESTRATOR_SCHEMA)
@@ -64,6 +68,9 @@ def init_orchestrator_schema() -> None:
 # --- cost ledger -------------------------------------------------------------
 
 
+# Stable id for one cost ledger row. Keyed on (kind, model, incurred_at,
+# related_event_id) so duplicate writes within the same millisecond don't
+# create duplicate rows.
 def cost_event_id(kind: str, model: str, incurred_at: datetime, related_event_id: str | None) -> str:
     return event_id({
         "kind": "cost", "subkind": kind, "model": model,
@@ -72,6 +79,8 @@ def cost_event_id(kind: str, model: str, incurred_at: datetime, related_event_id
     })
 
 
+# Persist one cost ledger row in a single transaction. Used by record_usage
+# in cost.py; also by simulate-spend in the orchestrator CLI for cascade tests.
 def save_cost_row(
     *,
     kind: str,
@@ -106,6 +115,8 @@ def save_cost_row(
     return eid
 
 
+# Sum costs and tokens from a given start time. Used to compute today's
+# spend (with iso_since = midnight UTC).
 def cost_sum_since(iso_since: str) -> dict:
     init_orchestrator_schema()
     with connection() as conn:
@@ -121,6 +132,8 @@ def cost_sum_since(iso_since: str) -> dict:
             "total_out": row["total_out"], "n_calls": row["n_calls"]}
 
 
+# Break down spend by kind ('score', 'red_team', 'digest_narrative', ...).
+# Feeds the status CLI's "spend by kind" table.
 def cost_by_kind_since(iso_since: str) -> list[dict]:
     init_orchestrator_schema()
     with connection() as conn:
@@ -136,6 +149,8 @@ def cost_by_kind_since(iso_since: str) -> list[dict]:
 # --- system flags ------------------------------------------------------------
 
 
+# Insert or reactivate a flag row. ON CONFLICT updates set_at, metadata,
+# and re-activates a previously cleared flag.
 def set_flag(flag_name: str, *, metadata: dict | None = None, set_at: datetime) -> None:
     init_orchestrator_schema()
     with connection() as conn:
@@ -152,6 +167,7 @@ def set_flag(flag_name: str, *, metadata: dict | None = None, set_at: datetime) 
         )
 
 
+# Mark a flag inactive. Keeps the row for audit; sets cleared_at.
 def clear_flag(flag_name: str, *, cleared_at: datetime) -> None:
     init_orchestrator_schema()
     with connection() as conn:
@@ -161,6 +177,7 @@ def clear_flag(flag_name: str, *, cleared_at: datetime) -> None:
         )
 
 
+# Return every active flag for the digest footer + status CLI.
 def list_active_flags() -> list[dict]:
     init_orchestrator_schema()
     with connection() as conn:
@@ -173,6 +190,8 @@ def list_active_flags() -> list[dict]:
 # --- dead letters ------------------------------------------------------------
 
 
+# Stable id for a dead-letter row keyed on (kind, article, ticker). Lets
+# repeated failures for the same pair update the same row.
 def dead_letter_event_id(kind: str, article_event_id: str | None, ticker: str | None) -> str:
     return event_id({
         "kind": "dead_letter", "subkind": kind,
@@ -180,6 +199,9 @@ def dead_letter_event_id(kind: str, article_event_id: str | None, ticker: str | 
     })
 
 
+# Insert a new dead-letter row or bump attempt_count on a repeat failure.
+# Second failure transitions status to 'abandoned' so the orchestrator can
+# stop retrying and set the dead-letter system flag.
 def record_dead_letter(
     *,
     kind: str,
@@ -222,6 +244,8 @@ def record_dead_letter(
     return eid
 
 
+# Remove a dead-letter row on successful retry. Called from each pipeline
+# right after a successful (re)run.
 def clear_dead_letter(event_id_str: str) -> None:
     """Remove on successful retry."""
     init_orchestrator_schema()
@@ -229,6 +253,8 @@ def clear_dead_letter(event_id_str: str) -> None:
         conn.execute("DELETE FROM dead_letters WHERE event_id = ?", (event_id_str,))
 
 
+# List 'pending' dead-letter rows for retry-dead-letters. Optional filter
+# on kind so the retry CLI can target one pipeline at a time.
 def pending_dead_letters(kind: str | None = None) -> list[dict]:
     init_orchestrator_schema()
     sql = "SELECT * FROM dead_letters WHERE status = 'pending'"
@@ -241,6 +267,7 @@ def pending_dead_letters(kind: str | None = None) -> list[dict]:
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
 
+# List recent dead-letter rows (pending + abandoned) for the status CLI.
 def all_dead_letters(limit: int = 50) -> list[dict]:
     init_orchestrator_schema()
     with connection() as conn:

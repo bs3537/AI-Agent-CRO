@@ -13,6 +13,9 @@ from ..db import connection
 from ..identity import event_id
 from .schema import MatchedWarningSign, RedTeamResult
 
+# DDL for the red_team_passes table. UNIQUE on (score, catalog_version)
+# triggers a fresh pass when the catalog evolves while keeping prior
+# passes queryable for audit.
 RED_TEAM_SCHEMA = """
 CREATE TABLE IF NOT EXISTS red_team_passes (
     event_id              TEXT PRIMARY KEY,
@@ -38,11 +41,13 @@ CREATE INDEX IF NOT EXISTS idx_red_team_ran_at     ON red_team_passes(ran_at);
 """
 
 
+# Create the red_team_passes table. Safe to call repeatedly.
 def init_red_team_schema() -> None:
     with connection() as conn:
         conn.executescript(RED_TEAM_SCHEMA)
 
 
+# Stable id for a red-team pass, keyed on (score, catalog_version).
 def red_team_event_id(score_event_id: str, catalog_version: str) -> str:
     return event_id({
         "kind": "red_team",
@@ -51,6 +56,8 @@ def red_team_event_id(score_event_id: str, catalog_version: str) -> str:
     })
 
 
+# Persist one red-team pass row in a single transaction. Idempotent on
+# (score, catalog_version) via the UNIQUE constraint.
 def save_red_team_pass(
     *,
     score_event_id: str,
@@ -93,6 +100,9 @@ def save_red_team_pass(
     return eid
 
 
+# Pick score rows with composite ≥ t2 that lack a red-team pass at the
+# current catalog_version. Joined with articles so the candidate builder
+# has all the text it needs in one query.
 def pick_candidates(t2: float, catalog_version: str, limit: int | None = None):
     """Scores above T₂ that have no red-team pass at this catalog_version."""
     init_red_team_schema()
@@ -122,6 +132,8 @@ def pick_candidates(t2: float, catalog_version: str, limit: int | None = None):
         return conn.execute(sql, args).fetchall()
 
 
+# Read recent red-team passes for the CLI's `show` command. Optional
+# filter on ticker + minimum severity.
 def recent_passes(
     *,
     ticker: str | None = None,
@@ -150,6 +162,9 @@ def recent_passes(
         return conn.execute(sql, args).fetchall()
 
 
+# Count citations per warning_sign id at a given catalog_version. Feeds
+# Phase 7 library coverage analysis — patterns with zero citations are
+# UNUSED candidates for removal or rephrasing.
 def library_coverage(catalog_version: str) -> dict[str, int]:
     """How many times each warning-sign id has been cited at this catalog_version."""
     init_red_team_schema()

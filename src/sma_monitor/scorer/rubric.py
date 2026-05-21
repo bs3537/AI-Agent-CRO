@@ -7,6 +7,9 @@ sync when tuning.
 """
 from __future__ import annotations
 
+# The full rubric Claude sees as part of the system prompt. Editing this
+# changes scoring behavior — bump MULTIPLIERS_VERSION when you change it so
+# existing scores get cleanly recomputed at the new rubric.
 RUBRIC_TEXT = """\
 THREE AXES (each 0–10, decimals allowed):
 

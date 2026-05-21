@@ -14,6 +14,9 @@ from .sidecar import load_all_sidecars
 from .store import latest_positions
 
 
+# Inner-join positions against sidecars to produce Holdings. Returns
+# (holdings, tickers_missing_sidecar) so callers can surface gaps to the
+# user without silently dropping positions.
 def join(
     positions: Sequence[Position],
     sidecars: dict[str, Sidecar],
@@ -56,12 +59,18 @@ def join(
     return holdings, missing
 
 
+# Derive (nearest_catalyst_days, has_overdue_catalyst) from unresolved
+# catalysts. Feeds Phase 3's catalyst_proximity_boost — buckets #1/#2 get
+# +50% within 14d and +100% within 3d.
 def _proximity(catalysts: list[Catalyst], today: date) -> tuple[int | None, bool]:
     future_days = [(c.date - today).days for c in catalysts if (c.date - today).days >= 0]
     overdue = any((c.date - today).days < 0 for c in catalysts)
     return (min(future_days) if future_days else None), overdue
 
 
+# Convenience wrapper used by the CLI and by every downstream phase: pull
+# the latest position snapshot, join it with current sidecars, and return
+# the result plus pulled_at so callers can flag stale data.
 def latest_joined(
     today: date | None = None,
 ) -> tuple[list[Holding], list[str], datetime | None]:

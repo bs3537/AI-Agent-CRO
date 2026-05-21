@@ -13,6 +13,9 @@ from ..portfolio.schema import Holding, Sidecar
 from .buckets import Bucket
 
 
+# Deduplicate the holding's identifiers in priority order: ticker first,
+# then company name, then aliases/brands/products. Order matters because
+# callers truncate the list when building queries.
 def entity_terms(h: Holding | Sidecar) -> list[str]:
     """Identifiers for the holding, deduped, in priority order.
 
@@ -34,6 +37,9 @@ def entity_terms(h: Holding | Sidecar) -> list[str]:
     return out
 
 
+# Build the per-holding query string: top-N entity terms followed by top-M
+# bucket search terms. Truncated to keep Exa queries focused — long queries
+# can dilute neural-search relevance.
 def per_holding_query(
     holding: Holding | Sidecar,
     bucket: Bucket,
@@ -46,6 +52,8 @@ def per_holding_query(
     return f"{entity} {bucket_q}".strip()
 
 
+# Build a sector-scope query (no entity terms). Used for #11 policy and
+# #12 microstructure buckets where the news is industry-wide, not name-specific.
 def sector_query(
     bucket: Bucket,
     *,

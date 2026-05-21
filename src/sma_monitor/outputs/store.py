@@ -13,6 +13,9 @@ from datetime import datetime
 from ..db import connection
 from ..identity import event_id
 
+# DDL for the Phase 5 tables. alerts.suppressed=1 rows are kept for audit
+# so the suppression rule can be tuned in Phase 7 if it's too aggressive
+# or too permissive.
 OUTPUTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS alerts (
     event_id            TEXT PRIMARY KEY,
@@ -65,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_missed_ticker ON missed_events(ticker);
 """
 
 
+# Create the Phase 5 tables. Safe to call repeatedly.
 def init_outputs_schema() -> None:
     with connection() as conn:
         conn.executescript(OUTPUTS_SCHEMA)
@@ -73,14 +77,19 @@ def init_outputs_schema() -> None:
 # --- ID helpers --------------------------------------------------------------
 
 
+# Stable id for an alert, keyed only on the score_event_id so a single
+# score never produces two competing alert rows.
 def alert_event_id(score_event_id: str) -> str:
     return event_id({"kind": "alert", "score_event_id": score_event_id})
 
 
+# Stable id for a daily digest, keyed on the date string.
 def digest_event_id(date: str) -> str:
     return event_id({"kind": "digest", "date": date})
 
 
+# Stable id for a feedback mark — includes the timestamp so re-marking the
+# same target writes a new row (the previous mark is replaced via REPLACE).
 def feedback_event_id(target_id: str, mark: str, marked_at: datetime) -> str:
     return event_id({
         "kind": "feedback", "target_id": target_id,
@@ -88,6 +97,7 @@ def feedback_event_id(target_id: str, mark: str, marked_at: datetime) -> str:
     })
 
 
+# Stable id for a missed-event entry, keyed on (ticker, description, time).
 def missed_event_id(ticker: str | None, description: str, recorded_at: datetime) -> str:
     return event_id({
         "kind": "missed_event", "ticker": ticker,
@@ -98,6 +108,8 @@ def missed_event_id(ticker: str | None, description: str, recorded_at: datetime)
 # --- Reads -------------------------------------------------------------------
 
 
+# Find scores ≥ min_composite that don't yet have an alert row. LEFT-JOINs
+# red_team_passes so the alert builder gets both pieces in one query.
 def pick_alert_candidates(min_composite: float):
     """Scores above min_composite that don't yet have an alert row.
 
@@ -131,6 +143,8 @@ def pick_alert_candidates(min_composite: float):
         return conn.execute(sql, (min_composite,)).fetchall()
 
 
+# Recent non-suppressed alerts for (ticker, bucket) within the window.
+# Used to enforce PLAN §5's "escalate to re-alert" rule.
 def recent_alerts_for_suppression(ticker: str, bucket_id: int, since_iso: str):
     """Alerts for same (ticker, bucket) within the suppression window."""
     sql = """
@@ -143,6 +157,8 @@ def recent_alerts_for_suppression(ticker: str, bucket_id: int, since_iso: str):
         return conn.execute(sql, (ticker, bucket_id, since_iso)).fetchall()
 
 
+# Persist one alert row in a single transaction. suppressed=1 rows are kept
+# so the suppression rule can be tuned later.
 def save_alert(
     *,
     score_event_id: str,
@@ -180,6 +196,8 @@ def save_alert(
     return eid
 
 
+# Persist (or replace) the digest row for one date. INSERT OR REPLACE so
+# re-running the digest assembler overwrites prior versions for that date.
 def save_digest(
     *,
     date: str,
@@ -208,6 +226,8 @@ def save_digest(
     return did
 
 
+# Read recent alerts for the CLI's `show-alerts` command. Suppressed rows
+# hidden by default; pass include_suppressed=True to surface them.
 def recent_alerts(*, ticker: str | None = None, limit: int = 30, include_suppressed: bool = False):
     init_outputs_schema()
     sql = "SELECT * FROM alerts WHERE 1=1"
@@ -223,6 +243,8 @@ def recent_alerts(*, ticker: str | None = None, limit: int = 30, include_suppres
         return conn.execute(sql, args).fetchall()
 
 
+# Pull every score row for one calendar day joined with article + red-team.
+# Feeds the digest assembler's "today's events" section.
 def todays_digest_events(date_iso: str):
     """All scores for one calendar day, joined with article + red team."""
     init_outputs_schema()
@@ -244,6 +266,8 @@ def todays_digest_events(date_iso: str):
         return conn.execute(sql, (date_iso,)).fetchall()
 
 
+# Per-bucket count of distinct tickers hit today. Feeds the digest's risk
+# concentration section (highlights buckets that hit ≥2 holdings).
 def bucket_ticker_hits_today(date_iso: str) -> list[tuple[int, int]]:
     """Top buckets by distinct-ticker count for today (digest concentrations)."""
     sql = """
@@ -258,6 +282,8 @@ def bucket_ticker_hits_today(date_iso: str) -> list[tuple[int, int]]:
     return [(r["bucket_id"], r["n"]) for r in rows]
 
 
+# Persist one feedback mark in a single transaction. Uses INSERT OR REPLACE
+# so re-marking the same (target, mark, time) overwrites cleanly.
 def save_feedback(
     *,
     target_id: str,
@@ -284,6 +310,7 @@ def save_feedback(
     return fid
 
 
+# Persist one missed-event record. Feeds Phase 7 library-growth candidates.
 def save_missed(
     *,
     ticker: str | None,
@@ -312,6 +339,7 @@ def save_missed(
     return mid
 
 
+# List recent feedback marks for the CLI's `feedback-list` view.
 def list_feedback(limit: int = 50):
     init_outputs_schema()
     with connection() as conn:
@@ -320,6 +348,7 @@ def list_feedback(limit: int = 50):
         ).fetchall()
 
 
+# List recent missed-event entries for the CLI's `feedback-list` view.
 def list_missed(limit: int = 50):
     init_outputs_schema()
     with connection() as conn:

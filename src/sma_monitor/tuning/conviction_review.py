@@ -14,9 +14,13 @@ from datetime import datetime, timezone
 from ..portfolio.joined import latest_joined
 from ..portfolio.sidecar import SIDECAR_DIR
 
+# Default age beyond which a sidecar is considered stale and surfaces in
+# the tuning report for re-validation.
 STALE_DAYS_THRESHOLD = 90
 
 
+# Per-tier (1..5): count of holdings + total %NAV + ticker list. Helps
+# spot tier inflation (everything ends up tier 4-5) or tier compression.
 def tier_distribution() -> list[dict]:
     """For each tier (1–5): n_holdings + total %NAV."""
     holdings, _missing, _ = latest_joined()
@@ -34,6 +38,9 @@ def tier_distribution() -> list[dict]:
     return [by_tier[t] for t in sorted(by_tier)]
 
 
+# Identify sidecars whose files haven't been modified in `threshold_days`
+# or longer. mtime is the staleness signal — old mtime → tier probably
+# not re-validated against current reality.
 def stale_sidecars(*, threshold_days: int = STALE_DAYS_THRESHOLD) -> list[dict]:
     """Sidecar files not modified in > threshold_days. Excludes `_`-prefixed."""
     if not SIDECAR_DIR.exists():
@@ -55,6 +62,8 @@ def stale_sidecars(*, threshold_days: int = STALE_DAYS_THRESHOLD) -> list[dict]:
     return out
 
 
+# Render the conviction-review section: tier distribution table +
+# stale-sidecar list. Used by the tuning report.
 def render_tier_markdown(
     distribution: Sequence[dict],
     stale: Sequence[dict],

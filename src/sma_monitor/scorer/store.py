@@ -18,6 +18,9 @@ from ..db import connection
 from ..identity import event_id
 from .schema import CompositeScore
 
+# DDL for the scores table. UNIQUE on (article, ticker, multipliers_version)
+# means bumping the version triggers a fresh row rather than overwriting —
+# old scores stay queryable for audit.
 SCORES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS scores (
     event_id            TEXT PRIMARY KEY,
@@ -53,11 +56,15 @@ CREATE INDEX IF NOT EXISTS idx_scores_inputs_hash    ON scores(inputs_hash);
 """
 
 
+# Create the scores table. Safe to call repeatedly.
 def init_scores_schema() -> None:
     with connection() as conn:
         conn.executescript(SCORES_SCHEMA)
 
 
+# Compute the inputs hash that gates re-scoring. Includes every input that
+# meaningfully changes the composite: article id, holding context, primary
+# bucket, and the multipliers version.
 def inputs_hash(
     *,
     article_event_id: str,
@@ -82,6 +89,7 @@ def inputs_hash(
     })
 
 
+# Stable id for a score row, derived from (article, ticker, inputs_hash).
 def score_event_id(article_event_id: str, ticker: str, inputs_hash_str: str) -> str:
     return event_id({
         "kind": "score",
@@ -91,6 +99,8 @@ def score_event_id(article_event_id: str, ticker: str, inputs_hash_str: str) -> 
     })
 
 
+# Persist one CompositeScore row in a single transaction. Idempotent on
+# (article, ticker, multipliers_version) via the UNIQUE constraint.
 def save_score(score: CompositeScore) -> str:
     """Idempotent on (article, ticker, multipliers_version)."""
     init_scores_schema()
@@ -130,6 +140,9 @@ def save_score(score: CompositeScore) -> str:
     return eid
 
 
+# Find every (article, ticker) pair that lacks a score row at the given
+# multipliers_version. Joins articles × article_tickers and pre-computes
+# the primary bucket (highest-confidence tag) for the scorer.
 def unscored_pairs(multipliers_version: str, limit: int | None = None):
     """Article × ticker pairs that lack a score row at the current multipliers_version.
 
@@ -168,6 +181,9 @@ def unscored_pairs(multipliers_version: str, limit: int | None = None):
         return conn.execute(sql, args).fetchall()
 
 
+# Return every bucket tag for an article except the primary one. Used to
+# enrich the ScoreCandidate with secondary_buckets so the LLM sees the
+# full multi-bucket context.
 def secondary_buckets_for(article_event_id: str, exclude_bucket_id: int):
     with connection() as conn:
         return conn.execute(
@@ -177,6 +193,8 @@ def secondary_buckets_for(article_event_id: str, exclude_bucket_id: int):
         ).fetchall()
 
 
+# Read recent scores for the CLI's `show` command. Optional filters on
+# ticker, band, and minimum composite.
 def recent_scores(
     *,
     ticker: str | None = None,

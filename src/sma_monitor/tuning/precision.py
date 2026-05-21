@@ -17,9 +17,13 @@ from datetime import datetime, timedelta, timezone
 
 from ..db import connection
 
+# Minimum marked-alerts a bucket needs before precision is treated as a
+# reliable signal. Below this, the weight tuner refuses to suggest changes.
 MIN_MARKED_FOR_SIGNAL = 5
 
 
+# Compute precision (useful / (useful + noise)) per bucket over a rolling
+# window. Returns one row per bucket that had at least one alert in window.
 def alert_precision_by_bucket(*, days: int = 14) -> list[dict]:
     """One row per bucket that had at least one alert in the window."""
     since_iso = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -64,6 +68,7 @@ def alert_precision_by_bucket(*, days: int = 14) -> list[dict]:
     return out
 
 
+# Render the precision rows as a markdown table for the tuning report.
 def render_precision_markdown(rows: Sequence[dict], days: int) -> str:
     if not rows:
         return f"*No alerts in the last {days} days.*"

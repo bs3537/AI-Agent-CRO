@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from ..outputs.store import list_missed
 
 
+# Turn a free-text missed-event description into a kebab-case slug suitable
+# for use as a candidate warning-sign id.
 def _slugify(text: str, max_len: int = 40) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9]+", "_", text)
@@ -23,6 +25,8 @@ def _slugify(text: str, max_len: int = 40) -> str:
     return text[:max_len] or "candidate"
 
 
+# Pull missed-event rows recorded within the window and convert each into
+# a candidate dict ready for YAML rendering.
 def library_growth_candidates(*, days: int = 90) -> list[dict]:
     """Missed events within window, in order of recording (oldest first)."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -48,6 +52,8 @@ def library_growth_candidates(*, days: int = 90) -> list[dict]:
     return out
 
 
+# Render one candidate as a draft catalog.yaml block. Two TODOs the user
+# MUST fill in before pasting: keywords + invalidator.
 def render_candidate_yaml(c: dict) -> str:
     """Draft warning-sign YAML block — user must complete keywords + invalidator."""
     bucket = c["bucket_id_guess"] if c["bucket_id_guess"] is not None else "?  # FILL IN"
@@ -70,6 +76,8 @@ def render_candidate_yaml(c: dict) -> str:
     )
 
 
+# Render the full library-growth section for the tuning report — header
+# + each candidate's draft YAML inside a markdown code fence.
 def render_candidates_markdown(candidates: Sequence[dict]) -> str:
     if not candidates:
         return ("*No missed events recorded — nothing to add to the library. "

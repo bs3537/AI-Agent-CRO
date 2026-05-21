@@ -30,9 +30,14 @@ from .flags import clear_flag, set_flag
 
 log = logging.getLogger("sma_monitor.orchestrator.pipeline")
 
+# Refresh threshold for the positions snapshot. Anything older than this
+# triggers a Flex pull at the start of the cycle.
 POSITION_STALE_HOURS = 12  # refresh if last pull is older than this
 
 
+# Refresh the positions snapshot if it's older than POSITION_STALE_HOURS
+# (or `force`). Sets the stale_positions flag on failure rather than
+# crashing — downstream phases use the last known positions.
 def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None) -> dict:
     """Return {'refreshed': bool, 'reason': str, 'pulled_at': iso|None}."""
     now = now or datetime.now(timezone.utc)
@@ -76,6 +81,9 @@ def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None)
                 "pulled_at": last_pulled_at.isoformat() if last_pulled_at else None}
 
 
+# Execute one full sequential pass through the agent: positions → news →
+# scoring → red team → alerts → optional digest. Returns a state dict
+# capturing every stage's output for logging.
 def run_one_cycle(
     *,
     offline: bool = False,
@@ -152,6 +160,8 @@ def run_one_cycle(
     return state
 
 
+# Render a DegradeState as a plain dict for inclusion in the logged cycle
+# state. Frozen dataclasses don't serialize cleanly with default=str.
 def _degrade_dict(d: DegradeState) -> dict:
     return {
         "spent_usd": d.spent_usd,

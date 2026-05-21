@@ -17,6 +17,8 @@ from collections.abc import Sequence
 
 from ..scorer.multipliers import BUCKET_WEIGHTS, T, T2
 
+# Tuning bounds + ratios. Floor/ceiling clamp the suggested weight so a
+# single bad window can't drive a bucket to extreme values.
 FLOOR = 0.30
 CEILING = 1.20
 REDUCE_RATIO = 0.85
@@ -27,6 +29,9 @@ MIN_MARKED_FOR_INCREASE = 10
 MIN_MARKED_FOR_REDUCTION = 5
 
 
+# Derive bucket-weight suggestions from per-bucket precision rows. Two
+# rules: noisy buckets get cut 15%, high-signal buckets get bumped 10%.
+# Conservative on increase (needs more marks) than on decrease.
 def suggest_weight_adjustments(precision_rows: Sequence[dict]) -> list[dict]:
     suggestions: list[dict] = []
     for r in precision_rows:
@@ -65,6 +70,9 @@ def suggest_weight_adjustments(precision_rows: Sequence[dict]) -> list[dict]:
     return suggestions
 
 
+# Text-only recommendations for T / T₂ tuning. Threshold tuning needs
+# more judgment than a precision table can encode — surface as guidance
+# rather than concrete numeric suggestions.
 def threshold_recommendations(precision_rows: Sequence[dict]) -> list[str]:
     """Text-only recommendations for T / T₂ tuning."""
     recs: list[str] = []
@@ -99,6 +107,8 @@ def threshold_recommendations(precision_rows: Sequence[dict]) -> list[str]:
     return recs
 
 
+# Render weight + threshold suggestions as a markdown block for the
+# tuning report. Names the exact file to edit so the user can act fast.
 def render_suggestions_markdown(
     suggestions: Sequence[dict],
     threshold_recs: Sequence[str],

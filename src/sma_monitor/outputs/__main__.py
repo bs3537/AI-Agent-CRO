@@ -28,6 +28,8 @@ from .store import (
 from ..db import connection
 
 
+# CLI: process every score ≥ T into an alert decision (fire/suppress).
+# --dry-run renders + records but doesn't dispatch via channels.
 def cmd_alerts(args, log):
     channels = build_channels(prefer_stdout=False)
     res = run_alerts(
@@ -39,6 +41,8 @@ def cmd_alerts(args, log):
     return 0
 
 
+# CLI: assemble + dispatch the day's digest. --with-narrative invokes
+# Opus (or the template fallback) for the synthesis paragraph.
 def cmd_digest(args, log):
     channels = build_channels(prefer_stdout=False)
     if args.print:
@@ -53,6 +57,7 @@ def cmd_digest(args, log):
     return 0
 
 
+# CLI: print recent alerts to stdout. --all includes suppressed rows.
 def cmd_show_alerts(args, log):
     rows = recent_alerts(
         ticker=args.ticker,
@@ -72,6 +77,7 @@ def cmd_show_alerts(args, log):
     return 0
 
 
+# CLI: print the rendered markdown of one day's digest (default: latest).
 def cmd_show_digest(args, log):
     init_outputs_schema()
     with connection() as conn:
@@ -90,6 +96,7 @@ def cmd_show_digest(args, log):
     return 0
 
 
+# CLI: mark a past event_id (alert/score/digest_event) as useful or noise.
 def cmd_mark(args, log):
     fid = fb.mark(args.event_id, args.mark, kind=args.kind, note=args.note)
     log.info("feedback_saved", extra={"feedback_id": fid, "target": args.event_id,
@@ -97,6 +104,8 @@ def cmd_mark(args, log):
     return 0
 
 
+# CLI: record an event the agent should have surfaced but didn't. Feeds
+# Phase 7 library-growth candidates.
 def cmd_mark_missed(args, log):
     mid = fb.mark_missed(
         ticker=args.ticker,
@@ -110,6 +119,8 @@ def cmd_mark_missed(args, log):
     return 0
 
 
+# CLI: print all feedback marks + missed events. Used to audit what the
+# user has been telling the agent before invoking Phase 7 tuning.
 def cmd_feedback_list(args, log):
     print("--- feedback (useful/noise marks) ---")
     rows = list_feedback(limit=args.limit)
@@ -134,6 +145,7 @@ def cmd_feedback_list(args, log):
     return 0
 
 
+# Phase 5 CLI entry point. Wires all subcommands to their handlers.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

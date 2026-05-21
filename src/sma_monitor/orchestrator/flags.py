@@ -18,14 +18,18 @@ from datetime import datetime, timezone
 from .store import clear_flag as _clear, list_active_flags, set_flag as _set
 
 
+# Activate a named flag, attaching optional metadata. Replaces any prior
+# value for the same flag and stamps the current time as set_at.
 def set_flag(name: str, *, metadata: dict | None = None) -> None:
     _set(name, metadata=metadata, set_at=datetime.now(timezone.utc))
 
 
+# Mark a flag inactive. Stamps cleared_at; the row stays for audit.
 def clear_flag(name: str) -> None:
     _clear(name, cleared_at=datetime.now(timezone.utc))
 
 
+# Return every currently-active flag for the digest footer and the status CLI.
 def get_active_flags() -> list[dict]:
     """For digest footer + status CLI."""
     return list_active_flags()

@@ -14,14 +14,19 @@ from typing import Any
 
 import httpx
 
+# Exa API endpoints. /search is the only one we use in v1.
 EXA_BASE = "https://api.exa.ai"
 EXA_SEARCH = f"{EXA_BASE}/search"
 
 
+# Exception raised for any non-200 response or unparseable body. Caller
+# catches this to record an error poll row and continue the cycle.
 class ExaError(RuntimeError):
     pass
 
 
+# One parsed Exa search hit. Keeps the raw dict around so the pipeline
+# can persist the full response for replay / audit.
 @dataclass
 class ExaResult:
     title: str
@@ -32,6 +37,9 @@ class ExaResult:
     raw: dict[str, Any]
 
 
+# Execute one Exa /search call and return the parsed results. Optional
+# start/end date filters narrow the window; the pipeline uses them to
+# avoid re-discovering the same long-tail articles each poll.
 def search(
     query: str,
     *,
@@ -68,14 +76,19 @@ def search(
             client.close()
 
 
+# Load a saved Exa response JSON from disk. Mirrors the live `search()`
+# return type so the pipeline can swap providers transparently.
 def load_response_file(path: Path) -> list[ExaResult]:
     return _parse_response(json.loads(path.read_text()))
 
 
+# Format a datetime as Exa's expected ISO-Z string (no microsec, no +00:00).
 def _iso_z(dt: datetime) -> str:
     return dt.isoformat().replace("+00:00", "Z")
 
 
+# Parse a raw Exa response body into a list of ExaResults. Tolerates missing
+# fields by defaulting to empty strings / None rather than raising.
 def _parse_response(body: dict[str, Any]) -> list[ExaResult]:
     out: list[ExaResult] = []
     for r in body.get("results", []):
@@ -92,6 +105,8 @@ def _parse_response(body: dict[str, Any]) -> list[ExaResult]:
     return out
 
 
+# Parse an ISO-8601 datetime string, accepting Exa's `Z` suffix variant.
+# Returns None if missing or unparseable so the field stays optional.
 def _parse_dt(s: str | None) -> datetime | None:
     if not s:
         return None

@@ -24,9 +24,14 @@ from .tagger import match_tickers, tag_text
 
 log = logging.getLogger("sma_monitor.news.pipeline")
 
+# Signature shared by live + fixture providers — let the pipeline swap
+# them without knowing which source is in use.
 Provider = Callable[[str, int, "datetime | None"], list[ExaResult]]
 
 
+# Run one full poll cycle across (holdings × per_holding buckets) + sector
+# buckets. skip_bucket_ids is the Phase 6 cost-cascade hook — pass the
+# ids to drop (10/11 at 85%, 12 at 95%) when budget pressure is on.
 def poll(
     *,
     api_key: str | None,
@@ -101,6 +106,8 @@ def poll(
     }
 
 
+# Pick the right search provider: a fixture replay when from_file is set,
+# otherwise live Exa. Errors loudly if neither a key nor a fixture is provided.
 def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
     if fixture:
         cached = load_response_file(fixture)
@@ -121,6 +128,9 @@ def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
     return live_provider
 
 
+# Execute one (bucket, holding) or (bucket, None) query: build the query
+# string, call the provider, persist results, and record the poll row.
+# Returns the count of newly-discovered articles.
 def _run_one_query(
     *,
     bucket: Bucket,
@@ -171,6 +181,9 @@ def _run_one_query(
     return n_new
 
 
+# Persist one Exa result: ticker-match, bucket-tag, and upsert via the store.
+# Includes two safe fallbacks — if matching returns nothing, fall back to the
+# query's originating ticker/bucket so the article still flows downstream.
 def _store_one(
     res: ExaResult,
     *,
@@ -211,6 +224,8 @@ def _store_one(
     return is_new
 
 
+# Extract the lede (first sentence) from a longer excerpt, with a hard
+# character cap. Used to keep stored excerpts bounded.
 def _lede(text: str, max_len: int = 200) -> str:
     """First sentence or first N chars — used for article_event_id and excerpt."""
     text = (text or "").strip()

@@ -24,6 +24,7 @@ from .query import per_holding_query, sector_query
 from .store import bucket_activity, init_news_schema, recent_articles
 
 
+# CLI: run one news poll cycle. Returns 2 on missing creds, 0 otherwise.
 def cmd_poll(args, log):
     try:
         res = run_poll(
@@ -41,6 +42,7 @@ def cmd_poll(args, log):
     return 0
 
 
+# CLI: print recent articles in a tabular view (tier, buckets, tickers, title).
 def cmd_show(args, log):
     rows = recent_articles(ticker=args.ticker, bucket_id=args.bucket, limit=args.limit)
     if not rows:
@@ -56,6 +58,7 @@ def cmd_show(args, log):
     return 0
 
 
+# CLI: print the bucket taxonomy in compact form (id, tier, scope, name).
 def cmd_show_buckets(args, log):
     buckets = load_buckets()
     print(f"{'ID':>3}  {'TIER':<4}  {'SCOPE':<13}  {'TERMS':>5}  NAME")
@@ -67,6 +70,8 @@ def cmd_show_buckets(args, log):
     return 0
 
 
+# CLI: dry-run that prints the queries the next poll would issue. Useful
+# for inspecting recall before burning Exa quota.
 def cmd_show_queries(args, log):
     holdings, _, _ = latest_joined()
     if not holdings:
@@ -87,6 +92,8 @@ def cmd_show_queries(args, log):
     return 0
 
 
+# CLI: bucket-activity audit — articles per bucket over the last N days,
+# flagging silent buckets (probable ingestion gaps).
 def cmd_coverage(args, log):
     counts = bucket_activity(days=args.days)
     buckets = load_buckets()
@@ -98,6 +105,7 @@ def cmd_coverage(args, log):
     return 0
 
 
+# Phase 2 CLI entry point. Wires subcommands to handlers.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

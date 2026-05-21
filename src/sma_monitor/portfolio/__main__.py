@@ -28,6 +28,8 @@ from .sidecar import load_all_sidecars
 from .store import init_portfolio_schema, latest_positions, save_pull
 
 
+# CLI: fetch a Flex statement (live or from file), parse, persist. Returns
+# 0 on success, 1 on Flex failure, 2 on missing credentials.
 def cmd_pull(args: argparse.Namespace, log: logging.Logger) -> int:
     if args.from_file:
         log.info("flex_load_from_file", extra={"path": args.from_file})
@@ -70,6 +72,7 @@ def cmd_pull(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
+# CLI: print the latest pull's positions table to stdout.
 def cmd_show(args: argparse.Namespace, log: logging.Logger) -> int:
     positions, pulled_at = latest_positions()
     if pulled_at is None:
@@ -86,6 +89,8 @@ def cmd_show(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
+# CLI: print the joined Holding view (Position ⨝ Sidecar) and list any
+# positions missing a sidecar so the user can fix the gap.
 def cmd_show_joined(args: argparse.Namespace, log: logging.Logger) -> int:
     holdings, missing, pulled_at = latest_joined()
     if pulled_at is None:
@@ -113,6 +118,8 @@ def cmd_show_joined(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
+# CLI: validate every sidecar YAML and warn about unresolved catalysts whose
+# dates are in the past. Implements PLAN §1's sidecar maintenance protocol.
 def cmd_validate(args: argparse.Namespace, log: logging.Logger) -> int:
     try:
         scs = load_all_sidecars()
@@ -139,6 +146,7 @@ def cmd_validate(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
+# Phase 1 CLI entry point. Wires the four subcommands to their handlers.
 def main(argv: list[str] | None = None) -> int:
     ensure_dirs()
     setup_logging(settings.log_level)

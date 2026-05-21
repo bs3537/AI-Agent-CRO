@@ -20,6 +20,8 @@ from datetime import datetime
 from ..db import connection
 from ..identity import event_id
 
+# DDL for the Phase 2 tables. The many-to-many tables let one article live
+# under multiple tickers and buckets without duplicate top-level rows.
 NEWS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
     event_id      TEXT PRIMARY KEY,
@@ -66,16 +68,21 @@ CREATE INDEX IF NOT EXISTS idx_news_polls_started ON news_polls(started_at);
 """
 
 
+# Create the Phase 2 tables. Safe to call repeatedly.
 def init_news_schema() -> None:
     with connection() as conn:
         conn.executescript(NEWS_SCHEMA)
 
 
+# Stable id for an article. Same url+title+lede always produces the same id
+# so the pipeline can dedup re-discovered articles transparently.
 def article_event_id(url: str, title: str, lede: str) -> str:
     """sha256 of url+title+lede. Idempotent dedup hinge."""
     return event_id({"url": url, "title": title, "lede": lede})
 
 
+# Stable id for a poll attempt — keyed on the start time so duplicate
+# attempts at the same second won't write two rows.
 def poll_event_id(ticker: str | None, bucket_id: int | None, started_at: datetime) -> str:
     return event_id({
         "kind": "news_poll",
@@ -85,6 +92,8 @@ def poll_event_id(ticker: str | None, bucket_id: int | None, started_at: datetim
     })
 
 
+# Upsert one article and its (ticker, bucket) edges in a single transaction.
+# Returns (event_id, is_new) so the pipeline can count new-vs-rediscovered hits.
 def save_article(
     *,
     url: str,
@@ -144,6 +153,8 @@ def save_article(
     return eid, is_new
 
 
+# Record one poll attempt (ok or error). Feeds the Phase 5 coverage audit
+# and Phase 7 silent-bucket detection.
 def save_poll_record(
     *,
     ticker: str | None,
@@ -174,6 +185,8 @@ def save_poll_record(
     return pid
 
 
+# Read recent articles for the CLI's `show` command. Optional filters on
+# ticker and bucket_id; returns sqlite rows with joined ticker/bucket lists.
 def recent_articles(
     *,
     ticker: str | None = None,
@@ -210,6 +223,8 @@ def recent_articles(
         return conn.execute(sql, args).fetchall()
 
 
+# Count distinct articles per bucket over the last N days. Feeds the Phase 5
+# digest coverage audit and Phase 7's silent-bucket review.
 def bucket_activity(days: int = 14) -> dict[int, int]:
     """Distinct articles per bucket over the last N days. Feeds Phase 5 audit."""
     init_news_schema()

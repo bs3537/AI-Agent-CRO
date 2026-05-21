@@ -20,6 +20,8 @@ from .pipeline import run_red_team
 from .store import init_red_team_schema, library_coverage, recent_passes
 
 
+# CLI: run the red team over every above-T₂ score lacking a pass at the
+# current catalog_version. Pass --offline to force the heuristic.
 def cmd_run(args, log):
     res = run_red_team(
         api_key=settings.anthropic_api_key,
@@ -30,6 +32,8 @@ def cmd_run(args, log):
     return 0
 
 
+# CLI: print recent red-team passes in a tabular view. Useful for quickly
+# spotting patterns the red team has been citing repeatedly.
 def cmd_show(args, log):
     rows = recent_passes(
         ticker=args.ticker,
@@ -58,6 +62,8 @@ def cmd_show(args, log):
     return 0
 
 
+# CLI: print the warning-signs catalog grouped by bucket. Pass --bucket N
+# to focus on one bucket's entries.
 def cmd_show_catalog(args, log):
     cat = load_catalog()
     print(f"Warning-signs catalog v{cat.catalog_version}  ({len(cat.warning_signs)} entries)")
@@ -78,6 +84,8 @@ def cmd_show_catalog(args, log):
     return 0
 
 
+# CLI: print citation counts per warning-sign id at the current catalog
+# version. Patterns flagged UNUSED are candidates for tuning in Phase 7.
 def cmd_library_coverage(args, log):
     cat = load_catalog()
     counts = library_coverage(cat.catalog_version)
@@ -92,6 +100,7 @@ def cmd_library_coverage(args, log):
     return 0
 
 
+# Phase 4 CLI entry point. Wires the four subcommands to their handlers.
 def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)

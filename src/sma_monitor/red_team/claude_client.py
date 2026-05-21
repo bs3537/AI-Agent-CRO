@@ -14,14 +14,20 @@ from .catalog import Catalog, by_id
 from .prompt import build_system_prompt, build_user_message
 from .schema import MatchedWarningSign, RedTeamCandidate, RedTeamResult
 
+# Same Sonnet 4.6 as the scorer — Opus is reserved for the digest narrative.
 DEFAULT_MODEL = "claude-sonnet-4-6"
+# Slightly larger budget than the scorer to fit the bearish_thesis + matches.
 MAX_TOKENS = 800
 
 
+# Exception raised for any red-team Claude call failure. Caller catches
+# to log + dead-letter the score row.
 class RedTeamClaudeError(RuntimeError):
     pass
 
 
+# Run one red-team pass via Claude. Returns (result, model_used) and
+# records token usage to the Phase 6 cost ledger as a side effect.
 def red_team_with_claude(
     candidate: RedTeamCandidate,
     catalog: Catalog,
@@ -68,6 +74,9 @@ def red_team_with_claude(
     return _parse_result(text, catalog), model
 
 
+# Parse the model's JSON response and enforce voice constraints: drop any
+# matched_warning_signs whose id isn't in the catalog (fabricated ids),
+# enrich the rest with their canonical name + bucket from the catalog.
 def _parse_result(text: str, catalog: Catalog) -> RedTeamResult:
     candidate = text.strip()
     if candidate.startswith("```"):

@@ -20,25 +20,34 @@ import httpx
 
 from .schema import Position
 
+# Flex Web Service URLs. Two endpoints, used in sequence: SendRequest gets a
+# ReferenceCode, then GetStatement is polled until the report is generated.
 FLEX_BASE = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 SEND_URL = f"{FLEX_BASE}/SendRequest"
 GET_URL = f"{FLEX_BASE}/GetStatement"
 API_VERSION = "3"
 
-# IBKR error codes worth handling distinctly.
+# IBKR error codes worth handling distinctly. 1019 means the statement is
+# still generating — caller should keep polling rather than treating as error.
 ERR_STATEMENT_IN_PROGRESS = "1019"
 
 
+# Exception raised for any Flex Web Service failure (HTTP, parse, or empty
+# data). Caller can catch this to skip the cycle and flag stale_positions.
 class FlexError(RuntimeError):
     pass
 
 
+# Container for a successfully retrieved Flex statement: the raw XML body
+# plus the timestamp we received it.
 @dataclass
 class FlexRawStatement:
     xml: str
     pulled_at: datetime
 
 
+# Execute the full Flex two-step protocol: SendRequest, then poll GetStatement
+# until the statement is ready or the deadline expires. Returns the raw XML.
 def fetch_statement(
     token: str,
     query_id: str,
@@ -76,6 +85,8 @@ def fetch_statement(
             client.close()
 
 
+# Replay a saved Flex XML from disk. Mirrors fetch_statement's return type
+# so the pipeline can be exercised offline via `pull --from-file`.
 def load_xml_from_file(path: Path) -> FlexRawStatement:
     """Replay a saved Flex XML — useful for tests and offline runs."""
     return FlexRawStatement(
@@ -87,6 +98,8 @@ def load_xml_from_file(path: Path) -> FlexRawStatement:
 # --- Parsing -----------------------------------------------------------------
 
 
+# Parse a FlexQueryResponse XML body into (positions, NAV). Sums multi-lot
+# rows that share a ticker via _collapse_by_ticker and computes pct_nav.
 def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Position], float]:
     """Parse FlexQueryResponse XML → (positions, NAV).
 
@@ -127,6 +140,7 @@ def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Positio
     return _collapse_by_ticker(positions, nav), nav
 
 
+# Extract (ReferenceCode, Status) from the SendRequest XML response.
 def _parse_send_response(xml_text: str) -> tuple[str, str]:
     root = ET.fromstring(xml_text)
     return (
@@ -135,6 +149,8 @@ def _parse_send_response(xml_text: str) -> tuple[str, str]:
     )
 
 
+# Pull the IBKR ErrorCode from a GetStatement response. Returns None if the
+# body isn't valid XML (treated as a non-error case by the caller).
 def _parse_get_error_code(xml_text: str) -> str | None:
     try:
         root = ET.fromstring(xml_text)
@@ -144,6 +160,9 @@ def _parse_get_error_code(xml_text: str) -> str | None:
     return code or None
 
 
+# Locate the account NAV from one of three possible Flex sections. Tries
+# EquitySummaryInBase first (most templates), then by-date variant, then
+# ChangeInNAV as a fallback. Returns None when no section is present.
 def _extract_nav(root: ET.Element) -> float | None:
     eq = next(iter(root.iter("EquitySummaryInBase")), None)
     if eq is not None:
@@ -167,6 +186,7 @@ def _extract_nav(root: ET.Element) -> float | None:
     return None
 
 
+# Tolerant float parser — returns None for missing/empty/non-numeric input.
 def _to_float(v: str | None) -> float | None:
     if v is None or v == "":
         return None
@@ -176,6 +196,9 @@ def _to_float(v: str | None) -> float | None:
         return None
 
 
+# Combine multiple OpenPosition rows that share a ticker (long+short legs,
+# multi-account lots) into one Position. Recomputes pct_nav against the
+# combined market_value and sorts the result by %NAV descending.
 def _collapse_by_ticker(positions: list[Position], nav: float) -> list[Position]:
     """Sum rows that share a ticker (long+short legs, multi-account lots)."""
     by_ticker: dict[str, Position] = {}

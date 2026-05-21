@@ -14,16 +14,22 @@ from dataclasses import dataclass
 
 from .buckets import Bucket
 
+# Minimum confidence before a bucket tag is kept. Confidence saturates after
+# 5 unique term hits — beyond that, more hits don't add signal.
 MIN_CONFIDENCE = 0.15
 _DENOM_CAP = 5  # Confidence saturates after 5 unique term hits.
 
 
+# One bucket tag for an article: bucket id + computed confidence in [0, 1].
 @dataclass(frozen=True)
 class BucketTag:
     bucket_id: int
     confidence: float
 
 
+# Tag the given text against every bucket's search_terms. Returns a list
+# of (bucket_id, confidence) sorted by descending confidence so the
+# downstream "primary bucket" is the first element.
 def tag_text(text: str, buckets: dict[int, Bucket]) -> list[BucketTag]:
     """Return tags sorted by descending confidence."""
     lowered = (text or "").lower()
@@ -44,6 +50,9 @@ def tag_text(text: str, buckets: dict[int, Bucket]) -> list[BucketTag]:
     return tags
 
 
+# Identify which holdings the article mentions. Tickers use word boundaries
+# (MRNA does not match "merna"); aliases/brands are case-insensitive substring
+# matches because those identifiers are distinctive enough that substring is fine.
 def match_tickers(text: str, holdings_entities: dict[str, list[str]]) -> list[str]:
     """Which holdings does the article mention?
 

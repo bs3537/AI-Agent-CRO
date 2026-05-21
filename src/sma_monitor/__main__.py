@@ -25,6 +25,9 @@ from .red_team.store import init_red_team_schema
 from .scorer.store import init_scores_schema
 
 
+# Bootstrap entry point invoked by `python -m sma_monitor`. Initializes
+# the runtime (logging, dirs, every phase's SQLite schema), verifies
+# event_id generation, and reports which per-phase secrets are missing.
 def main() -> int:
     setup_logging(settings.log_level)
     log = logging.getLogger("sma_monitor.bootstrap")

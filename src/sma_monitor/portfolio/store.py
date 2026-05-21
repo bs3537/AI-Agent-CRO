@@ -16,6 +16,9 @@ from ..db import connection
 from ..identity import event_id
 from .schema import Position
 
+# DDL for the Phase 1 tables. position_pulls keeps the raw Flex XML so a
+# pull can be replayed offline; positions is the normalized per-ticker view
+# referenced by every downstream phase via ticker.
 POSITIONS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS position_pulls (
     pull_id     TEXT PRIMARY KEY,
@@ -43,19 +46,25 @@ CREATE INDEX IF NOT EXISTS idx_positions_pulled_at ON positions(pulled_at);
 """
 
 
+# Create the Phase 1 tables. Safe to call repeatedly (CREATE TABLE IF NOT EXISTS).
 def init_portfolio_schema() -> None:
     with connection() as conn:
         conn.executescript(POSITIONS_SCHEMA)
 
 
+# Stable id for a Flex pull. Keyed on (pulled_at, nav) so re-running the
+# same pull does not produce duplicate rows.
 def pull_event_id(pulled_at: datetime, nav: float) -> str:
     return event_id({"kind": "position_pull", "pulled_at": pulled_at.isoformat(), "nav": nav})
 
 
+# Stable id for one position row within a pull. Keyed on (pull_id, ticker).
 def position_event_id(pull_id: str, ticker: str) -> str:
     return event_id({"kind": "position", "pull_id": pull_id, "ticker": ticker})
 
 
+# Persist a Flex pull and all its position rows in a single transaction.
+# Idempotent on (pulled_at, nav) — replaying the same pull is a no-op.
 def save_pull(
     positions: Iterable[Position],
     *,
@@ -116,6 +125,8 @@ def save_pull(
     return pid
 
 
+# Read the most-recent pull's positions sorted by %NAV desc. Every
+# downstream phase calls this (directly or via joined.latest_joined).
 def latest_positions() -> tuple[list[Position], datetime | None]:
     """Read the most-recent pull's positions, sorted by %NAV desc."""
     init_portfolio_schema()

@@ -9,6 +9,8 @@ from __future__ import annotations
 from .schema import AlertRecord, DigestEvent, DigestSummary
 
 
+# Format the nearest_catalyst_days field for human display. Negative days
+# (overdue) get a label rather than a negative number.
 def _nearest_label(days: int | None) -> str:
     if days is None:
         return "—"
@@ -17,6 +19,8 @@ def _nearest_label(days: int | None) -> str:
     return f"{days}d"
 
 
+# Format the top-3 matched warning signs as a compact "id (fit)" list.
+# Adds "+N" suffix if there are more than 3 matches.
 def _patterns_label(matches: list[dict]) -> str:
     if not matches:
         return "—"
@@ -25,6 +29,9 @@ def _patterns_label(matches: list[dict]) -> str:
     return ", ".join(parts) + extra
 
 
+# Render one AlertRecord as plain text. Mobile-glanceable: title line +
+# context block. Used by every channel — works as SMS body, email body,
+# and as a `### `-prefixed block inside the digest markdown.
 def render_alert(record: AlertRecord) -> str:
     """Plain text. Title line first, then context. Used by all channels."""
     sev = record.severity_of_concern
@@ -70,6 +77,10 @@ def render_alert(record: AlertRecord) -> str:
 # --- Digest markdown ---------------------------------------------------------
 
 
+# Assemble the full digest as markdown. holdings_index keyed by ticker
+# carries the per-holding context needed for headers and the quiet-holdings
+# section. Sections in order: events, quiet holdings, concentrations,
+# coverage audit, system status, optional narrative, feedback footer.
 def render_digest_markdown(summary: DigestSummary, holdings_index: dict[str, dict]) -> str:
     """Assemble the full digest as markdown. holdings_index keyed by ticker."""
     parts: list[str] = []
@@ -193,6 +204,8 @@ def render_digest_markdown(summary: DigestSummary, holdings_index: dict[str, dic
     return "\n".join(parts)
 
 
+# Render one DigestEvent as a markdown list block. Includes scorer axes,
+# rationale, and the red-team pass (if any) for that event.
 def _render_event_block(ev: DigestEvent) -> str:
     f, n, t = ev.axes
     sev_label = f"SEV {ev.severity_of_concern}" if ev.severity_of_concern is not None else "SEV –"

@@ -31,6 +31,8 @@ POLL_INTERVAL_MARKET_SECS = 600         # 10 min
 POLL_INTERVAL_OVERNIGHT_SECS = 3600     # 1 hr
 
 
+# Return True when the given datetime falls within the rough US market
+# trading window on a weekday. UTC-based, not DST-aware.
 def is_market_hours(now: datetime | None = None) -> bool:
     now = now or datetime.now(timezone.utc)
     if now.weekday() >= 5:  # Saturday=5, Sunday=6
@@ -39,10 +41,14 @@ def is_market_hours(now: datetime | None = None) -> bool:
     return MARKET_OPEN_UTC <= t < MARKET_CLOSE_UTC
 
 
+# Return True when the given datetime is on a weekend day (Saturday/Sunday).
 def is_weekend(now: datetime | None = None) -> bool:
     return (now or datetime.now(timezone.utc)).weekday() >= 5
 
 
+# Compute how many seconds the scheduler should sleep before the next cycle.
+# Faster during market hours, slower overnight, double-spaced when the
+# cost cascade has tripped step 2.
 def next_interval_secs(*, reduce_frequency: bool = False, now: datetime | None = None) -> int:
     """Seconds to sleep until the next cycle should kick off."""
     now = now or datetime.now(timezone.utc)
@@ -53,6 +59,9 @@ def next_interval_secs(*, reduce_frequency: bool = False, now: datetime | None =
     return base * 2 if reduce_frequency else base
 
 
+# Return True when the current time is within slack_minutes after the
+# scheduled digest time on a weekday. Used by the run loop to decide
+# whether to include the digest in this cycle.
 def is_digest_window(now: datetime | None = None, *, slack_minutes: int = 30) -> bool:
     """Within slack_minutes after DIGEST_TIME_UTC on a weekday."""
     now = now or datetime.now(timezone.utc)
@@ -64,6 +73,9 @@ def is_digest_window(now: datetime | None = None, *, slack_minutes: int = 30) ->
     return 0 <= delta <= slack_minutes * 60
 
 
+# Emit a crontab snippet for the cron-driven deployment. The user pastes
+# this into `crontab -e` after editing WORKDIR/VENV. DST-naive — tune for
+# your timezone.
 def crontab_lines() -> list[str]:
     """Emit a crontab snippet for the cron-host deployment."""
     return [
@@ -87,6 +99,9 @@ def crontab_lines() -> list[str]:
     ]
 
 
+# Long-running scheduler loop. Wakes, runs one_cycle (including the digest
+# when in the digest window), then sleeps for the next interval. Designed
+# to run under systemd; one_iteration is the test seam.
 def run_loop(
     *,
     offline: bool = False,
