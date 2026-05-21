@@ -1,7 +1,9 @@
 """Phase 6 CLI.
 
-  python -m sma_monitor.orchestrator tick [--offline] [--with-digest] [--news-fixture FILE]
-  python -m sma_monitor.orchestrator run [--offline] [--interval N]
+  python -m sma_monitor.orchestrator collect [--offline]     daily 6 PM ET step
+  python -m sma_monitor.orchestrator dispatch [--offline]    daily 9 PM ET step
+  python -m sma_monitor.orchestrator tick [--offline] [--with-digest]   ad-hoc all-in-one
+  python -m sma_monitor.orchestrator run [--offline]         long-running scheduler
   python -m sma_monitor.orchestrator status
   python -m sma_monitor.orchestrator install-cron
   python -m sma_monitor.orchestrator retry-dead-letters [--offline]
@@ -26,7 +28,7 @@ from .cost import (
     today_spent_usd,
 )
 from .flags import clear_flag, get_active_flags
-from .pipeline import run_one_cycle
+from .pipeline import run_collect_cycle, run_dispatch_cycle, run_one_cycle
 from .schedule import crontab_lines, run_loop
 from .store import (
     cost_by_kind_since,
@@ -35,8 +37,26 @@ from .store import (
 )
 
 
-# CLI: run exactly one full orchestration cycle. Prints the cycle state as
-# JSON so the user can see what happened in each stage.
+# CLI: run the daily 6 PM ET collection step. Refreshes positions, polls
+# news, scores, runs the red team. No alerts, no digest.
+def cmd_collect(args, log):
+    state = run_collect_cycle(offline=args.offline)
+    log.info("collect_done", extra={"keys": list(state.keys())})
+    print(json.dumps(state, indent=2, default=str))
+    return 0
+
+
+# CLI: run the daily 9 PM ET dispatch step. Assembles the digest with the
+# Opus narrative and sends via every configured channel (email + file).
+def cmd_dispatch(args, log):
+    state = run_dispatch_cycle(offline=args.offline)
+    log.info("dispatch_done", extra={"keys": list(state.keys())})
+    print(json.dumps(state, indent=2, default=str))
+    return 0
+
+
+# CLI: ad-hoc all-in-one cycle for manual testing. Use collect/dispatch
+# for the scheduled daily firings; this is the "do everything now" path.
 def cmd_tick(args, log):
     state = run_one_cycle(
         offline=args.offline,
@@ -48,13 +68,12 @@ def cmd_tick(args, log):
     return 0
 
 
-# CLI: start the long-running scheduler loop. Intended to run under
-# systemd or another process supervisor.
+# CLI: start the long-running scheduler loop — sleeps until each daily
+# firing (6 PM ET collect, 9 PM ET dispatch), runs the cycle, repeats.
+# Intended to run under systemd or another process supervisor.
 def cmd_run(args, log):
-    log.info("run_loop_starting", extra={"offline": args.offline,
-                                         "interval_override": args.interval})
-    run_loop(offline=args.offline,
-             interval_override_secs=args.interval)
+    log.info("run_loop_starting", extra={"offline": args.offline})
+    run_loop(offline=args.offline)
     return 0
 
 
@@ -173,7 +192,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m sma_monitor.orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_tick = sub.add_parser("tick", help="Run one full orchestration cycle")
+    p_collect = sub.add_parser("collect",
+                               help="Daily 6 PM ET — positions, news, score, red-team")
+    p_collect.add_argument("--offline", action="store_true",
+                           help="Use heuristic scorer + red team (no API calls)")
+
+    p_dispatch = sub.add_parser("dispatch",
+                                help="Daily 9 PM ET — assemble + send digest")
+    p_dispatch.add_argument("--offline", action="store_true",
+                            help="Skip the Opus narrative call")
+
+    p_tick = sub.add_parser("tick", help="Ad-hoc all-in-one cycle (manual testing)")
     p_tick.add_argument("--offline", action="store_true",
                         help="Use heuristic scorer + red team (no API calls)")
     p_tick.add_argument("--with-digest", action="store_true",
@@ -182,7 +211,6 @@ def main(argv=None):
 
     p_run = sub.add_parser("run", help="Long-running scheduler loop")
     p_run.add_argument("--offline", action="store_true")
-    p_run.add_argument("--interval", type=int, help="Override sleep interval (seconds)")
 
     sub.add_parser("status", help="Today's spend, degrade cascade, flags, dead letters")
     sub.add_parser("install-cron", help="Emit a crontab snippet")
@@ -199,7 +227,11 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     handlers = {
-        "tick": cmd_tick, "run": cmd_run, "status": cmd_status,
+        "collect": cmd_collect,
+        "dispatch": cmd_dispatch,
+        "tick": cmd_tick,
+        "run": cmd_run,
+        "status": cmd_status,
         "install-cron": cmd_install_cron,
         "retry-dead-letters": cmd_retry_dead_letters,
         "simulate-spend": cmd_simulate_spend,

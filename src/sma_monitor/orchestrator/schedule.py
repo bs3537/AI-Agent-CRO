@@ -1,150 +1,115 @@
-"""Sleep-loop scheduler + crontab generator.
+"""Daily scheduler — collect at 6 PM ET, dispatch at 9 PM ET.
 
-Two deployment options (PLAN §0):
-  1. Long-running process — `python -m sma_monitor.orchestrator run`
-     Sleep-loops with market-hour awareness. Use under systemd / supervisor.
-  2. Cron-driven — `python -m sma_monitor.orchestrator install-cron` emits a
-     crontab snippet you can append with `crontab -e`.
-
-Cadences (PLAN §2C):
-  News poll: every 10 min during market hours, hourly overnight, skip weekends.
-  Positions: refresh on stale (>12h) at start of each cycle.
-  Digest:    once per day around 20:15 UTC (~4:15 PM ET).
-
-The market-hour calc is a static UTC window (not DST-aware). When DST shifts,
-either tune the constants here or move to a TZ-aware library.
+Two timed firings per weekday, no continuous polling. Eastern time is
+DST-aware via zoneinfo (stdlib 3.9+). PLAN §0 runtime host remains either
+systemd's long-running loop or cron — same logic underneath.
 """
 from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, time as dtime, timezone
+from datetime import datetime, time as dtime, timedelta
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger("sma_monitor.orchestrator.schedule")
 
-# Rough US-market hours in UTC (EST winter: 14:30-21:00; EDT summer: 13:30-20:00).
-# Default to the EDT window since it's more permissive — over-polling is cheap.
-MARKET_OPEN_UTC = dtime(13, 30)
-MARKET_CLOSE_UTC = dtime(20, 0)
-DIGEST_TIME_UTC = dtime(20, 15)        # ~4:15 PM ET
-POLL_INTERVAL_MARKET_SECS = 600         # 10 min
-POLL_INTERVAL_OVERNIGHT_SECS = 3600     # 1 hr
+# Eastern timezone — zoneinfo handles EST/EDT transitions automatically so
+# 6 PM ET stays 6 PM through DST shifts. UTC kept around for log fields.
+ET = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
+
+# Two daily firing times. Collect runs the data-gathering pipeline; dispatch
+# assembles + sends the digest three hours later so the scoring and red-team
+# stages have a generous budget to finish.
+COLLECT_TIME_ET = dtime(18, 0)      # 6:00 PM ET — positions + news + score + red-team
+DISPATCH_TIME_ET = dtime(21, 0)     # 9:00 PM ET — digest assembly + delivery
+
+# Slack window around each firing. Handles cron jitter and manual `run`
+# starts that miss the exact minute by a few minutes.
+FIRING_SLACK_MINUTES = 30
 
 
-# Return True when the given datetime falls within the rough US market
-# trading window on a weekday. UTC-based, not DST-aware.
-def is_market_hours(now: datetime | None = None) -> bool:
-    now = now or datetime.now(timezone.utc)
-    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+# Return True when the current UTC time falls within the slack window after
+# the given ET firing time on a weekday. Used to decide whether a cycle
+# should run "now" vs sleep until the next scheduled firing.
+def is_in_firing_window(target_et: dtime, *, now_utc: datetime | None = None) -> bool:
+    now_utc = now_utc or datetime.now(tz=UTC)
+    now_et = now_utc.astimezone(ET)
+    if now_et.weekday() >= 5:
         return False
-    t = now.timetz().replace(tzinfo=None)
-    return MARKET_OPEN_UTC <= t < MARKET_CLOSE_UTC
+    target_dt = now_et.replace(hour=target_et.hour, minute=target_et.minute,
+                                second=0, microsecond=0)
+    delta_seconds = (now_et - target_dt).total_seconds()
+    return 0 <= delta_seconds <= FIRING_SLACK_MINUTES * 60
 
 
-# Return True when the given datetime is on a weekend day (Saturday/Sunday).
-def is_weekend(now: datetime | None = None) -> bool:
-    return (now or datetime.now(timezone.utc)).weekday() >= 5
+# Compute the next absolute UTC datetime at which `target_et` will fire.
+# Skips weekends so the result always lands Mon-Fri.
+def next_firing_at(target_et: dtime, *, now_utc: datetime | None = None) -> datetime:
+    now_utc = now_utc or datetime.now(tz=UTC)
+    now_et = now_utc.astimezone(ET)
+    candidate = now_et.replace(hour=target_et.hour, minute=target_et.minute,
+                                second=0, microsecond=0)
+    if candidate <= now_et:
+        candidate = candidate + timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate = candidate + timedelta(days=1)
+    return candidate.astimezone(UTC)
 
 
-# Compute how many seconds the scheduler should sleep before the next cycle.
-# Faster during market hours, slower overnight, double-spaced when the
-# cost cascade has tripped step 2.
-def next_interval_secs(*, reduce_frequency: bool = False, now: datetime | None = None) -> int:
-    """Seconds to sleep until the next cycle should kick off."""
-    now = now or datetime.now(timezone.utc)
-    if is_weekend(now):
-        # Skip weekends; long sleep, but cap so we re-evaluate every hour.
-        return POLL_INTERVAL_OVERNIGHT_SECS
-    base = POLL_INTERVAL_MARKET_SECS if is_market_hours(now) else POLL_INTERVAL_OVERNIGHT_SECS
-    return base * 2 if reduce_frequency else base
-
-
-# Return True when the current time is within slack_minutes after the
-# scheduled digest time on a weekday. Used by the run loop to decide
-# whether to include the digest in this cycle.
-def is_digest_window(now: datetime | None = None, *, slack_minutes: int = 30) -> bool:
-    """Within slack_minutes after DIGEST_TIME_UTC on a weekday."""
-    now = now or datetime.now(timezone.utc)
-    if is_weekend(now):
-        return False
-    target = now.replace(hour=DIGEST_TIME_UTC.hour, minute=DIGEST_TIME_UTC.minute,
-                         second=0, microsecond=0)
-    delta = (now - target).total_seconds()
-    return 0 <= delta <= slack_minutes * 60
-
-
-# Emit a crontab snippet for the cron-driven deployment. The user pastes
-# this into `crontab -e` after editing WORKDIR/VENV. DST-naive — tune for
-# your timezone.
+# Emit a crontab snippet for the cron-driven deployment. TZ=America/New_York
+# pins the times to ET so cron itself handles EST/EDT transitions — no
+# manual offset edits twice a year.
 def crontab_lines() -> list[str]:
     """Emit a crontab snippet for the cron-host deployment."""
     return [
-        "# SMA monitor — append to your crontab (`crontab -e`).",
-        "# Paths assume an installed package; replace WORKDIR/VENV as needed.",
+        "# SMA monitor — daily firings at 6 PM ET (collect) and 9 PM ET (dispatch).",
+        "# TZ pin lets cron handle EST/EDT transitions automatically.",
+        "TZ=America/New_York",
         "WORKDIR=/opt/sma-monitor",
         "VENV=$WORKDIR/.venv",
         "",
-        "# Positions: 9:05 ET and 15:35 ET (DST-naive — tune for your TZ).",
-        "5  13  *  *  1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.portfolio pull >> data/logs/cron.log 2>&1",
-        "35 19  *  *  1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.portfolio pull >> data/logs/cron.log 2>&1",
+        "# 6 PM ET — refresh positions, poll news, score, red team.",
+        "0 18 * * 1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator collect >> data/logs/cron.log 2>&1",
         "",
-        "# News + score + red team + alerts: every 10 min during market hours.",
-        "*/10 13-20 *  *  1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator tick >> data/logs/cron.log 2>&1",
-        "",
-        "# Hourly overnight cycle (lower cadence).",
-        "0  21-23,0-12 *  *  1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator tick >> data/logs/cron.log 2>&1",
-        "",
-        "# Evening digest, ~4:15 PM ET.",
-        "15 20  *  *  1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator tick --with-digest >> data/logs/cron.log 2>&1",
+        "# 9 PM ET — assemble and dispatch the digest.",
+        "0 21 * * 1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator dispatch >> data/logs/cron.log 2>&1",
     ]
 
 
-# Long-running scheduler loop. Wakes, runs one_cycle (including the digest
-# when in the digest window), then sleeps for the next interval. Designed
-# to run under systemd; one_iteration is the test seam.
+# Long-running scheduler loop for the systemd deployment. Sleeps until the
+# next firing (collect or dispatch, whichever comes first), runs the right
+# cycle, then loops back to compute the next firing.
 def run_loop(
     *,
     offline: bool = False,
     one_iteration: bool = False,
-    interval_override_secs: int | None = None,
 ) -> None:
-    """Long-running scheduler. Wakes, runs one_cycle, sleeps."""
-    from .cost import current_degrade_state
-    from .pipeline import run_one_cycle
+    """Long-running scheduler. Wakes at next firing, runs its cycle, sleeps."""
+    from .pipeline import run_collect_cycle, run_dispatch_cycle
 
-    digest_done_for_date: str | None = None
     while True:
-        now = datetime.now(timezone.utc)
-        is_weekend_now = is_weekend(now)
+        now_utc = datetime.now(tz=UTC)
+        next_collect = next_firing_at(COLLECT_TIME_ET, now_utc=now_utc)
+        next_dispatch = next_firing_at(DISPATCH_TIME_ET, now_utc=now_utc)
+        if next_collect <= next_dispatch:
+            target = next_collect
+            cycle_name = "collect"
+        else:
+            target = next_dispatch
+            cycle_name = "dispatch"
 
-        # PLAN §2C: off-hours skip weekends. We still tick once an hour so
-        # any deferred work that landed on Friday afternoon gets cleaned up.
-        if is_weekend_now and not one_iteration:
-            log.info("weekend_skip", extra={"sleep_secs": POLL_INTERVAL_OVERNIGHT_SECS})
-            time.sleep(POLL_INTERVAL_OVERNIGHT_SECS)
-            continue
+        sleep_secs = max(60, int((target - now_utc).total_seconds()))
+        log.info("loop_sleep",
+                 extra={"next_cycle": cycle_name,
+                        "next_fire_at_utc": target.isoformat(),
+                        "sleep_secs": sleep_secs})
+        time.sleep(sleep_secs)
 
-        today_iso = now.date().isoformat()
-        should_run_digest = (
-            is_digest_window(now) and digest_done_for_date != today_iso
-        )
-        cycle_state = run_one_cycle(
-            offline=offline, include_digest=should_run_digest,
-        )
-        if should_run_digest:
-            digest_done_for_date = today_iso
+        if cycle_name == "collect":
+            run_collect_cycle(offline=offline)
+        else:
+            run_dispatch_cycle(offline=offline)
 
         if one_iteration:
             return
-
-        degrade = current_degrade_state()
-        secs = interval_override_secs or next_interval_secs(
-            reduce_frequency=degrade.reduce_poll_frequency, now=now
-        )
-        log.info("loop_sleep",
-                 extra={"sleep_secs": secs,
-                        "reduce_frequency": degrade.reduce_poll_frequency,
-                        "next_run_at": (
-                            datetime.now(timezone.utc).timestamp() + secs
-                        )})
-        time.sleep(secs)

@@ -2,8 +2,12 @@
 # Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-monitor
 # Logs:    journalctl -u sma-monitor -f
 #
-# Phase 6: runs the long-lived orchestrator loop. Bootstrap runs as part
-# of its startup. For cron-based deployments use the crontab snippet from
+# Phase 6: runs the long-lived orchestrator loop. The loop sleeps until
+# the next daily firing — 6 PM ET (collect) or 9 PM ET (dispatch) — and
+# runs the appropriate cycle. Weekends are skipped. Bootstrap runs as
+# part of startup via ExecStartPre.
+#
+# For cron-based deployments use the snippet from
 # `python -m sma_monitor.orchestrator install-cron` instead of this unit.
 
 [Unit]

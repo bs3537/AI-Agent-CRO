@@ -1,20 +1,20 @@
-"""Run one full orchestration cycle.
+"""Run orchestration cycles.
 
-Order (PLAN.MD §6 — sequence vs. parallel):
-  1. Refresh positions if stale (Flex pull). On failure set 'stale_positions'.
-  2. News poll (with degrade-aware bucket skipping).
-  3. Score unscored pairs (heuristic when offline / cost-degraded).
-  4. Red team on composite ≥ T₂ (or only ≥ T if step-1 of cascade is active).
-  5. Dispatch alerts for composite ≥ T (with the Phase 5 suppression rules).
-  6. Optionally assemble digest (run by the schedule loop at digest_time).
+Daily-batch operating model (post-tuning):
+  - 6 PM ET  → run_collect_cycle:   positions + news + score + red-team
+  - 9 PM ET  → run_dispatch_cycle:  digest assembly + email delivery
+  - Real-time alerts disabled — everything above T rolls into the digest.
 
-Every stage is idempotent at the persistence layer — re-running this
-function is safe and only acts on rows that lack a stage's output.
+Legacy `run_one_cycle` is preserved for ad-hoc CLI testing (`tick` command).
+
+Every stage is idempotent at the persistence layer — re-running any of these
+is safe and only acts on rows that lack a stage's output.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from ..config import settings
 from ..news.pipeline import poll as news_poll
@@ -30,9 +30,13 @@ from .flags import clear_flag, set_flag
 
 log = logging.getLogger("sma_monitor.orchestrator.pipeline")
 
+# Eastern timezone used to compute the digest's ET-local date so the
+# "today's events" filter matches even when dispatch crosses UTC midnight.
+ET = ZoneInfo("America/New_York")
+
 # Refresh threshold for the positions snapshot. Anything older than this
-# triggers a Flex pull at the start of the cycle.
-POSITION_STALE_HOURS = 12  # refresh if last pull is older than this
+# triggers a Flex pull at the start of a collect cycle.
+POSITION_STALE_HOURS = 12
 
 
 # Refresh the positions snapshot if it's older than POSITION_STALE_HOURS
@@ -81,9 +85,43 @@ def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None)
                 "pulled_at": last_pulled_at.isoformat() if last_pulled_at else None}
 
 
-# Execute one full sequential pass through the agent: positions → news →
-# scoring → red team → alerts → optional digest. Returns a state dict
-# capturing every stage's output for logging.
+# Daily 6 PM ET collection — gather and process the day's data so the
+# 9 PM dispatch has everything it needs. No alerts (disabled in batch
+# mode), no digest (that's the dispatch step's job).
+def run_collect_cycle(*, offline: bool = False) -> dict:
+    """Daily 6 PM ET collection step. Returns a state dict for logging."""
+    return run_one_cycle(
+        offline=offline,
+        refresh_positions=True,
+        include_news=True,
+        include_scoring=True,
+        include_red_team=True,
+        include_alerts=False,
+        include_digest=False,
+    )
+
+
+# Daily 9 PM ET dispatch — assemble the digest with the Opus narrative and
+# send via every configured channel (email + file). Uses the ET-local
+# today so the events filter matches the collect cycle's ET date even
+# when dispatch crosses UTC midnight.
+def run_dispatch_cycle(*, offline: bool = False) -> dict:
+    """Daily 9 PM ET dispatch step. Returns a state dict for logging."""
+    state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    et_today = datetime.now(tz=ET).date().isoformat()
+    state["digest"] = assemble_digest(
+        date_iso=et_today,
+        with_narrative=True,  # PLAN §3: Opus synthesis for the evening digest
+        api_key=settings.anthropic_api_key,
+    )
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    log.info("dispatch_done", extra={"summary": state})
+    return state
+
+
+# Legacy "all in one" cycle. Kept for ad-hoc testing via `tick` so the user
+# can run every stage end-to-end without waiting for the schedule. Flags
+# let the caller skip any stage individually.
 def run_one_cycle(
     *,
     offline: bool = False,
@@ -93,6 +131,7 @@ def run_one_cycle(
     include_red_team: bool = True,
     include_alerts: bool = True,
     include_digest: bool = False,
+    digest_with_narrative: bool = False,
     news_lookback_hours: int = 24,
     news_num_results: int = 5,
     news_fixture: str | None = None,
@@ -151,7 +190,7 @@ def run_one_cycle(
 
     if include_digest:
         state["digest"] = assemble_digest(
-            with_narrative=False,  # narrative is a separate Opus call; off by default in tick
+            with_narrative=digest_with_narrative,
             api_key=settings.anthropic_api_key,
         )
 
