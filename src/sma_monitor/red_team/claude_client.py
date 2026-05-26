@@ -1,102 +1,95 @@
-"""Anthropic SDK wrapper for the red team.
+"""LLM-backed red team.
 
-Same model class as the scorer (Sonnet 4.6 for throughput). System prompt
-includes the full catalog and is marked cache_control=ephemeral so repeated
-calls within 5 minutes hit the cache.
+Routes the red-team pass through the pluggable LLM provider (Codex by
+default; see `sma_monitor.llm`). The system prompt carries the full warning-
+signs catalog. Output is schema-conforming JSON; we then drop any cited
+warning-sign id that isn't in the catalog (voice constraint: cite real ids
+only) and enrich the rest with their canonical name + bucket.
 """
 from __future__ import annotations
 
-import json
-import re
-from typing import Any
-
+from ..llm import LLMError, LLMProvider
 from .catalog import Catalog, by_id
 from .prompt import build_system_prompt, build_user_message
 from .schema import MatchedWarningSign, RedTeamCandidate, RedTeamResult
 
-# Same Sonnet 4.6 as the scorer — Opus is reserved for the digest narrative.
-DEFAULT_MODEL = "claude-sonnet-4-6"
-# Slightly larger budget than the scorer to fit the bearish_thesis + matches.
+# Back-compat label persisted to red_team_passes.model_used.
+DEFAULT_MODEL = "codex-cli"
 MAX_TOKENS = 800
 
+# Back-compat alias so existing `except RedTeamClaudeError` clauses keep working.
+RedTeamClaudeError = LLMError
 
-# Exception raised for any red-team Claude call failure. Caller catches
-# to log + dead-letter the score row.
-class RedTeamClaudeError(RuntimeError):
-    pass
+# JSON Schema the provider constrains red-team output to. Matched warning
+# signs carry only id + fit_strength here; name/bucket are enriched from the
+# catalog afterward so the model can't fabricate them.
+RED_TEAM_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "bearish_thesis": {"type": "string"},
+        "matched_warning_signs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "id": {"type": "string"},
+                    "fit_strength": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["id", "fit_strength"],
+            },
+        },
+        "matched_buckets": {"type": "array", "items": {"type": "integer"}},
+        "severity_of_concern": {"type": "integer", "minimum": 1, "maximum": 5},
+        "invalidator": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": [
+        "bearish_thesis",
+        "matched_warning_signs",
+        "matched_buckets",
+        "severity_of_concern",
+        "invalidator",
+        "confidence",
+    ],
+}
 
 
-# Run one red-team pass via Claude. Returns (result, model_used) and
-# records token usage to the Phase 6 cost ledger as a side effect.
-def red_team_with_claude(
+# Run one red-team pass via the LLM provider. Returns (result, model_used) and
+# records the call to the Phase 6 cost ledger as a side effect.
+def red_team_with_llm(
     candidate: RedTeamCandidate,
     catalog: Catalog,
     *,
-    api_key: str,
-    model: str = DEFAULT_MODEL,
-    client: Any | None = None,
+    provider: LLMProvider,
+    model_label: str | None = None,
 ) -> tuple[RedTeamResult, str]:
-    if client is None:
-        try:
-            import anthropic
-        except ImportError as e:
-            raise RedTeamClaudeError("anthropic SDK not installed") from e
-        client = anthropic.Anthropic(api_key=api_key)
-
-    system_prompt = build_system_prompt(catalog)
+    data = provider.complete_json(
+        system=build_system_prompt(catalog),
+        user=build_user_message(candidate),
+        schema=RED_TEAM_SCHEMA,
+        max_tokens=MAX_TOKENS,
+    )
     try:
-        resp = client.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                },
-            ],
-            messages=[{"role": "user", "content": build_user_message(candidate)}],
-        )
-    except Exception as e:
-        raise RedTeamClaudeError(f"Claude red-team call failed: {e}") from e
-
-    # Phase 6: record token usage for the cost ledger / degrade cascade.
-    try:
-        from ..orchestrator.cost import record_usage
-        record_usage(kind="red_team", model=model, usage=getattr(resp, "usage", None),
-                     related_event_id=candidate.article_event_id)
+        from ..orchestrator.cost import record_llm_call
+        record_llm_call(kind="red_team", model=provider.model_label,
+                        related_event_id=candidate.article_event_id)
     except Exception:
         pass
-
-    text = "".join(
-        block.text for block in resp.content if getattr(block, "type", "") == "text"
-    )
-    return _parse_result(text, catalog), model
+    return _build_result(data, catalog), model_label or provider.model_label
 
 
-# Parse the model's JSON response and enforce voice constraints: drop any
-# matched_warning_signs whose id isn't in the catalog (fabricated ids),
-# enrich the rest with their canonical name + bucket from the catalog.
-def _parse_result(text: str, catalog: Catalog) -> RedTeamResult:
-    candidate = text.strip()
-    if candidate.startswith("```"):
-        candidate = re.sub(r"^```[a-zA-Z]*\n?", "", candidate)
-        candidate = re.sub(r"\n?```$", "", candidate)
-    m = re.search(r"\{.*\}", candidate, re.DOTALL)
-    if not m:
-        raise RedTeamClaudeError(f"No JSON in red-team response: {text[:300]}")
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError as e:
-        raise RedTeamClaudeError(f"Could not parse red-team JSON: {e}") from e
-
-    # Enrich matched_warning_signs with catalog name/bucket
+# Validate the provider's JSON into a RedTeamResult, enforcing the voice
+# constraint: drop fabricated warning-sign ids and enrich real ones with
+# their canonical name + bucket from the catalog.
+def _build_result(data: dict, catalog: Catalog) -> RedTeamResult:
     enriched: list[dict] = []
     catalog_by_id = by_id(catalog)
     for m_raw in data.get("matched_warning_signs", []):
         wid = m_raw.get("id")
         if not wid or wid not in catalog_by_id:
-            # Model fabricated an id — drop it. Voice constraints say cite real ids only.
+            # Model fabricated an id — drop it (cite real ids only).
             continue
         ws = catalog_by_id[wid]
         enriched.append({

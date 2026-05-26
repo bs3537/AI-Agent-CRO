@@ -40,6 +40,9 @@ _PRICING: dict[str, dict[str, float]] = {
     "heuristic-v1": {  # heuristic has no token cost
         "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0,
     },
+    "codex-cli": {  # ChatGPT-subscription login — no per-token USD billing
+        "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0,
+    },
 }
 
 
@@ -100,6 +103,27 @@ def record_usage(
         incurred_at=datetime.now(timezone.utc),
     )
     return cost_usd
+
+
+# Record a zero-cost LLM call to the ledger. Used for subscription-login
+# backends (Codex) that have no per-token USD price — we still want call
+# counts visible in `status` and available for a future call-count budget.
+def record_llm_call(
+    *,
+    kind: str,
+    model: str,
+    related_event_id: str | None = None,
+) -> None:
+    try:
+        save_cost_row(
+            kind=kind, model=model,
+            input_tokens=0, output_tokens=0,
+            cache_read_tokens=0, cache_write_tokens=0,
+            cost_usd=0.0, related_event_id=related_event_id,
+            incurred_at=datetime.now(timezone.utc),
+        )
+    except Exception:
+        pass  # cost recording must never break the calling path
 
 
 # Sum today's spend from the cost ledger (UTC midnight forward). Used by

@@ -12,10 +12,11 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from ..llm import get_provider
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..news.buckets import load_buckets
-from .claude_client import ClaudeError, DEFAULT_MODEL, score_with_claude
+from .claude_client import ClaudeError, DEFAULT_MODEL, score_with_llm
 from .heuristic import MODEL_LABEL as HEURISTIC_MODEL, score_heuristically
 from .multipliers import (
     BUCKET_WEIGHTS,
@@ -61,12 +62,16 @@ def score_unscored(
         return {"scored": 0, "errors": 0, "skipped": 0}
     buckets = load_buckets()
 
-    if offline or not api_key:
+    # Use the LLM provider when one is available (Codex login); otherwise
+    # fall back to the deterministic heuristic. `--offline` forces heuristic.
+    # `api_key` is retained for signature compatibility but no longer gates.
+    provider = get_provider(prefer_offline=offline)
+    if provider is None:
         scorer: Scorer = lambda c: (score_heuristically(c), HEURISTIC_MODEL)
         scorer_label = HEURISTIC_MODEL
     else:
-        scorer = lambda c: score_with_claude(c, api_key=api_key, model=model)
-        scorer_label = model
+        scorer = lambda c: score_with_llm(c, provider=provider)
+        scorer_label = provider.model_label
 
     rows = unscored_pairs(MULTIPLIERS_VERSION, limit=limit)
     scored = errors = skipped = 0

@@ -16,7 +16,8 @@ from pydantic import BaseModel
 from ..paths import DATA_ROOT
 from ..news.buckets import load_buckets
 from .heuristic import MODEL_LABEL as HEURISTIC_MODEL, score_heuristically
-from .claude_client import ClaudeError, DEFAULT_MODEL, score_with_claude
+from ..llm import get_provider
+from .claude_client import ClaudeError, DEFAULT_MODEL, score_with_llm
 from .multipliers import (
     BUCKET_WEIGHTS, CONVICTION_MULT, MULTIPLIERS_VERSION,
     catalyst_boost, position_weight, stage_interaction, threshold_band,
@@ -84,6 +85,8 @@ def run(*, api_key: str | None, offline: bool = False) -> list[dict]:
     if not cset.entries:
         return []
     buckets = load_buckets()
+    # Provider when available (Codex login); else the heuristic baseline.
+    provider = get_provider(prefer_offline=offline)
     out: list[dict] = []
     for entry in cset.entries:
         bucket = buckets[entry.primary_bucket_id]
@@ -105,12 +108,12 @@ def run(*, api_key: str | None, offline: bool = False) -> list[dict]:
             primary_bucket_confidence=entry.primary_bucket_confidence,
         )
 
-        if offline or not api_key:
+        if provider is None:
             axes = score_heuristically(candidate)
             model_used = HEURISTIC_MODEL
         else:
             try:
-                axes, model_used = score_with_claude(candidate, api_key=api_key)
+                axes, model_used = score_with_llm(candidate, provider=provider)
             except ClaudeError as e:
                 out.append({"name": entry.name, "status": "error", "err": str(e)})
                 continue

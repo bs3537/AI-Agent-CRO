@@ -168,11 +168,14 @@ def _synthesize_narrative(
     api_key: str | None,
     skip_opus: bool = False,
 ) -> str | None:
-    if not api_key or skip_opus:
+    # skip_opus is the budget-cascade signal; `api_key` is retained for
+    # signature compatibility. The narrative now runs through the LLM
+    # provider (Codex); when none is available we use the template.
+    from ..llm import get_provider
+    if skip_opus:
         return _template_narrative(summary)
-    try:
-        import anthropic
-    except ImportError:
+    provider = get_provider()
+    if provider is None:
         return _template_narrative(summary)
 
     system_prompt = (
@@ -184,20 +187,20 @@ def _synthesize_narrative(
         "proximity if any."
     )
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=OPUS_MODEL,
+        text = provider.complete_text(
+            system=system_prompt,
+            user=f"Today's structured digest:\n\n{structured_md}"
+                 f"\n\nWrite the synthesis paragraph.",
             max_tokens=600,
-            system=[{"type": "text", "text": system_prompt,
-                     "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user",
-                       "content": f"Today's structured digest:\n\n{structured_md}"
-                                  f"\n\nWrite the synthesis paragraph."}],
         )
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        try:
+            from ..orchestrator.cost import record_llm_call
+            record_llm_call(kind="digest_narrative", model=provider.model_label)
+        except Exception:
+            pass
         return _strip_markdown_fence(text).strip()
     except Exception as e:
-        log.warning("opus_narrative_failed", extra={"err": str(e)})
+        log.warning("narrative_failed", extra={"err": str(e)})
         return _template_narrative(summary)
 
 

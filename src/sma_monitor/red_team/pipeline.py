@@ -14,12 +14,13 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from ..llm import get_provider
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..news.buckets import load_buckets
 from ..scorer.multipliers import T2
 from .catalog import Catalog, load_catalog
-from .claude_client import DEFAULT_MODEL, RedTeamClaudeError, red_team_with_claude
+from .claude_client import DEFAULT_MODEL, RedTeamClaudeError, red_team_with_llm
 from .heuristic import MODEL_LABEL as HEURISTIC_MODEL, red_team_heuristically
 from .schema import RedTeamCandidate, RedTeamResult
 from .store import init_red_team_schema, pick_candidates, save_red_team_pass
@@ -54,12 +55,15 @@ def run_red_team(
         log.warning("no_holdings_loaded")
         return {"ran": 0, "errors": 0, "skipped": 0}
 
-    if offline or not api_key:
+    # Use the LLM provider when available (Codex login); otherwise heuristic.
+    # `--offline` forces heuristic; `api_key` no longer gates.
+    provider = get_provider(prefer_offline=offline)
+    if provider is None:
         runner: RedTeamFn = lambda c, cat: (red_team_heuristically(c, cat), HEURISTIC_MODEL)
         runner_label = HEURISTIC_MODEL
     else:
-        runner = lambda c, cat: red_team_with_claude(c, cat, api_key=api_key, model=model)
-        runner_label = model
+        runner = lambda c, cat: red_team_with_llm(c, cat, provider=provider)
+        runner_label = provider.model_label
 
     floor = T2 if min_composite_override is None else max(T2, min_composite_override)
     rows = pick_candidates(floor, catalog.catalog_version, limit=limit)
