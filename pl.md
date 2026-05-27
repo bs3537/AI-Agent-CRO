@@ -6,15 +6,15 @@
 
 ---
 
-## ✅ Progress tracker (updated 2026-05-26)
+## ✅ Progress tracker (updated 2026-05-27)
 
 | WS | Scope | Status |
 |----|-------|--------|
 | **W1** | LLM provider abstraction + Codex CLI client; refactor 3 Anthropic callsites; cost.py | **DONE (offline-verified)** |
-| W3 | Thesis-drift decision engine + `position_decisions` table | pending |
-| W4 | File upload + thesis editing (`portfolio/uploads.py`, `position_files`) | pending |
-| W5 | FastAPI backend (`api/`) | pending |
-| W6 | React + MUI dark/neon-orange frontend (`frontend/`) | pending |
+| **W3** | Thesis-drift decision engine + `position_decisions` table | **DONE (offline-verified)** |
+| **W4** | File upload + thesis editing (`portfolio/uploads.py`, `position_files`) | **DONE (offline-verified)** |
+| **W5** | FastAPI backend (`api/`) | **DONE (offline-verified)** |
+| **W6** | React + MUI dark/neon-orange frontend (`frontend/`) | **DONE (npm build verified)** |
 | W2 | Brave (replaces Exa) + Scite + FMP sources | pending (needs API keys) |
 | W7+W8 | 9 AM ET thesis-drift email + systemd timers + packaging | pending |
 
@@ -39,13 +39,91 @@
   non-offline with no Codex login → graceful heuristic fallback (no crash).
 - **No remaining `import anthropic`** anywhere in `src/`.
 
+### W3 — what's already implemented and verified
+- **New `src/sma_monitor/decision/`**: `schema.py` (`PositionDecision`, `DecisionCandidate`,
+  `ScoreEvidence`/`BearEvidence`, `VERDICT_COLOR`), `prompt.py` (thesis-drift monitor system +
+  user message; verdict framed as a thesis-integrity signal, note in neutral watch-item voice),
+  `engine.py` (`build_candidate` from `latest_joined` + `recent_scores` + `recent_passes`;
+  heuristic verdict from `max_severity` + composite band vs `T`/`T2`; Codex path via the W1
+  provider under `DECISION_OUTPUT_SCHEMA`; **sev ≥ 4 forces ≥ watch** guard; `thesis_hash` +
+  `inputs_hash` gate re-compute; `run_decisions` skips unchanged holdings), `store.py`
+  (`position_decisions` table, `latest_decisions()` latest-per-ticker, `has_decision_for`).
+- **CLI**: `python -m sma_monitor.decision recompute [--ticker T] [--offline] [--limit N] [--force]`
+  and `… show [--ticker T]`. Bootstrap (`python -m sma_monitor`) now calls `init_decision_schema`.
+- **Forward-compat slots**: `thesis_doc_text` (W4 uploads) and `fmp_metrics` (W2) live on the
+  candidate already, so wiring them later needs no schema change.
+- **Cost ledger**: LLM path records a zero-cost `kind="decision"` row via `record_llm_call`.
+- **Tests**: `tests/test_decision_engine.py` (9 passing) — heuristic verdict/color, sev≥4 guard,
+  LLM-path parsing, bad-verdict→watch, inputs_hash staleness (evidence + thesis edits). Full
+  suite green (16 passing).
+- **Offline-verified end-to-end** via the sandbox recipe: bootstrap → pull → news poll → scorer
+  `--offline` → red_team `--offline` → `decision recompute --offline` writes one row per holding
+  (3/3), `show` renders verdict+note, re-run is idempotent (decided=0, skipped=3).
+
+### W4 — what's already implemented and verified
+- **New `src/sma_monitor/portfolio/uploads.py`**: `position_files` table + `init_uploads_schema`;
+  `save_upload(ticker, filename, bytes)` stores under `data/portfolio/uploads/{TICKER}/`
+  (content-prefixed name), extracts + caches text to a `.txt` sidecar, and records the row
+  (idempotent on `sha256(content)` via `UNIQUE(ticker, content_sha)`); `extract_text` (.txt/.md
+  direct, .pdf via `pypdf`, .docx via `python-docx`, both lazy-imported → `UploadError` with
+  install hint if absent); `list_files`, `read_text`, `combined_text(ticker)` (labeled,
+  truncated to 8k chars → the decision engine), `delete_file`, `save_upload_from_path`.
+- **Thesis editing**: `portfolio/sidecar.py:set_thesis(ticker, thesis)` — load → set `.thesis` →
+  `write_sidecar`; creates a minimal sidecar (neutral tier 3 / hybrid stage) if none exists.
+- **Engine wiring**: `decision/engine.build_candidate` now fills `thesis_doc_text=combined_text()`,
+  and `inputs_hash` folds in a `doc_hash` so a thesis edit OR a doc upload re-computes that
+  holding (verified: edit+upload → `decided=1` for the touched ticker, `skipped=2` for the rest).
+- **CLI** (`python -m sma_monitor.portfolio`): `set-thesis --ticker T (--thesis | --from-file)`,
+  `add-file --ticker T --file PATH`, `list-files [--ticker T]`. Bootstrap calls
+  `init_uploads_schema`; `paths.UPLOADS_DIR` added to `ALL_DIRS`.
+- **Deps**: `pypdf>=4.0` + `python-docx>=1.1` added to `pyproject.toml` and installed.
+- **Tests**: `tests/test_uploads.py` (6 passing) — txt/md/docx extraction, unsupported→error,
+  content-addressed id. Full suite green (22 passing).
+
+### W5 — what's already implemented and verified
+- **New `src/sma_monitor/api/`**: `app.py` (`create_app()` factory + module-level `app`; CORS for
+  the Vite dev origins via `SMA_API_CORS_ORIGINS`; lifespan does `ensure_dirs` + `init_db`; mounts
+  the built SPA from `frontend/dist` when present), `__main__.py` (`python -m sma_monitor.api
+  [--host --port --reload]` → uvicorn), `schemas.py` (wire models), `routes/positions.py`,
+  `routes/status.py`. `__init__.py` exports only `create_app` (re-exporting `app` would shadow the
+  `app` submodule).
+- **Endpoints** (all `/api`): `GET /health`; `GET /positions` (grid: `open_pnl =
+  market_value − cost_basis`, `pnl_pct`, `%NAV`, nearest catalyst, latest decision, file count,
+  plus `missing_sidecars`); `GET /positions/{ticker}` (detail: scored articles, red-team passes,
+  uploaded files, catalysts; `financials` null until W2); `PUT /positions/{ticker}/thesis`
+  (→ `sidecar.set_thesis`, creates a minimal sidecar if none); `POST /positions/{ticker}/files`
+  (multipart → `uploads.save_upload`; 415 on unsupported type); `DELETE
+  /positions/{ticker}/files/{event_id}`; `POST /positions/{ticker}/recompute` (background by
+  default, `?wait=true&offline=…` runs inline and returns the decision); `GET /status` (orchestrator
+  spend/degrade/flags/dead-letters + position count). 404 for non-held tickers.
+- **Deps**: `fastapi` + `uvicorn[standard]` + `python-multipart` added to `pyproject` and installed.
+- **Test isolation**: new `tests/conftest.py` redirects `DATA_ROOT` to a session copy of `data/`
+  so the whole suite is hermetic (no test touches the live DB/sidecars/uploads) while API tests get
+  realistic seed state.
+- **Tests**: `tests/test_api.py` (9, TestClient) — health, grid+P&L, detail, 404, thesis round-trip,
+  upload + extract, unsupported-type 415, synchronous recompute, status. Full suite green
+  (31 passing). Also smoke-tested the real uvicorn server over HTTP (health/positions/recompute/status).
+
+### W6 — what's already implemented and verified
+- **New `frontend/`** (Vite + React 18 + TS + MUI 5): `package.json`, `vite.config.ts` (dev proxy
+  `/api`→`:8000`), `tsconfig(.node).json`, `index.html`, `.gitignore`, `README.md`.
+- **`src/`**: `theme.ts` (dark, primary `#FF6A00`; verdict→hex map), `types.ts` (mirrors the W5
+  schemas), `api.ts` (typed fetch client), `main.tsx`, `App.tsx` (loads + 30s-polls
+  `/positions`+`/status`; wires thesis-save / upload / recompute, refreshing after each).
+- **Components**: `PositionCard` (P&L ▲▼, %NAV, catalyst, decision chip + note + driver chips,
+  inline thesis editor, upload, recompute, details), `DecisionChip`, `PnL`, `ThesisEditor`
+  (debounced autosave → PUT), `FileUpload`, `DetailDrawer` (scores / red-team / files-deletable /
+  catalysts), `StatusBar` (spend + position count).
+- **Toolchain**: Node not present in the dev env → installed Node 20 LTS into `~/.local/node`
+  (no sudo). `npm install` + `npm run build` (tsc typecheck + vite) both pass; `dist/` emitted.
+- **Integration verified**: with `frontend/dist` present, the W5 backend serves the SPA at `/`
+  (200, index.html) while `/api/*` still routes (API mounts take precedence over the static catch-
+  all). Python suite still green (31 passing).
+
 ### Next up (resume here)
-1. ~~Finish W1 test~~ **DONE**: `tests/test_llm_provider.py` (7 passing) + `tests/stub_codex.py`.
-   pytest installed via `uv pip install pytest`. Verified end-to-end: scorer non-offline with
-   `SMA_CODEX_BIN=<shim>` labels rows `codex-cli` and records call counts in the cost ledger.
-2. **W3 decision engine** (the dashboard's core) — see below. Build offline-first (heuristic
-   verdict from red-team severity + composite band), then wire Codex via the W1 provider.
-3. Then W4 → W5 → W6, then W2 (when keys arrive), then W7+W8.
+1. **W2** (Brave replaces Exa; add Scite + FMP) — needs API keys. Until they arrive, the stack runs
+   offline end-to-end (heuristic decisions + news fixtures + no Codex login).
+2. Then **W7+W8** (9 AM ET thesis-drift email + systemd timers + packaging).
 
 ### How to resume / test offline (no credentials needed)
 Sandbox recipe (keeps live `data/sma.db` untouched): copy `data/` → `/tmp/sma_test_data`,

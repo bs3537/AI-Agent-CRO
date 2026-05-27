@@ -9,6 +9,7 @@ DATA_ROOT = Path(settings.data_root).resolve()
 # Per-phase data subdirectories. Each phase reads/writes only within
 # its own subdir so the on-disk layout matches the module boundaries.
 PORTFOLIO_DIR = DATA_ROOT / "portfolio"           # Phase 1: Flex XML + sidecars
+UPLOADS_DIR = PORTFOLIO_DIR / "uploads"           # W4: per-ticker thesis-doc uploads
 NEWS_CACHE_DIR = DATA_ROOT / "news_cache"         # Phase 2: Exa fixtures
 SCORES_DIR = DATA_ROOT / "scores"                 # Phase 3: rubric + calibration
 DIGESTS_DIR = DATA_ROOT / "digests"               # Phase 5: digest + alert archive
@@ -24,6 +25,7 @@ DB_PATH = DATA_ROOT / "sma.db"
 # Full list of directories that ensure_dirs() must create at bootstrap.
 ALL_DIRS = [
     PORTFOLIO_DIR,
+    UPLOADS_DIR,
     NEWS_CACHE_DIR,
     SCORES_DIR,
     DIGESTS_DIR,

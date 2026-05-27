@@ -5,6 +5,9 @@
   python -m sma_monitor.portfolio show
   python -m sma_monitor.portfolio show-joined
   python -m sma_monitor.portfolio validate-sidecar
+  python -m sma_monitor.portfolio set-thesis --ticker T --thesis "..." | --from-file f
+  python -m sma_monitor.portfolio add-file --ticker T --file path/to/doc.pdf
+  python -m sma_monitor.portfolio list-files [--ticker T]
 """
 from __future__ import annotations
 
@@ -24,8 +27,9 @@ from .flex import (
     parse_positions,
 )
 from .joined import latest_joined
-from .sidecar import load_all_sidecars
+from .sidecar import load_all_sidecars, set_thesis
 from .store import init_portfolio_schema, latest_positions, save_pull
+from .uploads import UploadError, list_files, save_upload_from_path
 
 
 # CLI: fetch a Flex statement (live or from file), parse, persist. Returns
@@ -146,7 +150,58 @@ def cmd_validate(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
-# Phase 1 CLI entry point. Wires the four subcommands to their handlers.
+# CLI: set/replace one ticker's thesis (W4). Reads --thesis or --from-file;
+# creates a minimal sidecar with neutral defaults if the ticker has none.
+def cmd_set_thesis(args: argparse.Namespace, log: logging.Logger) -> int:
+    if args.from_file:
+        thesis = Path(args.from_file).read_text(encoding="utf-8").strip()
+    elif args.thesis:
+        thesis = args.thesis.strip()
+    else:
+        log.error("set_thesis_no_text")
+        print("provide --thesis or --from-file")
+        return 2
+    sc = set_thesis(args.ticker, thesis)
+    log.info("thesis_set", extra={"ticker": sc.ticker, "chars": len(thesis)})
+    print(f"thesis updated for {sc.ticker} ({len(thesis)} chars)")
+    return 0
+
+
+# CLI: upload one thesis document for a ticker (W4). Stores the file, extracts
+# and caches its text, and records it in position_files.
+def cmd_add_file(args: argparse.Namespace, log: logging.Logger) -> int:
+    path = Path(args.file)
+    if not path.exists():
+        log.error("add_file_missing", extra={"path": str(path)})
+        print(f"file not found: {path}")
+        return 2
+    try:
+        rec = save_upload_from_path(args.ticker, path)
+    except UploadError as e:
+        log.error("add_file_failed", extra={"ticker": args.ticker, "err": str(e)})
+        print(f"upload failed: {e}")
+        return 1
+    log.info("file_added", extra={"ticker": rec["ticker"], "filename": rec["filename"],
+                                  "n_chars": rec["n_chars"]})
+    print(f"stored {rec['filename']} for {rec['ticker']} "
+          f"({rec['byte_size']} bytes, {rec['n_chars']} chars extracted)")
+    return 0
+
+
+# CLI: list uploaded thesis documents (all tickers or one).
+def cmd_list_files(args: argparse.Namespace, log: logging.Logger) -> int:
+    rows = list_files(ticker=args.ticker)
+    if not rows:
+        print("(no uploaded files)")
+        return 0
+    print(f"{'TICKER':<8} {'TYPE':<6} {'CHARS':>7}  {'UPLOADED':<27} FILENAME")
+    for r in rows:
+        print(f"{r['ticker']:<8} {r['content_type']:<6} {r['n_chars']:>7}  "
+              f"{r['uploaded_at']:<27} {r['filename']}")
+    return 0
+
+
+# Phase 1 CLI entry point. Wires the subcommands to their handlers.
 def main(argv: list[str] | None = None) -> int:
     ensure_dirs()
     setup_logging(settings.log_level)
@@ -164,12 +219,27 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("show-joined", help="Print joined holdings (positions ⨝ sidecar)")
     sub.add_parser("validate-sidecar", help="Validate all sidecar YAMLs, flag overdue catalysts")
 
+    p_thesis = sub.add_parser("set-thesis", help="Set/replace a ticker's thesis")
+    p_thesis.add_argument("--ticker", required=True)
+    p_thesis.add_argument("--thesis", help="Thesis text inline")
+    p_thesis.add_argument("--from-file", help="Read thesis text from a file")
+
+    p_file = sub.add_parser("add-file", help="Upload a thesis document for a ticker")
+    p_file.add_argument("--ticker", required=True)
+    p_file.add_argument("--file", required=True, help="Path to .txt/.md/.pdf/.docx")
+
+    p_lf = sub.add_parser("list-files", help="List uploaded thesis documents")
+    p_lf.add_argument("--ticker")
+
     args = parser.parse_args(argv)
     handlers = {
         "pull": cmd_pull,
         "show": cmd_show,
         "show-joined": cmd_show_joined,
         "validate-sidecar": cmd_validate,
+        "set-thesis": cmd_set_thesis,
+        "add-file": cmd_add_file,
+        "list-files": cmd_list_files,
     }
     return handlers[args.cmd](args, log)
 

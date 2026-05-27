@@ -89,8 +89,9 @@ This document is the structural map of the project. It captures:
 │  __main__.py     CLI: pull, show, show-joined, validate-sidecar  │
 │  flex.py         IBKR Flex Web Service client + XML parser       │
 │  schema.py       Position, Sidecar, Holding, Catalyst models     │
-│  sidecar.py      load/write per-ticker YAML files                │
+│  sidecar.py      load/write per-ticker YAML + set_thesis (W4)    │
 │  joined.py       Position ⨝ Sidecar → Holding (canonical input)  │
+│  uploads.py      W4: thesis-doc upload + extract → position_files│
 │  store.py        position_pulls + positions tables               │
 └──────────────────────────────────────────────────────────────────┘
 
@@ -160,7 +161,34 @@ This document is the structural map of the project. It captures:
 │  bucket_review.py   PLAN §7 architectural questions              │
 │  report.py          assemble markdown to data/tuning/YYYY-MM-DD  │
 └──────────────────────────────────────────────────────────────────┘
+
+┌─ WORKSTREAM 3 — Decision (thesis-drift, additive) ───────────────┐
+│  __main__.py     CLI: recompute, show                            │
+│  schema.py       PositionDecision, DecisionCandidate, *Evidence  │
+│  prompt.py       thesis-drift monitor system + user message      │
+│  engine.py       bundle → heuristic / Codex verdict → persist    │
+│  store.py        position_decisions table (latest-per-ticker)    │
+└──────────────────────────────────────────────────────────────────┘
+
+┌─ WORKSTREAM 5 — API (FastAPI, additive) ─────────────────────────┐
+│  __main__.py        uvicorn entrypoint (host/port/reload)        │
+│  app.py             create_app(): CORS, lifespan, static SPA     │
+│  schemas.py         PositionSummary/Detail, DecisionOut, FileOut │
+│  routes/positions.py  GET grid+detail, PUT thesis, POST files/   │
+│                       recompute, DELETE file                     │
+│  routes/status.py   GET /api/status (orchestrator snapshot)      │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+API endpoints (all under `/api`): `GET /health`, `GET /positions`,
+`GET /positions/{ticker}`, `PUT /positions/{ticker}/thesis`,
+`POST /positions/{ticker}/files`, `DELETE /positions/{ticker}/files/{event_id}`,
+`POST /positions/{ticker}/recompute` (bg; `?wait=true` runs inline), `GET /status`.
+
+WORKSTREAM 6 — `frontend/` (Vite + React + TS + MUI 5, outside the Python tree):
+dark theme / neon-orange `#FF6A00`; positions grid with P&L, decision chip +
+note, inline thesis autosave, file upload, per-row recompute, and a detail
+drawer. `npm run build` → `frontend/dist`, which the W5 backend serves at `/`.
 
 ---
 
@@ -175,6 +203,9 @@ This document is the structural map of the project. It captures:
 | 5 outputs | All earlier phases (joins scores ⨝ red_team_passes) |
 | 6 orchestrator | All other phases — drives them |
 | 7 tuning | Reads every phase's tables; writes only to `data/tuning/` |
+| W3 decision | Phase 1 (`joined.latest_joined`, `uploads.combined_text`) + Phase 3 (`scorer.store.recent_scores`, `multipliers.T/T2`) + Phase 4 (`red_team.store.recent_passes`) + `llm.get_provider` |
+| W4 uploads | Phase 0 (`db`, `identity`, `paths`) + Phase 1 (`portfolio.sidecar`); optional `pypdf` / `python-docx` extractors |
+| W5 api | Phase 1 (`joined`, `sidecar`, `uploads`) + Phase 3/4 stores + W3 decision (`run_decisions`, `latest_decision`) + Phase 6 (`status`); `fastapi` / `uvicorn` |
 
 ---
 
@@ -419,6 +450,63 @@ class DigestSummary:
     assembled_at: datetime
 ```
 
+### Workstream 3 — Decision (`decision/schema.py`)
+
+```python
+Verdict = Literal["hold", "watch", "sell"]
+Color = Literal["green", "yellow", "red"]
+VERDICT_COLOR = {"hold": "green", "watch": "yellow", "sell": "red"}
+
+class ScoreEvidence:                 # compact scores-row projection
+    score_event_id: str
+    title: str
+    primary_bucket_id: int
+    composite: float
+    threshold_band: str
+    rationale: str
+
+class BearEvidence:                  # compact red_team_passes projection
+    pass_event_id: str
+    title: str
+    bearish_thesis: str
+    severity_of_concern: int
+    matched_patterns: list[str]
+    invalidator: str
+
+class DecisionCandidate:             # per-holding evidence bundle
+    ticker: str
+    company_name: str | None
+    stage: str
+    conviction_tier: int
+    thesis: str
+    thesis_doc_text: str = ""        # W4: combined_text() of uploaded thesis docs
+    pct_nav: float
+    market_value: float
+    cost_basis: float | None
+    open_pnl: float | None           # market_value - cost_basis
+    pnl_pct: float | None
+    nearest_catalyst_days: int | None
+    has_overdue_catalyst: bool
+    catalysts: list[str]
+    scores: list[ScoreEvidence]
+    bears: list[BearEvidence]
+    fmp_metrics: dict | None = None  # W2 enrichment; None until then
+    max_severity: int = 1
+    max_composite: float = 0.0
+
+class PositionDecision:              # engine output → position_decisions
+    ticker: str
+    verdict: Verdict
+    color: Color                     # derived from verdict, not from the model
+    note: str                        # 4–5 line plain-English drift assessment
+    drivers: list[str]
+    confidence: float
+    thesis_hash: str                 # changes when the thesis text changes
+    inputs_hash: str                 # changes when thesis OR evidence set changes
+    model_used: str
+    decided_at: datetime
+```
+
 ---
 
 ## 5. SQLite table schemas (on-disk persistence)
@@ -459,6 +547,23 @@ CREATE TABLE positions (
     cost_basis    REAL,
     pulled_at     TEXT NOT NULL,
     nav           REAL NOT NULL
+);
+
+-- W4: uploaded thesis documents (portfolio/uploads.py). Paths are relative to
+-- DATA_ROOT; text_path is the cached extracted-text sidecar. Idempotent on
+-- (ticker, content_sha) so identical re-uploads collapse to one row.
+CREATE TABLE position_files (
+    event_id      TEXT PRIMARY KEY,
+    ticker        TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    stored_path   TEXT NOT NULL,       -- original, relative to DATA_ROOT
+    text_path     TEXT,                -- cached .txt, relative to DATA_ROOT
+    content_type  TEXT NOT NULL,       -- .txt | .md | .markdown | .pdf | .docx
+    content_sha   TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    n_chars       INTEGER NOT NULL DEFAULT 0,
+    uploaded_at   TEXT NOT NULL,
+    UNIQUE (ticker, content_sha)
 );
 ```
 
@@ -639,6 +744,27 @@ CREATE TABLE dead_letters (
 );
 ```
 
+### Workstream 3 — Decision (`decision/store.py`)
+
+```sql
+CREATE TABLE position_decisions (
+    event_id          TEXT PRIMARY KEY,
+    ticker            TEXT NOT NULL,
+    verdict           TEXT NOT NULL,        -- hold | watch | sell
+    color             TEXT NOT NULL,        -- green | yellow | red
+    note              TEXT NOT NULL,        -- 4–5 line drift assessment
+    drivers           TEXT,                 -- json array of evidence phrases
+    confidence        REAL NOT NULL,
+    thesis_hash       TEXT NOT NULL,
+    inputs_hash       TEXT NOT NULL,
+    model_used        TEXT NOT NULL,        -- codex-cli | heuristic-v1
+    decision_version  TEXT NOT NULL,
+    decided_at        TEXT NOT NULL,
+    UNIQUE (ticker, inputs_hash, decision_version)
+);
+-- latest_decisions() = most recent decided_at per ticker (dashboard + 9 AM email feed).
+```
+
 ---
 
 ## 6. Versioning hinges
@@ -649,6 +775,8 @@ CREATE TABLE dead_letters (
 | `MULTIPLIERS_VERSION` | `scorer/multipliers.py:19` | Bump → every (article, ticker) re-scored cleanly |
 | `catalog_version` | `data/warning_signs/catalog.yaml` | Bump → every above-T₂ score re-red-teamed |
 | `Taxonomy.version` | `data/factor_buckets/taxonomy.yaml` | Bump on bucket-set changes; no auto-replay |
+| `DECISION_VERSION` | `decision/engine.py` | Bump → every holding's thesis-drift decision re-computed |
+| `inputs_hash` | `decision/engine.py` | Changes when a holding's thesis OR evidence set (score/red-team ids) changes → re-compute |
 
 ---
 

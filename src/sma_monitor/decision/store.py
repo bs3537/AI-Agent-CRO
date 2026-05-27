@@ -1,0 +1,132 @@
+"""Workstream 3 persistence.
+
+position_decisions — one row per (ticker, inputs_hash, decision_version).
+A fresh thesis edit or new ingested evidence changes inputs_hash, producing a
+new row while prior decisions stay queryable for audit. latest_decisions()
+exposes the most recent decision per ticker — what the dashboard and the 9 AM
+email read.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+
+from ..db import connection
+from ..identity import event_id
+from .schema import PositionDecision
+
+# DDL for the position_decisions table. UNIQUE on (ticker, inputs_hash,
+# decision_version) makes re-running idempotent while a changed thesis or
+# evidence set (new inputs_hash) writes a fresh row rather than overwriting.
+DECISION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS position_decisions (
+    event_id          TEXT PRIMARY KEY,
+    ticker            TEXT NOT NULL,
+    verdict           TEXT NOT NULL,
+    color             TEXT NOT NULL,
+    note              TEXT NOT NULL,
+    drivers           TEXT,
+    confidence        REAL NOT NULL,
+    thesis_hash       TEXT NOT NULL,
+    inputs_hash       TEXT NOT NULL,
+    model_used        TEXT NOT NULL,
+    decision_version  TEXT NOT NULL,
+    decided_at        TEXT NOT NULL,
+    UNIQUE (ticker, inputs_hash, decision_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_ticker     ON position_decisions(ticker);
+CREATE INDEX IF NOT EXISTS idx_decisions_verdict    ON position_decisions(verdict);
+CREATE INDEX IF NOT EXISTS idx_decisions_decided_at ON position_decisions(decided_at);
+"""
+
+
+# Create the position_decisions table. Safe to call repeatedly.
+def init_decision_schema() -> None:
+    with connection() as conn:
+        conn.executescript(DECISION_SCHEMA)
+
+
+# Stable id for a decision row, keyed on (ticker, inputs_hash, decision_version).
+def decision_event_id(ticker: str, inputs_hash: str, decision_version: str) -> str:
+    return event_id({
+        "kind": "decision",
+        "ticker": ticker,
+        "inputs_hash": inputs_hash,
+        "decision_version": decision_version,
+    })
+
+
+# Persist one PositionDecision in a single transaction. Idempotent on
+# (ticker, inputs_hash, decision_version) via the UNIQUE constraint; also
+# registers the artifact in the universal events table.
+def save_decision(decision: PositionDecision, *, decision_version: str) -> str:
+    init_decision_schema()
+    eid = decision_event_id(decision.ticker, decision.inputs_hash, decision_version)
+    with connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO events(event_id, kind, ticker, first_seen, payload) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, "decision", decision.ticker, decision.decided_at.isoformat(),
+             json.dumps({
+                 "verdict": decision.verdict,
+                 "color": decision.color,
+                 "confidence": decision.confidence,
+             })),
+        )
+        conn.execute(
+            """INSERT OR IGNORE INTO position_decisions
+               (event_id, ticker, verdict, color, note, drivers, confidence,
+                thesis_hash, inputs_hash, model_used, decision_version, decided_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                eid, decision.ticker, decision.verdict, decision.color,
+                decision.note, json.dumps(decision.drivers), decision.confidence,
+                decision.thesis_hash, decision.inputs_hash, decision.model_used,
+                decision_version, decision.decided_at.isoformat(),
+            ),
+        )
+    return eid
+
+
+# True when a decision already exists for this exact (ticker, inputs_hash,
+# decision_version). The staleness check run_decisions uses to skip holdings
+# whose thesis and evidence haven't changed since the last compute.
+def has_decision_for(ticker: str, inputs_hash: str, decision_version: str) -> bool:
+    init_decision_schema()
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM position_decisions "
+            "WHERE ticker = ? AND inputs_hash = ? AND decision_version = ? LIMIT 1",
+            (ticker.upper(), inputs_hash, decision_version),
+        ).fetchone()
+    return row is not None
+
+
+# Latest decision for one ticker (most recent decided_at), or None.
+def latest_decision(ticker: str):
+    init_decision_schema()
+    with connection() as conn:
+        return conn.execute(
+            "SELECT * FROM position_decisions WHERE ticker = ? "
+            "ORDER BY decided_at DESC LIMIT 1",
+            (ticker.upper(),),
+        ).fetchone()
+
+
+# Latest decision per ticker — the dashboard/email feed. Ordered most-severe
+# first (sell → watch → hold) then by ticker so the riskiest names lead.
+def latest_decisions():
+    init_decision_schema()
+    sql = """
+        SELECT d.* FROM position_decisions d
+        JOIN (
+            SELECT ticker, MAX(decided_at) AS max_at
+            FROM position_decisions GROUP BY ticker
+        ) latest
+          ON d.ticker = latest.ticker AND d.decided_at = latest.max_at
+        ORDER BY CASE d.verdict WHEN 'sell' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,
+                 d.ticker
+    """
+    with connection() as conn:
+        return conn.execute(sql).fetchall()

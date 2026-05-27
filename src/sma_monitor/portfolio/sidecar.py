@@ -65,3 +65,17 @@ def write_sidecar(sc: Sidecar) -> Path:
             default_flow_style=False,
         )
     return p
+
+
+# Edit one ticker's thesis (W4 — the dashboard's thesis box). Loads the
+# existing sidecar and updates only .thesis; if none exists, creates a minimal
+# sidecar with neutral defaults (tier 3, hybrid stage) the manager can refine
+# later. Returns the saved Sidecar.
+def set_thesis(ticker: str, thesis: str) -> Sidecar:
+    sc = load_sidecar(ticker)
+    if sc is None:
+        sc = Sidecar(ticker=ticker, conviction_tier=3, stage="hybrid", thesis=thesis)
+    else:
+        sc.thesis = thesis
+    write_sidecar(sc)
+    return sc
