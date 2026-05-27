@@ -13,11 +13,12 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ..config import settings
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from .buckets import Bucket, load_buckets
 from .exa_client import ExaError, ExaResult, load_response_file, search as exa_search
-from .query import entity_terms, per_holding_query, sector_query
+from .query import entity_terms, literature_query, per_holding_query, sector_query
 from .source_tiers import source_label, source_tier
 from .store import init_news_schema, save_article, save_poll_record
 from .tagger import match_tickers, tag_text
@@ -106,8 +107,13 @@ def poll(
     }
 
 
-# Pick the right search provider: a fixture replay when from_file is set,
-# otherwise live Exa. Errors loudly if neither a key nor a fixture is provided.
+# Pick the right search provider, in priority order:
+#   1. fixture replay when from_file is set (offline);
+#   2. Brave when BRAVE_SEARCH_API_KEY is set (W2 — the primary source);
+#   3. Exa when EXA_API_KEY is set (legacy fallback);
+#   4. otherwise error loudly.
+# `api_key` is the Exa key passed by callers; Brave/Scite/FMP keys are read
+# from settings so the existing poll() signature stays unchanged.
 def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
     if fixture:
         cached = load_response_file(fixture)
@@ -116,16 +122,26 @@ def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
             return cached[:n]
 
         return provider
-    if not api_key:
-        raise RuntimeError(
-            "EXA_API_KEY is not set and no --from-file fixture was provided. "
-            "Set EXA_API_KEY in .env or pass --from-file."
-        )
 
-    def live_provider(q: str, n: int, since: datetime | None) -> list[ExaResult]:
-        return exa_search(q, api_key=api_key, num_results=n, start_published_date=since)
+    if settings.brave_search_api_key:
+        from .brave_client import search as brave_search
 
-    return live_provider
+        def brave_provider(q: str, n: int, since: datetime | None) -> list[ExaResult]:
+            return brave_search(q, api_key=settings.brave_search_api_key,  # type: ignore[arg-type]
+                                num_results=n, start_published_date=since)
+
+        return brave_provider
+
+    if api_key:
+        def exa_provider(q: str, n: int, since: datetime | None) -> list[ExaResult]:
+            return exa_search(q, api_key=api_key, num_results=n, start_published_date=since)
+
+        return exa_provider
+
+    raise RuntimeError(
+        "No news source configured: set BRAVE_SEARCH_API_KEY (preferred) or "
+        "EXA_API_KEY in .env, or pass --from-file for an offline fixture."
+    )
 
 
 # Execute one (bucket, holding) or (bucket, None) query: build the query
@@ -192,6 +208,7 @@ def _store_one(
     all_buckets: dict[int, Bucket],
     query_ticker: str | None,
     query_bucket_id: int | None,
+    force_bucket_id: int | None = None,
 ) -> bool:
     if not res.url or not res.title:
         return False
@@ -208,6 +225,11 @@ def _store_one(
     # tagger missed (article still flows downstream, just flagged as weak).
     if not bucket_tags and query_bucket_id:
         bucket_tags = [(query_bucket_id, 0.1)]
+    # force_bucket_id (W2 literature): the source guarantees this bucket
+    # (e.g. Scite → #10), so ensure it's tagged even if the keyword tagger
+    # latched onto a different bucket from the abstract.
+    if force_bucket_id is not None and not any(bid == force_bucket_id for bid, _ in bucket_tags):
+        bucket_tags.append((force_bucket_id, 0.6))
 
     _, is_new = save_article(
         url=res.url,
@@ -222,6 +244,88 @@ def _store_one(
         raw_json=json.dumps(res.raw),
     )
     return is_new
+
+
+# Run a literature poll (W2 / bucket #10): for each holding, search Scite on
+# its drug/indication terms and store the hits as bucket-#10 articles. Mirrors
+# poll()'s structure but on a single bucket. Skips gracefully (RuntimeError)
+# when no Scite key and no fixture is available, so the daily cycle is safe.
+def poll_literature(
+    *,
+    api_key: str | None,
+    from_file: Path | None = None,
+    filter_ticker: str | None = None,
+    num_results: int = 5,
+) -> dict:
+    """Scite literature poll → bucket #10. Returns a summary dict."""
+    init_news_schema()
+    holdings, missing, _ = latest_joined()
+    if filter_ticker:
+        ft = filter_ticker.upper()
+        holdings = [h for h in holdings if h.ticker == ft]
+    if not holdings:
+        log.warning("no_holdings_to_poll_literature")
+        return {"holdings": 0, "queries": 0, "articles_new": 0}
+
+    all_buckets = load_buckets()
+    holdings_entities = {h.ticker: entity_terms(h) for h in holdings}
+    provider = _make_scite_provider(api_key, from_file)
+
+    queries = articles_new = 0
+    for h in holdings:
+        term = literature_query(h)
+        if not term:
+            continue
+        queries += 1
+        started_at = datetime.now(timezone.utc)
+        try:
+            results = provider(term, num_results)
+        except RuntimeError as e:
+            log.error("literature_query_failed", extra={"ticker": h.ticker, "err": str(e)})
+            save_poll_record(ticker=h.ticker, bucket_id=10, query_text=term,
+                             started_at=started_at, ended_at=datetime.now(timezone.utc),
+                             n_results=0, n_new=0, status="error")
+            continue
+        fetched_at = datetime.now(timezone.utc)
+        n_new = 0
+        for res in results:
+            if _store_one(res, fetched_at=fetched_at, holdings_entities=holdings_entities,
+                          all_buckets=all_buckets, query_ticker=h.ticker,
+                          query_bucket_id=10, force_bucket_id=10):
+                n_new += 1
+        save_poll_record(ticker=h.ticker, bucket_id=10, query_text=term,
+                         started_at=started_at, ended_at=fetched_at,
+                         n_results=len(results), n_new=n_new, status="ok")
+        articles_new += n_new
+        log.info("literature_query_ok",
+                 extra={"ticker": h.ticker, "n_results": len(results), "n_new": n_new})
+
+    return {"holdings": len(holdings), "missing_sidecars": missing,
+            "queries": queries, "articles_new": articles_new}
+
+
+# Pick the Scite provider: fixture replay when from_file is set, else live
+# Scite when the key is present, else raise (literature poll skipped).
+def _make_scite_provider(api_key: str | None, fixture: Path | None):
+    if fixture:
+        from .scite_client import load_response_file as scite_load
+        cached = scite_load(fixture)
+
+        def provider(_term: str, n: int) -> list[ExaResult]:
+            return cached[:n]
+
+        return provider
+    if not api_key:
+        raise RuntimeError(
+            "SCITE_API_KEY is not set and no --from-file fixture was provided; "
+            "literature (bucket #10) poll skipped."
+        )
+    from .scite_client import search as scite_search
+
+    def live_provider(term: str, n: int) -> list[ExaResult]:
+        return scite_search(term, api_key=api_key, num_results=n)
+
+    return live_provider
 
 
 # Extract the lede (first sentence) from a longer excerpt, with a hard

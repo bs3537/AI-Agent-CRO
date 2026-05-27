@@ -16,6 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
 from ...decision.engine import run_decisions
 from ...decision.store import latest_decision
+from ...news.fmp_client import latest_fmp_metrics, latest_price_series
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
 from ...portfolio.sidecar import set_thesis
@@ -75,6 +76,7 @@ def _summary(h: Holding) -> PositionSummary:
         nearest_catalyst_days=h.nearest_catalyst_days,
         has_overdue_catalyst=h.has_overdue_catalyst,
         thesis=h.thesis, n_files=len(list_files(h.ticker)),
+        spark=latest_price_series(h.ticker),  # W6: 1yr daily-close sparkline (None offline)
         decision=_decision_out(latest_decision(h.ticker)),
     )
 
@@ -152,6 +154,7 @@ def get_position(ticker: str) -> PositionDetail:
     return PositionDetail(
         **summary.model_dump(),
         catalysts=catalysts, scores=scores, red_team=red_team, files=files,
+        financials=latest_fmp_metrics(h.ticker),  # W2: FMP snapshot (None until fetched)
     )
 
 

@@ -62,3 +62,13 @@ def sector_query(
 ) -> str:
     bucket_q = " ".join(bucket.search_terms[:max_terms])
     return f"{sector} {bucket_q}".strip()
+
+
+# Build a literature query (W2 / bucket #10): the holding's drug/product and
+# indication terms, which is what Scite searches on. Falls back to the company
+# name. Returns "" when there's nothing to search (caller skips the holding).
+def literature_query(h: Holding | Sidecar, *, max_terms: int = 4) -> str:
+    terms = [*h.products, *h.indications]
+    if not terms and h.company_name:
+        terms = [h.company_name]
+    return " ".join(terms[:max_terms]).strip()

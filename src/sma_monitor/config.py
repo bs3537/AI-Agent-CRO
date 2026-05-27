@@ -18,7 +18,13 @@ class Settings(BaseSettings):
     ibkr_flex_query_id: str | None = None
 
     # News ingestion — Phase 2
+    # W2: Brave replaces Exa as the primary search source; Scite adds
+    # literature (bucket #10) and FMP adds financials (#4/#7/#12 + dashboard).
+    # exa_api_key is retained as a fallback search provider.
     exa_api_key: str | None = None
+    brave_search_api_key: str | None = None
+    scite_api_key: str | None = None
+    fmp_api_key: str | None = None
 
     # Scoring & red team — Phase 3-4
     anthropic_api_key: str | None = None
@@ -41,7 +47,7 @@ class Settings(BaseSettings):
     def missing_for(self, phase: int) -> list[str]:
         required_by_phase: dict[int, list[str]] = {
             1: ["ibkr_flex_token", "ibkr_flex_query_id"],
-            2: ["exa_api_key"],
+            2: ["brave_search_api_key"],  # W2: Brave is the primary news source
             3: ["anthropic_api_key"],
             4: ["anthropic_api_key"],
             5: [

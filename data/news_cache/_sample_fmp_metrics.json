@@ -1,0 +1,32 @@
+{
+  "VRTX": {
+    "company": "Vertex Pharmaceuticals Incorporated",
+    "sector": "Healthcare",
+    "market_cap": 120000000000,
+    "price": 465.0,
+    "beta": 0.58,
+    "pe_ttm": 28.4,
+    "current_ratio": 2.7,
+    "quick_ratio": 2.4,
+    "debt_to_equity": 0.08,
+    "gross_margin": 0.88,
+    "net_margin": 0.36,
+    "cash_per_share": 45.0,
+    "fcf_per_share": 12.3
+  },
+  "MRNA": {
+    "company": "Moderna, Inc.",
+    "sector": "Healthcare",
+    "market_cap": 11000000000,
+    "price": 28.5,
+    "beta": 1.35,
+    "pe_ttm": -3.1,
+    "current_ratio": 4.1,
+    "quick_ratio": 3.8,
+    "debt_to_equity": 0.02,
+    "gross_margin": 0.55,
+    "net_margin": -0.42,
+    "cash_per_share": 22.0,
+    "fcf_per_share": -6.5
+  }
+}

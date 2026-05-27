@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from ..identity import event_id
 from ..llm import LLMError, get_provider
+from ..news.fmp_client import latest_fmp_metrics
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..portfolio.uploads import combined_text
@@ -85,12 +86,14 @@ def decision_inputs_hash(
     score_ids: list[str],
     pass_ids: list[str],
     doc_hash: str = "",
+    fmp_hash: str = "",
 ) -> str:
     return event_id({
         "kind": "decision_inputs",
         "ticker": ticker,
         "thesis_hash": thesis_h,
         "doc_hash": doc_hash,
+        "fmp_hash": fmp_hash,
         "pct_nav": round(pct_nav, 4),
         "nearest_catalyst_days": nearest_catalyst_days,
         "score_ids": sorted(score_ids),
@@ -135,6 +138,7 @@ def build_candidate(holding: Holding) -> DecisionCandidate:
         catalysts=catalysts,
         scores=scores,
         bears=bears,
+        fmp_metrics=latest_fmp_metrics(holding.ticker),  # W2: FMP financials (None offline)
         max_severity=max_severity,
         max_composite=max_composite,
     )
@@ -342,8 +346,10 @@ def run_decisions(
     for h in holdings:
         candidate = build_candidate(h)
         th = thesis_hash(h.ticker, candidate.thesis)
-        # Hash the uploaded-doc text so adding/editing/removing a doc re-computes.
+        # Hash the uploaded-doc text + FMP metrics so a doc change or a fresh
+        # financial snapshot re-computes this holding's decision.
         dh = event_id({"doc_text": candidate.thesis_doc_text}) if candidate.thesis_doc_text else ""
+        fh = event_id({"fmp": candidate.fmp_metrics}) if candidate.fmp_metrics else ""
         ih = decision_inputs_hash(
             ticker=h.ticker,
             thesis_h=th,
@@ -352,6 +358,7 @@ def run_decisions(
             score_ids=[s.score_event_id for s in candidate.scores],
             pass_ids=[b.pass_event_id for b in candidate.bears],
             doc_hash=dh,
+            fmp_hash=fh,
         )
         if not force and has_decision_for(h.ticker, ih, DECISION_VERSION):
             skipped += 1

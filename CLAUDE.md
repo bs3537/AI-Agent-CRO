@@ -26,5 +26,5 @@ code.
 
 ## Reference docs
 
-- `PLAN.MD` — system requirements per phase (Phase 0..8)
+- `pl.md` — working plan + progress tracker (workstreams W1–W8)
 - `schema.md` — architecture diagrams, module map, pydantic + SQL schemas

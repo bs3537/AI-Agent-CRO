@@ -1,0 +1,20 @@
+{
+  "hits": [
+    {
+      "title": "Vanzacaftor-tezacaftor-deutivacaftor in cystic fibrosis: 24-week results",
+      "doi": "10.1056/NEJMoa2026vanza",
+      "journal": "New England Journal of Medicine",
+      "abstract": "In this phase 3 trial, the vanzacaftor triple combination demonstrated non-inferior ppFEV1 improvement versus Trikafta with once-daily dosing. Sweat chloride reductions were sustained through 24 weeks; safety was consistent with prior CFTR modulators.",
+      "year": 2026,
+      "tally": {"total": 12}
+    },
+    {
+      "title": "Real-world outcomes of CASGEVY gene therapy in sickle cell disease",
+      "doi": "10.1182/blood.2026casgevy",
+      "journal": "Blood",
+      "abstract": "A multicenter real-world analysis of exagamglogene autotemcel reported durable vaso-occlusive crisis elimination at 18 months, with engraftment kinetics consistent with the pivotal program.",
+      "year": 2026,
+      "tally": {"total": 5}
+    }
+  ]
+}

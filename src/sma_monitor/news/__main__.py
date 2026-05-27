@@ -2,6 +2,8 @@
 
   python -m sma_monitor.news poll [--ticker T] [--bucket N] [--from-file F]
                                   [--num-results N] [--lookback-hours N]
+  python -m sma_monitor.news poll-literature [--ticker T] [--from-file F]   (Scite → #10)
+  python -m sma_monitor.news fmp [--ticker T] [--from-file F]               (FMP financials)
   python -m sma_monitor.news show [--ticker T] [--bucket N] [--limit N]
   python -m sma_monitor.news show-buckets
   python -m sma_monitor.news show-queries [--ticker T]
@@ -19,7 +21,9 @@ from ..logging_setup import setup_logging
 from ..paths import ensure_dirs
 from ..portfolio.joined import latest_joined
 from .buckets import load_buckets
+from .fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from .pipeline import poll as run_poll
+from .pipeline import poll_literature as run_poll_literature
 from .query import per_holding_query, sector_query
 from .store import bucket_activity, init_news_schema, recent_articles
 
@@ -39,6 +43,50 @@ def cmd_poll(args, log):
         log.error("news_poll_missing_creds", extra={"err": str(e)})
         return 2
     log.info("news_poll_done", extra=res)
+    return 0
+
+
+# CLI: run one Scite literature poll (bucket #10). 2 on missing creds.
+def cmd_poll_literature(args, log):
+    try:
+        res = run_poll_literature(
+            api_key=settings.scite_api_key,
+            from_file=Path(args.from_file) if args.from_file else None,
+            filter_ticker=args.ticker,
+            num_results=args.num_results,
+        )
+    except RuntimeError as e:
+        log.error("literature_poll_missing_creds", extra={"err": str(e)})
+        return 2
+    log.info("literature_poll_done", extra=res)
+    return 0
+
+
+# CLI: refresh FMP financial snapshots + daily price series for held tickers.
+# 2 on missing creds (neither key nor fixture for the metrics half).
+def cmd_fmp(args, log):
+    tickers = [args.ticker.upper()] if args.ticker else None
+    try:
+        res = refresh_for_holdings(
+            api_key=settings.fmp_api_key,
+            from_file=Path(args.from_file) if args.from_file else None,
+            tickers=tickers,
+        )
+    except RuntimeError as e:
+        log.error("fmp_refresh_missing_creds", extra={"err": str(e)})
+        return 2
+    # Price history (sparkline). Skipped gracefully if no key/fixture.
+    try:
+        prices = refresh_prices_for_holdings(
+            api_key=settings.fmp_api_key,
+            from_file=Path(args.prices_file) if args.prices_file else None,
+            tickers=tickers,
+        )
+    except RuntimeError as e:
+        log.warning("fmp_prices_skipped", extra={"err": str(e)})
+        prices = {"status": "skipped"}
+    log.info("fmp_refresh_done", extra={"metrics": res, "prices": prices})
+    print({"metrics": res, "prices": prices})
     return 0
 
 
@@ -122,6 +170,16 @@ def main(argv=None):
     p_poll.add_argument("--num-results", type=int, default=5)
     p_poll.add_argument("--lookback-hours", type=int, default=24)
 
+    p_lit = sub.add_parser("poll-literature", help="Scite literature poll → bucket #10")
+    p_lit.add_argument("--ticker", help="Restrict to one holding")
+    p_lit.add_argument("--from-file", help="Load Scite response from JSON fixture")
+    p_lit.add_argument("--num-results", type=int, default=5)
+
+    p_fmp = sub.add_parser("fmp", help="Refresh FMP financials + daily price series")
+    p_fmp.add_argument("--ticker", help="Restrict to one ticker")
+    p_fmp.add_argument("--from-file", help="Load {ticker: metrics} JSON fixture")
+    p_fmp.add_argument("--prices-file", help="Load {ticker: [closes]} price fixture (sparkline)")
+
     p_show = sub.add_parser("show", help="Print recent articles")
     p_show.add_argument("--ticker")
     p_show.add_argument("--bucket", type=int)
@@ -138,6 +196,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     handlers = {
         "poll": cmd_poll,
+        "poll-literature": cmd_poll_literature,
+        "fmp": cmd_fmp,
         "show": cmd_show,
         "show-buckets": cmd_show_buckets,
         "show-queries": cmd_show_queries,

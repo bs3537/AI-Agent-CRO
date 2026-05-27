@@ -1,0 +1,19 @@
+{
+  "type": "news",
+  "results": [
+    {
+      "title": "Vertex reports strong CASGEVY launch metrics; new patient starts accelerate",
+      "url": "https://www.fiercepharma.com/pharma/vertex-casgevy-launch-2026",
+      "description": "Vertex Pharmaceuticals (NASDAQ: VRTX) reported accelerating new patient starts for CASGEVY this quarter, with authorized treatment centers expanding. Gross-to-net was stable and channel inventory normalized.",
+      "page_age": "2026-05-21T12:00:00Z",
+      "meta_url": {"hostname": "www.fiercepharma.com"}
+    },
+    {
+      "title": "Moderna respiratory franchise faces 2026 guidance scrutiny ahead of contract season",
+      "url": "https://www.reuters.com/business/healthcare/moderna-guidance-2026",
+      "description": "Moderna (NASDAQ: MRNA) faces investor scrutiny over 2026 respiratory revenue guidance as contracting season approaches. Analysts flag formulary positioning risk.",
+      "page_age": "2026-05-21T09:30:00Z",
+      "meta_url": {"hostname": "www.reuters.com"}
+    }
+  ]
+}

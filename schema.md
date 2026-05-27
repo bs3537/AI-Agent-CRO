@@ -96,13 +96,16 @@ This document is the structural map of the project. It captures:
 └──────────────────────────────────────────────────────────────────┘
 
 ┌─ PHASE 2 — News ─────────────────────────────────────────────────┐
-│  __main__.py     CLI: poll, show, coverage, show-buckets/queries │
+│  __main__.py     CLI: poll, poll-literature, fmp, show, coverage │
 │  buckets.py      load 12-bucket taxonomy YAML                    │
-│  query.py        build per-holding / sector query strings        │
-│  exa_client.py   Exa /search adapter + fixture loader            │
+│  query.py        per-holding / sector / literature query strings │
+│  exa_client.py   Exa /search adapter (legacy fallback)           │
+│  brave_client.py W2: Brave News Search → ExaResult (primary)     │
+│  scite_client.py W2: Scite literature → ExaResult (bucket #10)   │
+│  fmp_client.py   W2: FMP financials → fmp_snapshots (#4/#7/#12)  │
 │  tagger.py       deterministic keyword → bucket tagger           │
 │  source_tiers.py URL host → priority tier (1=SEC … 6=retail)     │
-│  pipeline.py     poll loop, dedup, persistence                   │
+│  pipeline.py     poll + poll_literature loops, dedup, persist    │
 │  store.py        articles + article_tickers/buckets + polls      │
 └──────────────────────────────────────────────────────────────────┘
 
@@ -188,9 +191,11 @@ API endpoints (all under `/api`): `GET /health`, `GET /positions`,
 `POST /positions/{ticker}/recompute` (bg; `?wait=true` runs inline), `GET /status`.
 
 WORKSTREAM 6 — `frontend/` (Vite + React + TS + MUI 5, outside the Python tree):
-dark theme / neon-orange `#FF6A00`; positions grid with P&L, decision chip +
-note, inline thesis autosave, file upload, per-row recompute, and a detail
-drawer. `npm run build` → `frontend/dist`, which the W5 backend serves at `/`.
+dark theme / neon-orange `#FF6A00`; positions grid with a leading 1-year
+daily-close **sparkline** (`spark`, green/red by net change), P&L, decision chip
++ note, inline thesis autosave, file upload, per-row recompute, and a detail
+drawer (scores, red-team, files, **financials**, catalysts). `npm run build` →
+`frontend/dist`, which the W5 backend serves at `/`.
 
 ---
 
@@ -200,6 +205,7 @@ drawer. `npm run build` → `frontend/dist`, which the W5 backend serves at `/`.
 |---|---|
 | 1 portfolio | Phase 0 only |
 | 2 news | Phase 0 + Phase 1 (`portfolio.joined.latest_joined`) |
+| 2 news (W2) | Brave (primary) / Exa (fallback) / Scite (#10 literature) / FMP (financials), provider-selected by which key is set; `--from-file` fixtures offline |
 | 3 scorer | Phase 0 + Phase 1 + Phase 2 (`news.buckets.load_buckets`) |
 | 4 red team | Phase 0 + Phase 1 + Phase 2 + Phase 3 (`scorer.multipliers.T2`) |
 | 5 outputs | All earlier phases (joins scores ⨝ red_team_passes) |
@@ -595,6 +601,28 @@ CREATE TABLE article_buckets (              -- many-to-many + confidence
     bucket_id   INTEGER NOT NULL,
     confidence  REAL NOT NULL,
     PRIMARY KEY (event_id, bucket_id)
+);
+
+-- W2: FMP per-ticker financial snapshot cache (one row per ticker per UTC
+-- day). Refreshed in the collect cycle; read by the decision engine
+-- (fmp_metrics) and the API (financials). Empty offline / without a key.
+CREATE TABLE fmp_snapshots (
+    event_id    TEXT PRIMARY KEY,
+    ticker      TEXT NOT NULL,
+    metrics     TEXT NOT NULL,        -- json: flat {metric: value} dict
+    fetched_at  TEXT NOT NULL
+);
+
+-- W2/W6: ~1yr daily EOD closes per ticker, backing each dashboard row's
+-- sparkline. One row per (ticker, UTC day); served on the positions grid as
+-- `spark`. Empty offline / without an FMP key.
+CREATE TABLE price_series (
+    event_id    TEXT PRIMARY KEY,
+    ticker      TEXT NOT NULL,
+    closes      TEXT NOT NULL,        -- json array of closes, oldest→newest
+    start_date  TEXT,
+    end_date    TEXT,
+    fetched_at  TEXT NOT NULL
 );
 
 CREATE TABLE news_polls (

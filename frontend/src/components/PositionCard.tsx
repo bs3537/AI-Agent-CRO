@@ -12,6 +12,7 @@ import type { PositionSummary } from '../types'
 import { VERDICT_HEX } from '../theme'
 import DecisionChip from './DecisionChip'
 import PnL from './PnL'
+import Sparkline from './Sparkline'
 import ThesisEditor from './ThesisEditor'
 import FileUpload from './FileUpload'
 
@@ -48,12 +49,16 @@ export default function PositionCard({
     <Card sx={{ borderLeft: `4px solid ${accent}` }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-          <Box>
-            <Typography variant="h6">{pos.ticker}</Typography>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              {pos.company_name ?? '—'} · tier {pos.conviction_tier} · {pos.stage}
-            </Typography>
-          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            {/* Leading 1-year daily-close sparkline for the position. */}
+            <Sparkline points={pos.spark} />
+            <Box>
+              <Typography variant="h6">{pos.ticker}</Typography>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                {pos.company_name ?? '—'} · tier {pos.conviction_tier} · {pos.stage}
+              </Typography>
+            </Box>
+          </Stack>
           <DecisionChip decision={pos.decision} />
         </Stack>
 

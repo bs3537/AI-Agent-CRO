@@ -86,6 +86,7 @@ class PositionSummary(BaseModel):
     has_overdue_catalyst: bool
     thesis: str
     n_files: int = 0
+    spark: list[float] | None = None   # ~1yr daily EOD closes for the row sparkline
     decision: DecisionOut | None = None
 
 

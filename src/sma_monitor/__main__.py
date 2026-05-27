@@ -18,6 +18,7 @@ from .decision.store import init_decision_schema
 from .identity import article_event_id
 from .logging_setup import setup_logging
 from .paths import DATA_ROOT, DB_PATH, ensure_dirs
+from .news.fmp_client import init_fmp_schema
 from .news.store import init_news_schema
 from .orchestrator.store import init_orchestrator_schema
 from .outputs.store import init_outputs_schema
@@ -43,6 +44,7 @@ def main() -> int:
     init_portfolio_schema()
     init_uploads_schema()
     init_news_schema()
+    init_fmp_schema()
     init_scores_schema()
     init_red_team_schema()
     init_outputs_schema()

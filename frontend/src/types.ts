@@ -76,6 +76,7 @@ export interface PositionSummary {
   has_overdue_catalyst: boolean
   thesis: string
   n_files: number
+  spark: number[] | null
   decision: Decision | null
 }
 

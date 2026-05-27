@@ -18,7 +18,9 @@ from zoneinfo import ZoneInfo
 
 from ..config import settings
 from ..decision.engine import run_decisions
+from ..news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from ..news.pipeline import poll as news_poll
+from ..news.pipeline import poll_literature as news_poll_literature
 from ..outputs.alerts import run_alerts
 from ..outputs.digest import assemble_digest
 from ..outputs.thesis_email import assemble_thesis_email
@@ -97,6 +99,8 @@ def run_collect_cycle(*, offline: bool = False) -> dict:
         offline=offline,
         refresh_positions=True,
         include_news=True,
+        include_literature=True,
+        include_financials=True,
         include_scoring=True,
         include_red_team=True,
         include_decisions=True,
@@ -149,6 +153,8 @@ def run_one_cycle(
     offline: bool = False,
     refresh_positions: bool = True,
     include_news: bool = True,
+    include_literature: bool = False,
+    include_financials: bool = False,
     include_scoring: bool = True,
     include_red_team: bool = True,
     include_decisions: bool = False,
@@ -194,6 +200,17 @@ def run_one_cycle(
                                               "detail": str(e)[:200]})
             state["news"] = {"status": "skipped", "reason": str(e)[:200]}
 
+    # W2: Scite literature → bucket #10. Skipped (flagged) when no key/fixture,
+    # exactly like the news poll — never crashes the cycle.
+    if include_literature:
+        try:
+            state["literature"] = news_poll_literature(api_key=settings.scite_api_key)
+            clear_flag("scite_failure")
+        except RuntimeError as e:
+            log.warning("literature_poll_skipped", extra={"err": str(e)})
+            set_flag("scite_failure", metadata={"reason": "no_source", "detail": str(e)[:200]})
+            state["literature"] = {"status": "skipped", "reason": str(e)[:200]}
+
     if include_scoring:
         state["scoring"] = score_unscored(
             api_key=settings.anthropic_api_key,
@@ -208,8 +225,21 @@ def run_one_cycle(
             min_composite_override=min_override,
         )
 
+    # W2: refresh FMP financial snapshots before decisions so the verdicts +
+    # dashboard see current financials. Skipped (flagged) without a key/fixture.
+    if include_financials:
+        try:
+            state["financials"] = refresh_for_holdings(api_key=settings.fmp_api_key)
+            # Daily price series for the dashboard sparklines (same key).
+            state["prices"] = refresh_prices_for_holdings(api_key=settings.fmp_api_key)
+            clear_flag("fmp_failure")
+        except RuntimeError as e:
+            log.warning("financials_refresh_skipped", extra={"err": str(e)})
+            set_flag("fmp_failure", metadata={"reason": "no_key", "detail": str(e)[:200]})
+            state["financials"] = {"status": "skipped", "reason": str(e)[:200]}
+
     # Thesis-drift decisions roll up the freshly-scored evidence per position;
-    # run after scoring + red team so the verdicts reflect today's data.
+    # run after scoring + red team (+ financials) so the verdicts reflect today's data.
     if include_decisions:
         state["decisions"] = run_decisions(offline=offline)
 

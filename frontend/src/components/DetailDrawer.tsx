@@ -143,6 +143,29 @@ export default function DetailDrawer({
               </List>
             </Section>
 
+            <Section title="Financials (FMP)">
+              {detail.financials && Object.keys(detail.financials).length > 0 ? (
+                <List dense disablePadding>
+                  {orderedFinancials(detail.financials).map(([k, v]) => (
+                    <ListItem key={k} disableGutters sx={{ py: 0.1 }}>
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" justifyContent="space-between" spacing={2}>
+                            <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                              {FINANCIAL_LABELS[k] ?? k}
+                            </Typography>
+                            <Typography variant="body2">{fmtFinancial(k, v)}</Typography>
+                          </Stack>
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <EmptyRow text="No financials yet (set FMP_API_KEY + run a collect)." />
+              )}
+            </Section>
+
             <Section title={`Catalysts (${detail.catalysts.length})`}>
               <List dense disablePadding>
                 {detail.catalysts.map((c, i) => (
@@ -170,6 +193,53 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </Box>
   )
+}
+
+// Friendly labels + display order for the FMP metric keys (keys not listed
+// here still render, after the known ones, using the raw key).
+const FINANCIAL_LABELS: Record<string, string> = {
+  company: 'Company', sector: 'Sector', market_cap: 'Market cap', price: 'Price',
+  beta: 'Beta', pe_ttm: 'P/E (TTM)', current_ratio: 'Current ratio',
+  quick_ratio: 'Quick ratio', debt_to_equity: 'Debt / equity',
+  gross_margin: 'Gross margin', net_margin: 'Net margin',
+  cash_per_share: 'Cash / share', fcf_per_share: 'FCF / share',
+  enterprise_value: 'Enterprise value',
+}
+const FINANCIAL_ORDER = [
+  'company', 'sector', 'market_cap', 'enterprise_value', 'price', 'beta', 'pe_ttm',
+  'current_ratio', 'quick_ratio', 'debt_to_equity', 'gross_margin', 'net_margin',
+  'cash_per_share', 'fcf_per_share',
+]
+
+// Order the financials dict by FINANCIAL_ORDER, then append any extra keys.
+function orderedFinancials(f: Record<string, unknown>): [string, unknown][] {
+  const known = FINANCIAL_ORDER.filter((k) => f[k] !== undefined && f[k] !== null).map(
+    (k) => [k, f[k]] as [string, unknown],
+  )
+  const extra = Object.entries(f).filter(([k]) => !FINANCIAL_ORDER.includes(k))
+  return [...known, ...extra]
+}
+
+// Format one metric: margins as %, market cap / EV compacted to B/T, other
+// numbers to ≤2 decimals, strings verbatim.
+function fmtFinancial(key: string, value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') {
+    if (key.endsWith('margin')) return `${(value * 100).toFixed(1)}%`
+    if (key === 'market_cap' || key === 'enterprise_value') return compactUsd(value)
+    return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  }
+  return String(value)
+}
+
+// Compact a large dollar figure to T / B / M suffixes.
+function compactUsd(n: number): string {
+  const abs = Math.abs(n)
+  if (abs >= 1e12) return `${(n / 1e12).toFixed(1)}T`
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(1)}B`
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
 }
 
 // Faint placeholder for an empty list.

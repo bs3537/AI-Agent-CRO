@@ -15,7 +15,7 @@
 | **W4** | File upload + thesis editing (`portfolio/uploads.py`, `position_files`) | **DONE (offline-verified)** |
 | **W5** | FastAPI backend (`api/`) | **DONE (offline-verified)** |
 | **W6** | React + MUI dark/neon-orange frontend (`frontend/`) | **DONE (npm build verified)** |
-| W2 | Brave (replaces Exa) + Scite + FMP sources | pending (needs API keys) |
+| **W2** | Brave (replaces Exa) + Scite + FMP sources | **SCAFFOLDED (offline-verified; add keys to go live)** |
 | **W7** | 9 AM ET thesis-drift email + scheduling | **DONE (offline-verified)** |
 | **W8** | systemd units (API + timers) + packaging/codex-login docs | **DONE (units validated)** |
 
@@ -159,12 +159,43 @@
   (09:00 EDT → 13:00 UTC, etc.); `install-cron` lists all three firings; full suite 35 passing after
   the anthropic drop.
 
-### Remaining
-- **W2** (Brave replaces Exa; add Scite + FMP) — the only workstream left, **blocked on API keys**.
-  Until they arrive the whole stack runs offline end-to-end (heuristic decisions + news fixtures +
-  no Codex login). When keys land: add `news/{brave_client,scite_client,fmp_client}.py` (same
-  `ExaResult` shape), point `news/pipeline._make_provider` at Brave, add the keys to `config.py` +
-  `missing_for(2)`, and wire FMP metrics into the decision candidate's `fmp_metrics` slot.
+### W2 — scaffolded (plug-and-play; add keys to `.env` to go live)
+- **New `news/brave_client.py`**: Brave News Search REST → `ExaResult` (same shape), freshness
+  range from the poll window, `load_response_file` for replay. `pipeline._make_provider` now prefers
+  **Brave > Exa > fixture**, clear `RuntimeError` otherwise.
+- **New `news/scite_client.py`** + `pipeline.poll_literature()`: Scite literature → `ExaResult`
+  with canonical `https://doi.org/{doi}` links (tier-3), forced into **bucket #10**. `query.literature_query()`
+  builds the drug/indication term. *(Endpoint/field names isolated in `SCITE_SEARCH`/`_parse_response`
+  with a CONFIRM-against-docs note — the one spot to adjust when the key lands.)*
+- **New `news/fmp_client.py`**: profile + TTM ratios + TTM key-metrics → flat metrics dict;
+  `fmp_snapshots` table (one row/ticker/day); `refresh_for_holdings()` (live or `{ticker: metrics}`
+  fixture); `latest_fmp_metrics()`. Wired into `decision.build_candidate` (`fmp_metrics` + folded into
+  `inputs_hash`) and the API detail's `financials`.
+- **Config / tiers / CLIs / schedule**: `brave_search_api_key`/`scite_api_key`/`fmp_api_key` +
+  `missing_for(2)`→brave; `doi.org`/PubMed → tier 3; `news poll-literature` + `news fmp` subcommands;
+  `collect` cycle now runs literature + financials (guarded — `scite_failure`/`fmp_failure` flags,
+  skipped without keys). Bootstrap inits `fmp_snapshots`. `.env.example` documents the three keys.
+- **Offline-verified**: `tests/test_w2_sources.py` (8) — fixture parsers, missing-key guards,
+  FMP snapshot round-trip, FMP→candidate pickup; full suite 43 passing. Sandbox: literature fixture →
+  3 bucket-#10 tags, FMP fixture → 2 snapshots flowing into decisions; `collect --offline` exits 0
+  with literature/financials skipped gracefully.
+
+### Post-plan additions (offline-verified)
+- **Detail-drawer financials**: the drawer now renders a "Financials (FMP)" section
+  (`DetailDrawer.tsx`) from the API's `financials` field — closes the W6 spec gap.
+- **Per-position sparkline**: `fmp_client` fetches/stores ~1yr daily EOD closes (`price_series`
+  table, `fetch_price_history`/`save_price_series`/`latest_price_series`,
+  `refresh_prices_for_holdings`); the API serves them per grid row as `spark`; the frontend renders
+  a dependency-free SVG `Sparkline` (price line only, green/red by net change) at the front of each
+  card. `news fmp` + the collect cycle refresh prices alongside metrics (FMP-key-gated; fixture
+  `_sample_fmp_prices.json` for offline). Tests in `tests/test_w2_sources.py`; full suite 46 passing.
+
+### Remaining to go live (no code — just credentials + one verification)
+1. Put `BRAVE_SEARCH_API_KEY`, `SCITE_API_KEY`, `FMP_API_KEY` in `.env`.
+2. Confirm the Scite search endpoint/fields against current Scite API docs (the one CONFIRM marker in
+   `scite_client.py`); Brave/FMP use documented endpoints.
+3. Run a live `collect` and spot-check ingested Brave articles, bucket-#10 literature, and FMP
+   snapshots; the dashboard `financials` + decision notes should then reflect real data.
 
 ### How to resume / test offline (no credentials needed)
 Sandbox recipe (keeps live `data/sma.db` untouched): copy `data/` → `/tmp/sma_test_data`,
