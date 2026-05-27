@@ -28,7 +28,12 @@ from .cost import (
     today_spent_usd,
 )
 from .flags import clear_flag, get_active_flags
-from .pipeline import run_collect_cycle, run_dispatch_cycle, run_one_cycle
+from .pipeline import (
+    run_collect_cycle,
+    run_dispatch_cycle,
+    run_morning_thesis_cycle,
+    run_one_cycle,
+)
 from .schedule import crontab_lines, run_loop
 from .store import (
     cost_by_kind_since,
@@ -51,6 +56,15 @@ def cmd_collect(args, log):
 def cmd_dispatch(args, log):
     state = run_dispatch_cycle(offline=args.offline)
     log.info("dispatch_done", extra={"keys": list(state.keys())})
+    print(json.dumps(state, indent=2, default=str))
+    return 0
+
+
+# CLI: run the daily 9 AM ET thesis-drift step — recompute stale decisions,
+# then assemble + send the morning email (in addition to the evening digest).
+def cmd_thesis_email(args, log):
+    state = run_morning_thesis_cycle(offline=args.offline)
+    log.info("thesis_email_done", extra={"keys": list(state.keys())})
     print(json.dumps(state, indent=2, default=str))
     return 0
 
@@ -202,6 +216,11 @@ def main(argv=None):
     p_dispatch.add_argument("--offline", action="store_true",
                             help="Skip the Opus narrative call")
 
+    p_thesis = sub.add_parser("thesis-email",
+                              help="Daily 9 AM ET — recompute stale decisions + send thesis email")
+    p_thesis.add_argument("--offline", action="store_true",
+                          help="Use the heuristic decision verdict (no model call)")
+
     p_tick = sub.add_parser("tick", help="Ad-hoc all-in-one cycle (manual testing)")
     p_tick.add_argument("--offline", action="store_true",
                         help="Use heuristic scorer + red team (no API calls)")
@@ -229,6 +248,7 @@ def main(argv=None):
     handlers = {
         "collect": cmd_collect,
         "dispatch": cmd_dispatch,
+        "thesis-email": cmd_thesis_email,
         "tick": cmd_tick,
         "run": cmd_run,
         "status": cmd_status,

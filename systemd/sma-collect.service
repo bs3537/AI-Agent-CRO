@@ -1,0 +1,27 @@
+# Oneshot: the daily 6 PM ET collection step, fired by sma-collect.timer.
+# Refreshes positions, polls news, scores, red-teams, and recomputes
+# thesis-drift decisions. Pair this with the timer (do NOT also enable the
+# sma-monitor run-loop service — pick timers OR the loop, not both).
+
+[Unit]
+Description=SMA Monitor — daily collect (positions, news, score, red-team, decide)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator collect
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true

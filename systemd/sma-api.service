@@ -1,0 +1,37 @@
+# Install: copy to /etc/systemd/system/sma-api.service
+# Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-api
+# Logs:    journalctl -u sma-api -f
+#
+# W5/W6: the always-on FastAPI backend that also serves the built React
+# dashboard (frontend/dist) at /. Bound to localhost — the API has no auth,
+# so expose it via an SSH tunnel or a reverse proxy that adds TLS + auth, do
+# NOT bind 0.0.0.0 on a public host. ExecStartPre runs the Phase 0 bootstrap
+# so the schemas exist before the first request.
+
+[Unit]
+Description=SMA Monitor API + dashboard (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.api --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

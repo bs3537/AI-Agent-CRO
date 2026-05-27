@@ -17,9 +17,11 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from ..config import settings
+from ..decision.engine import run_decisions
 from ..news.pipeline import poll as news_poll
 from ..outputs.alerts import run_alerts
 from ..outputs.digest import assemble_digest
+from ..outputs.thesis_email import assemble_thesis_email
 from ..portfolio.flex import FlexError, fetch_statement, parse_positions
 from ..portfolio.store import latest_positions, save_pull
 from ..red_team.pipeline import run_red_team
@@ -87,7 +89,8 @@ def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None)
 
 # Daily 6 PM ET collection — gather and process the day's data so the
 # 9 PM dispatch has everything it needs. No alerts (disabled in batch
-# mode), no digest (that's the dispatch step's job).
+# mode), no digest (that's the dispatch step's job). Recomputes thesis-drift
+# decisions last so the next morning's email reflects today's evidence.
 def run_collect_cycle(*, offline: bool = False) -> dict:
     """Daily 6 PM ET collection step. Returns a state dict for logging."""
     return run_one_cycle(
@@ -96,9 +99,24 @@ def run_collect_cycle(*, offline: bool = False) -> dict:
         include_news=True,
         include_scoring=True,
         include_red_team=True,
+        include_decisions=True,
         include_alerts=False,
         include_digest=False,
     )
+
+
+# Morning 9 AM ET thesis cycle — recompute any decisions whose thesis or
+# evidence changed since they were last computed (force=False skips unchanged
+# holdings), then assemble + send the thesis-drift email. Runs alongside the
+# evening digest, not in place of it.
+def run_morning_thesis_cycle(*, offline: bool = False) -> dict:
+    """Daily 9 AM ET step: recompute stale decisions, then send the email."""
+    state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    state["decisions"] = run_decisions(offline=offline)
+    state["email"] = assemble_thesis_email()
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    log.info("morning_thesis_done", extra={"summary": state})
+    return state
 
 
 # Daily 9 PM ET dispatch — assemble the digest with the Opus narrative and
@@ -133,6 +151,7 @@ def run_one_cycle(
     include_news: bool = True,
     include_scoring: bool = True,
     include_red_team: bool = True,
+    include_decisions: bool = False,
     include_alerts: bool = True,
     include_digest: bool = False,
     digest_with_narrative: bool = False,
@@ -188,6 +207,11 @@ def run_one_cycle(
             offline=offline,
             min_composite_override=min_override,
         )
+
+    # Thesis-drift decisions roll up the freshly-scored evidence per position;
+    # run after scoring + red team so the verdicts reflect today's data.
+    if include_decisions:
+        state["decisions"] = run_decisions(offline=offline)
 
     if include_alerts:
         state["alerts"] = run_alerts()

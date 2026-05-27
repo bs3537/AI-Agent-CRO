@@ -2,10 +2,15 @@
 # Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-monitor
 # Logs:    journalctl -u sma-monitor -f
 #
-# Phase 6: runs the long-lived orchestrator loop. The loop sleeps until
-# the next daily firing — 6 PM ET (collect) or 9 PM ET (dispatch) — and
-# runs the appropriate cycle. Weekends are skipped. Bootstrap runs as
-# part of startup via ExecStartPre.
+# Runs the long-lived orchestrator loop. The loop sleeps until the next daily
+# firing — 9 AM ET (thesis-drift email), 6 PM ET (collect+decide), or 9 PM ET
+# (dispatch digest) — and runs the appropriate cycle. Weekends are skipped.
+# ET is resolved via Python zoneinfo, so this works on any systemd version
+# (unlike the OnCalendar timezone suffix the *.timer units use).
+#
+# This run-loop is the ALTERNATIVE to the per-firing timer units
+# (sma-{thesis-email,collect,dispatch}.timer). Enable EITHER this service OR
+# the three timers — not both, or each firing would run twice.
 #
 # For cron-based deployments use the snippet from
 # `python -m sma_monitor.orchestrator install-cron` instead of this unit.

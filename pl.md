@@ -16,7 +16,8 @@
 | **W5** | FastAPI backend (`api/`) | **DONE (offline-verified)** |
 | **W6** | React + MUI dark/neon-orange frontend (`frontend/`) | **DONE (npm build verified)** |
 | W2 | Brave (replaces Exa) + Scite + FMP sources | pending (needs API keys) |
-| W7+W8 | 9 AM ET thesis-drift email + systemd timers + packaging | pending |
+| **W7** | 9 AM ET thesis-drift email + scheduling | **DONE (offline-verified)** |
+| **W8** | systemd units (API + timers) + packaging/codex-login docs | **DONE (units validated)** |
 
 ### W1 — what's already implemented and verified
 - **New `src/sma_monitor/llm/`**: `provider.py` (`LLMProvider` protocol + `get_provider()`),
@@ -120,10 +121,50 @@
   (200, index.html) while `/api/*` still routes (API mounts take precedence over the static catch-
   all). Python suite still green (31 passing).
 
-### Next up (resume here)
-1. **W2** (Brave replaces Exa; add Scite + FMP) — needs API keys. Until they arrive, the stack runs
-   offline end-to-end (heuristic decisions + news fixtures + no Codex login).
-2. Then **W7+W8** (9 AM ET thesis-drift email + systemd timers + packaging).
+### W7 — what's already implemented and verified
+- **New `outputs/thesis_email.py`**: `assemble_thesis_email()` joins `latest_decisions()` ×
+  `latest_joined()` (open P&L = market_value − cost_basis, %NAV), orders sell→watch→hold then
+  %NAV desc, renders per-position markdown (color glyph, verdict, P&L, catalyst, 4–5 line note,
+  drivers, confidence) and sends via channels. `render_thesis_email_markdown()` is the renderer.
+- **`outputs/channels.py`**: added `send_thesis_email` (concrete no-op default on the base →
+  optional capability; abstract contract stays alert+digest). FileChannel archives to
+  `data/digests/thesis/YYYY-MM-DD.md` (separate from the evening digest), EmailChannel sends via
+  SMTP, StdoutChannel prints.
+- **Orchestrator**: `run_collect_cycle` now `+decide` (runs `run_decisions` after red-team so the
+  morning verdicts reflect the day's evidence); new `run_morning_thesis_cycle` (recompute stale →
+  send); `thesis-email` CLI subcommand.
+- **Scheduler** (`schedule.py`): added the **9 AM ET** firing (`MORNING_TIME_ET`) to the run_loop
+  (now 3 firings: 9 AM thesis / 6 PM collect / 9 PM dispatch) and the crontab generator.
+  **Additive** — the evening digest at 9 PM is unchanged. (To make it *replace* the digest instead,
+  drop the dispatch firing.)
+- **Tests**: `tests/test_thesis_email.py` (4) — render basics, caller-sort ordering, missing-P&L,
+  and an assemble round-trip (seed decisions offline → capture channel). Full suite 35 passing.
+- **Offline-verified**: `orchestrator thesis-email --offline` archives the ordered email to
+  `digests/thesis/`; `install-cron` shows the 9 AM line.
+
+### W8 — what's already implemented and verified
+- **New `systemd/` units**: `sma-api.service` (always-on uvicorn + dashboard, bound to localhost);
+  oneshot service+timer pairs `sma-thesis-email` (09:00 ET), `sma-collect` (18:00 ET),
+  `sma-dispatch` (21:00 ET) using `OnCalendar=… America/New_York` (systemd ≥ 252) with
+  `Persistent=true`. Updated `sma-monitor.service` (run-loop) header — it's the version-independent
+  ALTERNATIVE to the timers (enable one or the other, not both).
+- **`systemd/README.md`**: host setup (dedicated `sma` user, venv, `pip install -e`), `.env`,
+  **`codex login`** as the LLM auth (no API key), `npm run build` for the dashboard, install/operate
+  commands, and the localhost-binding security note (no API auth → SSH tunnel / reverse proxy).
+- **Packaging**: dropped the now-unused `anthropic` dep from `pyproject` (no `import anthropic`
+  remains anywhere). `.env.example` rewritten to document Codex-login auth + optional
+  `SMA_API_CORS_ORIGINS` / `SMA_FRONTEND_DIST` / `SMA_CODEX_*`.
+- **Verified**: `systemd-analyze` parses every unit (only flags the prod `/opt/...` python path,
+  expected here); `systemd-analyze calendar` confirms the three ET expressions resolve DST-aware
+  (09:00 EDT → 13:00 UTC, etc.); `install-cron` lists all three firings; full suite 35 passing after
+  the anthropic drop.
+
+### Remaining
+- **W2** (Brave replaces Exa; add Scite + FMP) — the only workstream left, **blocked on API keys**.
+  Until they arrive the whole stack runs offline end-to-end (heuristic decisions + news fixtures +
+  no Codex login). When keys land: add `news/{brave_client,scite_client,fmp_client}.py` (same
+  `ExaResult` shape), point `news/pipeline._make_provider` at Brave, add the keys to `config.py` +
+  `missing_for(2)`, and wire FMP metrics into the decision candidate's `fmp_metrics` slot.
 
 ### How to resume / test offline (no credentials needed)
 Sandbox recipe (keeps live `data/sma.db` untouched): copy `data/` → `/tmp/sma_test_data`,

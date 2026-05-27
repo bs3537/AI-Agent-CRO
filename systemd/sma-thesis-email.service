@@ -1,0 +1,28 @@
+# Oneshot: the daily 9 AM ET thesis-drift email, fired by
+# sma-thesis-email.timer. Recomputes any decisions whose thesis or evidence
+# changed overnight, then assembles + sends the morning email (in addition to
+# the evening digest). Pair with the timer; do not also run the sma-monitor
+# run-loop service.
+
+[Unit]
+Description=SMA Monitor — morning thesis-drift email (recompute stale + send)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator thesis-email
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true

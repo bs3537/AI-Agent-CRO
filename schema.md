@@ -136,16 +136,18 @@ This document is the structural map of the project. It captures:
 │  schema.py       AlertRecord, DigestEvent, DigestSummary         │
 │  alerts.py       composite ≥ T → suppression → dispatch          │
 │  digest.py       evening digest assembler (~4:15pm ET)           │
-│  channels.py     File / Stdout / Email pluggable channels        │
+│  channels.py     File / Stdout / Email (+ send_thesis_email, W7) │
 │  format.py       render alert text + digest markdown             │
+│  thesis_email.py W7: morning thesis-drift email (per position)   │
 │  feedback.py     mark useful/noise + mark-missed                 │
 │  store.py        alerts, digests, feedback, missed_events        │
 └──────────────────────────────────────────────────────────────────┘
 
 ┌─ PHASE 6 — Orchestrator ─────────────────────────────────────────┐
-│  __main__.py     CLI: tick, run, status, install-cron, retry-DL  │
-│  pipeline.py     one full sequential cycle of all phases         │
-│  schedule.py     market-hour aware loop + crontab generator      │
+│  __main__.py     CLI: collect, dispatch, thesis-email, tick,     │
+│                  run, status, install-cron, retry-DL             │
+│  pipeline.py     collect (+decide) · dispatch · morning-thesis   │
+│  schedule.py     3 ET firings (9AM/6PM/9PM) loop + crontab gen   │
 │  cost.py         pricing, daily budget, degrade cascade          │
 │  dead_letter.py  retry-once-then-abandon policy                  │
 │  flags.py        named operational flags (stale_positions, …)    │
@@ -796,3 +798,19 @@ CREATE TABLE position_decisions (
 | 2 | 75% budget | Skip Opus narrative on the daily digest (template fallback) |
 | 3 | 85% budget | Skip buckets #10 (literature) + #11 (policy) |
 | 4 | 95% budget | Skip bucket #12 (microstructure) |
+
+## 8. Deployment (W8 — `systemd/`)
+
+Always-on VM. `sma-api.service` runs the API + dashboard (bound to localhost).
+The daily ET firings run EITHER as three timer units OR the single run-loop —
+never both:
+
+| Firing (ET) | Timer unit | Run-loop covers it | CLI |
+|---|---|---|---|
+| 09:00 thesis email | `sma-thesis-email.timer` | ✓ `orchestrator run` | `orchestrator thesis-email` |
+| 18:00 collect+decide | `sma-collect.timer` | ✓ | `orchestrator collect` |
+| 21:00 dispatch digest | `sma-dispatch.timer` | ✓ | `orchestrator dispatch` |
+
+Timers use `OnCalendar=… America/New_York` (systemd ≥ 252, DST-aware);
+`sma-monitor.service` resolves ET via Python `zoneinfo` (any version).
+LLM auth = `codex login` on the host (no API key). See `systemd/README.md`.

@@ -1,0 +1,27 @@
+# Oneshot: the daily 9 PM ET dispatch step, fired by sma-dispatch.timer.
+# Assembles the evening digest (with the synthesis narrative) and sends it
+# via every configured channel. Pair with the timer; do not also run the
+# sma-monitor run-loop service.
+
+[Unit]
+Description=SMA Monitor — daily dispatch (assemble + send evening digest)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator dispatch
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true

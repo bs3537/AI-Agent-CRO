@@ -24,6 +24,9 @@ log = logging.getLogger("sma_monitor.outputs.channels")
 
 # Subdirectory of digests/ used by FileChannel for the per-day alert archive.
 ALERTS_DIR = DIGESTS_DIR / "alerts"
+# Subdirectory of digests/ used by FileChannel for the morning thesis email
+# archive — kept separate so it never overwrites the evening digest file.
+THESIS_DIR = DIGESTS_DIR / "thesis"
 
 
 # Abstract base for every delivery channel. Subclasses implement send_alert
@@ -36,6 +39,11 @@ class Channel(ABC):
 
     @abstractmethod
     def send_digest(self, date_iso: str, rendered_md: str) -> None: ...
+
+    # Send the morning thesis-drift email (W7). Concrete no-op default so this
+    # is an optional capability — the abstract contract stays alert + digest.
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str):
+        return None
 
 
 # Always-on channel that appends alerts to a per-day markdown file and
@@ -64,6 +72,15 @@ class FileChannel(Channel):
             f.write(rendered_md)
         return p
 
+    # Archive the morning thesis email to data/digests/thesis/YYYY-MM-DD.md
+    # (one canonical file per day, separate from the evening digest).
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> Path:
+        THESIS_DIR.mkdir(parents=True, exist_ok=True)
+        p = THESIS_DIR / f"{date_iso}.md"
+        with p.open("w") as f:
+            f.write(rendered_md)
+        return p
+
 
 # Channel that prints to stdout. Useful for testing and for tee'ing the
 # digest to a terminal when invoked manually.
@@ -74,6 +91,9 @@ class StdoutChannel(Channel):
         print(rendered_text, file=sys.stdout, flush=True)
 
     def send_digest(self, date_iso: str, rendered_md: str) -> None:
+        print(rendered_md, file=sys.stdout, flush=True)
+
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
         print(rendered_md, file=sys.stdout, flush=True)
 
 
@@ -113,6 +133,10 @@ class EmailChannel(Channel):
     # Send the digest as one email with a stable subject.
     def send_digest(self, date_iso: str, rendered_md: str) -> None:
         self._send(subject=f"SMA digest — {date_iso}", text_body=rendered_md)
+
+    # Send the morning thesis-drift email with the caller-supplied subject.
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
+        self._send(subject=subject, text_body=rendered_md)
 
     # Internal SMTP helper used by both alert and digest paths. Raises so
     # the pipeline can log + record channel-send failures.
