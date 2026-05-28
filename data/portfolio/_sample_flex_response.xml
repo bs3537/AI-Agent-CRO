@@ -1,0 +1,14 @@
+<FlexQueryResponse queryName="SMA Positions" type="AF">
+  <FlexStatements count="1">
+    <FlexStatement accountId="U7654321" fromDate="20260527" toDate="20260527" period="LastBusinessDay" whenGenerated="20260527;120000">
+      <EquitySummaryInBase>
+        <EquitySummaryByReportDateInBase accountId="U7654321" reportDate="20260527" cash="457500" stock="542500" total="1000000" />
+      </EquitySummaryInBase>
+      <OpenPositions>
+        <OpenPosition accountId="U7654321" symbol="AQST" description="AQUESTIVE THERAPEUTICS INC" assetCategory="STK" position="50000" markPrice="5.00" positionValue="250000" costBasisMoney="180000" />
+        <OpenPosition accountId="U7654321" symbol="VRTX" description="VERTEX PHARMACEUTICALS INC" assetCategory="STK" position="500" markPrice="465.00" positionValue="232500" costBasisMoney="150000" />
+        <OpenPosition accountId="U7654321" symbol="MRNA" description="MODERNA INC" assetCategory="STK" position="2000" markPrice="30.00" positionValue="60000" costBasisMoney="90000" />
+      </OpenPositions>
+    </FlexStatement>
+  </FlexStatements>
+</FlexQueryResponse>

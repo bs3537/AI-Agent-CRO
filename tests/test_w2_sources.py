@@ -11,7 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from sma_monitor.news import brave_client, fmp_client, scite_client
+from sma_monitor.news import (
+    brave_client,
+    clinicaltrials_client,
+    fmp_client,
+    pubmed_client,
+    scite_client,
+    sec_client,
+    semantic_scholar_client,
+)
 
 FIXTURES = Path(__file__).resolve().parents[1] / "data" / "news_cache"
 
@@ -45,6 +53,56 @@ def test_scite_parse_fixture():
     assert source_tier(r.url) == 3  # peer-reviewed
 
 
+# Semantic Scholar fixture parses into ExaResults with canonical doi.org URLs
+# (→ tier 3) — the live literature source for bucket #10 (replaces Scite).
+def test_semantic_scholar_parse_fixture():
+    from sma_monitor.news.source_tiers import source_tier
+    results = semantic_scholar_client.load_response_file(
+        FIXTURES / "_sample_semantic_scholar_response.json"
+    )
+    assert len(results) == 2
+    r = results[0]
+    assert r.url.startswith("https://doi.org/")
+    assert r.title and r.excerpt
+    assert source_tier(r.url) == 3  # peer-reviewed
+
+
+# SEC filings fixture parses into ExaResults with sec.gov Archives URLs (tier 1
+# — regulatory/primary), the financials-primary source ahead of FMP.
+def test_sec_parse_fixture():
+    from sma_monitor.news.source_tiers import source_tier
+    results = sec_client.load_response_file(FIXTURES / "_sample_sec_response.json")
+    assert len(results) == 3
+    r = results[0]
+    assert r.url.startswith("https://www.sec.gov/Archives/edgar/data/")
+    assert "10-Q" in r.title
+    assert source_tier(r.url) == 1  # regulatory/primary
+
+
+# PubMed esummary fixture parses into ExaResults with pubmed.ncbi.nlm.nih.gov
+# URLs (tier 3) — the biomed-literature primary, ahead of Semantic Scholar.
+def test_pubmed_parse_fixture():
+    from sma_monitor.news.source_tiers import source_tier
+    results = pubmed_client.load_response_file(FIXTURES / "_sample_pubmed_response.json")
+    assert len(results) == 2
+    r = results[0]
+    assert r.url == "https://pubmed.ncbi.nlm.nih.gov/38661449/"
+    assert "Exagamglogene" in r.title
+    assert source_tier(r.url) == 3
+
+
+# ClinicalTrials.gov v2 fixture parses into ExaResults with clinicaltrials.gov
+# study URLs (tier 2) — biomed-literature primary alongside PubMed.
+def test_ctgov_parse_fixture():
+    from sma_monitor.news.source_tiers import source_tier
+    results = clinicaltrials_client.load_response_file(FIXTURES / "_sample_ctgov_response.json")
+    assert len(results) == 2
+    r = results[0]
+    assert r.url == "https://clinicaltrials.gov/study/NCT03745287"
+    assert "exa-cel" in r.title.lower()
+    assert source_tier(r.url) == 2
+
+
 # FMP parse_metrics flattens the endpoint sections into friendly keys.
 def test_fmp_parse_metrics():
     body = {
@@ -59,15 +117,16 @@ def test_fmp_parse_metrics():
 # Every adapter refuses to run live without a key + without a fixture, raising
 # a clear RuntimeError rather than crashing or making a keyless request.
 def test_missing_key_guards():
-    from sma_monitor.news.pipeline import _make_provider, _make_scite_provider
+    from sma_monitor.news.pipeline import _make_provider, _make_literature_provider
     from sma_monitor import config
 
-    for attr in ("brave_search_api_key", "exa_api_key", "scite_api_key", "fmp_api_key"):
+    for attr in ("brave_search_api_key", "exa_api_key", "scite_api_key",
+                 "semantic_scholar_api_key", "fmp_api_key"):
         setattr(config.settings, attr, None)
     with pytest.raises(RuntimeError):
         _make_provider(None, None)
     with pytest.raises(RuntimeError):
-        _make_scite_provider(None, None)
+        _make_literature_provider(None, None)
     with pytest.raises(RuntimeError):
         fmp_client.refresh_for_holdings(api_key=None)
 
@@ -133,3 +192,15 @@ def test_build_candidate_picks_up_fmp():
     fmp_client.save_fmp_snapshot(h.ticker, {"company": "X", "current_ratio": 2.0})
     cand = build_candidate(h)
     assert cand.fmp_metrics is not None and cand.fmp_metrics["current_ratio"] == 2.0
+
+
+# poll_sec replays an EDGAR fixture into bucket #7 as tier-1 articles (the
+# financials-primary source), tagged to the queried holding.
+def test_poll_sec_stores_filings_offline():
+    from sma_monitor.news.pipeline import poll_sec
+    from sma_monitor.news.store import recent_articles
+    res = poll_sec(user_agent="test-agent", filter_ticker="VRTX",
+                   from_file=FIXTURES / "_sample_sec_response.json", num_results=3)
+    assert res["holdings"] == 1 and res["queries"] == 1
+    rows = recent_articles(ticker="VRTX", bucket_id=7, limit=10)
+    assert any(r["source_tier"] == 1 for r in rows)

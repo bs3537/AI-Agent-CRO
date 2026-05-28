@@ -25,8 +25,10 @@ _TIERS: list[tuple[int, list[str]]] = [
     (3, ["nejm.org", "jamanetwork.com", "thelancet.com", "ascopubs.org",
          "ashpublications.org", "nature.com", "science.org", "cell.com",
          "bmj.com", "annals.org",
-         # W2: Scite literature links resolve via DOI / PubMed → peer-reviewed.
-         "doi.org", "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "scite.ai"]),
+         # W2: literature links resolve via DOI / PubMed → peer-reviewed
+         # (Semantic Scholar uses the DOI when present, else its paper page).
+         "doi.org", "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov",
+         "semanticscholar.org", "scite.ai"]),
     (4, ["fiercebiotech.com", "fiercepharma.com", "biopharmadive.com", "endpts.com",
          "statnews.com", "biospace.com", "biopharmacatalyst.com"]),
     (5, ["reuters.com", "bloomberg.com", "wsj.com", "ft.com", "marketwatch.com",

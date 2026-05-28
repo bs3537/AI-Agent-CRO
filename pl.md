@@ -15,9 +15,76 @@
 | **W4** | File upload + thesis editing (`portfolio/uploads.py`, `position_files`) | **DONE (offline-verified)** |
 | **W5** | FastAPI backend (`api/`) | **DONE (offline-verified)** |
 | **W6** | React + MUI dark/neon-orange frontend (`frontend/`) | **DONE (npm build verified)** |
-| **W2** | Brave (replaces Exa) + Scite + FMP sources | **SCAFFOLDED (offline-verified; add keys to go live)** |
+| **W2** | Data sources — Brave, FMP, **Semantic Scholar (replaced Scite)**, SEC EDGAR, PubMed, ClinicalTrials.gov | **LIVE (keys set; live-verified 2026-05-28)** |
 | **W7** | 9 AM ET thesis-drift email + scheduling | **DONE (offline-verified)** |
 | **W8** | systemd units (API + timers) + packaging/codex-login docs | **DONE (units validated)** |
+| **W9** | LLM throughput: per-stage model/effort + bounded concurrency + 429 backoff | **PLANNED — next session** |
+| **W10** | Codex due-diligence **source policy** — precedence (SEC→FMP; PubMed/CT.gov/web→S2) + Brave-verification, wired into daily collect | **DONE (62 tests green; live-verified 2026-05-28)** |
+
+---
+
+## ⏭ LEFT OFF HERE (2026-05-28) — scaffold sidecars for the live IBKR portfolio
+
+**Done this session:** all data-source keys wired in `.env` (Brave, FMP, Semantic Scholar, IBKR Flex
+token + query `1524108`); a **live IBKR Flex pull** loaded the real **56-position** book into
+`data/sma.db` (top weight AQST 18.05%); and the **Codex due-diligence source policy (W10)** was built
++ live-verified end-to-end:
+- `news/source_policy.py` — precedence (financials **SEC→FMP**; biomed lit **PubMed/CT.gov/web→Semantic
+  Scholar**; general **web→S2**) + the API-verification mandate; enforced in `decision/prompt.py`.
+- New REST adapters: `sec_client` (→ #7 Capital Structure), `pubmed_client` + `clinicaltrials_client`
+  (→ #10 literature), `semantic_scholar_client` (replaced Scite), `verification.py` (Brave cross-check
+  of FMP/S2 data).
+- Integration: multi-source `poll_literature`, `poll_sec` + EDGAR CIK-map cache, FMP corroboration in
+  the decision packet; all run by `run_collect_cycle`. **62 tests green.**
+
+**⛔ BLOCKER / RESUME HERE:** the 56 live holdings have **no sidecars**, and `latest_joined()` returns
+only sidecar-backed holdings → every poll currently iterates over **0 holdings** (the whole pipeline is
+a no-op on the real book). **Resume by scaffolding `data/portfolio/sidecar/<TICKER>.yaml`** for the
+real names (thesis stub + `indications`/`products`; note `indications` drives the biomed-vs-general
+literature branch). Start with the top holdings by %NAV:
+**AQST, GRCE, NBIS, TARS, COGT, SLDB, IOVA, XNCR, KTOS, DMRA** (then the remaining 46).
+
+---
+
+## ⏭ W9 (next session) — LLM throughput tiering for ~40 positions
+
+**Why:** the book will hold **~40 open positions**. A daily collect cycle is then ~150–300 LLM
+calls (scoring + red-team + ~40 decisions + 1 digest), run **sequentially**. At `xhigh` reasoning
+that risks (a) overrunning the 6 PM→9 PM window and (b) draining the shared 5-hour budget. Context
+window is NOT the constraint — call **volume + token burn + throughput** are.
+
+**Plan (the concrete version of the recommendation):**
+1. **Tier model + reasoning effort per stage** — high-volume workers run cheaper/faster, synthesis
+   runs deep:
+   - scorer + red-team → **gpt-5.5-high** (triage; fallback **gpt-5.5-medium** if budget is tight),
+   - decisions + digest narrative → **gpt-5.5-xhigh** (few calls, depth matters).
+2. **Bounded concurrency** — thread-pool the per-item loops (scorer / red-team / decision) so
+   ~**4 concurrent `codex exec`** processes run at once (NOT subagents — N independent CLI
+   processes sharing one `~/.codex/auth.json`). Configurable via `SMA_LLM_CONCURRENCY`.
+3. **429 backoff/retry** — exponential backoff on rate-limit responses in `codex_client._run`
+   (Codex retries internally then gives up; we add our own bounded retry).
+4. **SQLite write safety** — set `PRAGMA busy_timeout` so concurrent result writes don't trip
+   "database is locked".
+5. **Measure before committing** — run one real 40-name cycle and read `codex /status` to see how
+   much of the 5-hour budget it burns → derive how many cycles/day the plan sustains.
+6. **Fallbacks if tight** — drop scorer to **gpt-5.5-medium**, lower `--num-results` (5→3), and/or
+   trim per-holding buckets; lean on existing **idempotency** (re-runs only process new items) and
+   the **degrade cascade**.
+
+**Notes / decisions baked in:**
+- **One shared budget.** "high" workers + "xhigh" synthesis draw from the *same* Codex Pro account
+  pool (5x / **10x through May 31 2026**). Tiering saves tokens; it does NOT add quota or bypass
+  rate limits. OpenAI publishes **no concurrency/TPM cap** — limits are usage-over-time (5h + weekly),
+  so concurrency is bounded empirically (~3–5) + backoff, not by a documented number.
+- **No LLM "orchestrator."** The Python `orchestrator/` already sequences stages deterministically;
+  xhigh is simply the model the *decision/digest* calls use — do not build an LLM-managing-LLMs layer.
+
+**Files to touch:** `llm/codex_client.py` (per-call model+effort args, 429 backoff), `llm/provider.py`
+(stage-aware selection or per-call params), `scorer/pipeline.py` + `red_team/pipeline.py` +
+`decision/engine.py` (thread pools), `config.py` (`SMA_LLM_CONCURRENCY` + per-stage model/effort env),
+`db.py` (busy_timeout). Verify offline first (heuristic path unaffected), then measure live.
+
+---
 
 ### W1 — what's already implemented and verified
 - **New `src/sma_monitor/llm/`**: `provider.py` (`LLMProvider` protocol + `get_provider()`),

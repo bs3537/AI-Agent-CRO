@@ -1,7 +1,7 @@
 """Run orchestration cycles.
 
 Daily-batch operating model (post-tuning):
-  - 6 PM ET  → run_collect_cycle:   positions + news + score + red-team
+  - 6 PM ET  → run_collect_cycle:   positions + news + literature + SEC/FMP financials + score + red-team + decisions
   - 9 PM ET  → run_dispatch_cycle:  digest assembly + email delivery
   - Real-time alerts disabled — everything above T rolls into the digest.
 
@@ -21,6 +21,7 @@ from ..decision.engine import run_decisions
 from ..news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from ..news.pipeline import poll as news_poll
 from ..news.pipeline import poll_literature as news_poll_literature
+from ..news.pipeline import poll_sec as news_poll_sec
 from ..outputs.alerts import run_alerts
 from ..outputs.digest import assemble_digest
 from ..outputs.thesis_email import assemble_thesis_email
@@ -200,15 +201,15 @@ def run_one_cycle(
                                               "detail": str(e)[:200]})
             state["news"] = {"status": "skipped", "reason": str(e)[:200]}
 
-    # W2: Scite literature → bucket #10. Skipped (flagged) when no key/fixture,
-    # exactly like the news poll — never crashes the cycle.
+    # W2: Semantic Scholar literature → bucket #10. Skipped (flagged) when no
+    # key/fixture, exactly like the news poll — never crashes the cycle.
     if include_literature:
         try:
-            state["literature"] = news_poll_literature(api_key=settings.scite_api_key)
-            clear_flag("scite_failure")
+            state["literature"] = news_poll_literature(api_key=settings.semantic_scholar_api_key)
+            clear_flag("literature_failure")
         except RuntimeError as e:
             log.warning("literature_poll_skipped", extra={"err": str(e)})
-            set_flag("scite_failure", metadata={"reason": "no_source", "detail": str(e)[:200]})
+            set_flag("literature_failure", metadata={"reason": "no_source", "detail": str(e)[:200]})
             state["literature"] = {"status": "skipped", "reason": str(e)[:200]}
 
     if include_scoring:
@@ -225,9 +226,17 @@ def run_one_cycle(
             min_composite_override=min_override,
         )
 
-    # W2: refresh FMP financial snapshots before decisions so the verdicts +
-    # dashboard see current financials. Skipped (flagged) without a key/fixture.
+    # Financials in source-policy precedence: SEC filings (primary, bucket #7)
+    # first, then FMP snapshots (secondary) for metrics + dashboard. Each is
+    # flagged-and-skipped on failure, never crashing the cycle.
     if include_financials:
+        try:
+            state["sec"] = news_poll_sec(user_agent=settings.sec_edgar_user_agent)
+            clear_flag("sec_failure")
+        except Exception as e:
+            log.warning("sec_poll_skipped", extra={"err": str(e)})
+            set_flag("sec_failure", metadata={"reason": "error", "detail": str(e)[:200]})
+            state["sec"] = {"status": "skipped", "reason": str(e)[:200]}
         try:
             state["financials"] = refresh_for_holdings(api_key=settings.fmp_api_key)
             # Daily price series for the dashboard sparklines (same key).

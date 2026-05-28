@@ -1,0 +1,37 @@
+{
+  "studies": [
+    {
+      "protocolSection": {
+        "identificationModule": {
+          "nctId": "NCT03745287",
+          "briefTitle": "A Study to Evaluate the Safety and Efficacy of exa-cel in Subjects With Severe Sickle Cell Disease"
+        },
+        "statusModule": {
+          "overallStatus": "ACTIVE_NOT_RECRUITING",
+          "lastUpdatePostDateStruct": {"date": "2026-04-15"},
+          "startDateStruct": {"date": "2018-11-27"}
+        },
+        "designModule": {"phases": ["PHASE3"]},
+        "conditionsModule": {"conditions": ["Sickle Cell Disease"]},
+        "descriptionModule": {
+          "briefSummary": "A single-arm, open-label, multi-site study evaluating exagamglogene autotemcel (exa-cel) in subjects with severe sickle cell disease."
+        }
+      }
+    },
+    {
+      "protocolSection": {
+        "identificationModule": {
+          "nctId": "NCT05329649",
+          "briefTitle": "Long-term Follow-up Study of exa-cel in Subjects With Sickle Cell Disease or Beta-Thalassemia"
+        },
+        "statusModule": {
+          "overallStatus": "RECRUITING",
+          "lastUpdatePostDateStruct": {"date": "2026-03-01"}
+        },
+        "designModule": {"phases": ["PHASE3"]},
+        "conditionsModule": {"conditions": ["Sickle Cell Disease", "Transfusion-Dependent Beta-Thalassemia"]},
+        "descriptionModule": {"briefSummary": "Long-term follow-up of subjects who received exa-cel in a prior study."}
+      }
+    }
+  ]
+}

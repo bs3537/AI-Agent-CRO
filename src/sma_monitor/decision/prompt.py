@@ -50,6 +50,23 @@ observation that would change your verdict. Neutral and specific — no \
 - Calibrate confidence to how much evidence you actually have.
 """
 
+# Source-provenance policy injected into the system prompt: how Codex must weigh
+# evidence by where it came from, plus the rule that API-derived data needs Brave
+# corroboration. Mirrors news/source_policy.py (the single source of truth).
+_SOURCE_POLICY = """\
+SOURCE POLICY — weigh evidence by where it came from:
+- Financials: trust SEC filings (primary/regulatory) over FMP (a third-party \
+data API). A financial claim resting only on FMP is provisional.
+- Biomedical evidence: trust PubMed, ClinicalTrials.gov, and regulatory/primary \
+sources over Semantic Scholar (an aggregator API). For non-biomedical names, \
+trust reputable web sources over Semantic Scholar.
+- VERIFICATION: data from external APIs (FMP, Semantic Scholar) is reliable only \
+when an independent web source corroborates it. Treat uncorroborated API-derived \
+figures or claims as LOW CONFIDENCE — you may report them, but do NOT escalate \
+the verdict (watch/sell) on uncorroborated API data alone, and name the missing \
+corroboration in the note.
+"""
+
 # Output shape echoed in the system prompt so the model emits exactly the JSON
 # the engine's DECISION_OUTPUT_SCHEMA validates. color is derived from verdict
 # by the engine and is intentionally NOT requested here.
@@ -66,7 +83,7 @@ OUTPUT — valid JSON only, no preamble, no markdown fences:
 
 # Assemble the full system prompt: role + verdict semantics + output schema.
 def build_system_prompt() -> str:
-    return f"{_SYSTEM}\n{_OUTPUT_SCHEMA}"
+    return f"{_SYSTEM}\n{_SOURCE_POLICY}\n{_OUTPUT_SCHEMA}"
 
 
 # Build the user-side message for one candidate. Compact labeled sections so
@@ -89,6 +106,7 @@ def build_user_message(c: DecisionCandidate) -> str:
     scores = _fmt_scores(c.scores)
     bears = _fmt_bears(c.bears)
     fmp = _fmt_fmp(c.fmp_metrics)
+    fmp_check = _fmt_fmp_corroboration(c.fmp_corroboration)
 
     return f"""\
 POSITION
@@ -114,8 +132,9 @@ SCORED ARTICLES (Phase 3 — highest composite first; peak composite {c.max_comp
 RED-TEAM BEAR CASES (Phase 4 — peak severity {c.max_severity}/5)
 {bears}
 
-FINANCIAL METRICS (FMP)
+FINANCIAL METRICS (FMP — third-party API; corroborate before trusting)
 {fmp}
+{fmp_check}
 
 Assess thesis drift for {c.ticker}. Output JSON only.
 """
@@ -163,6 +182,20 @@ def _fmt_fmp(metrics: dict | None) -> str:
     if not metrics:
         return "  (financial metrics unavailable)"
     return "\n".join(f"  - {k}: {v}" for k, v in metrics.items())
+
+
+# Render the Brave web-corroboration of the FMP data (the source-policy
+# verification): whether an independent source backs the API figures, plus the
+# top corroborating sources with their credibility tiers, for Codex to weigh.
+def _fmt_fmp_corroboration(corr: dict | None) -> str:
+    if not corr:
+        return "  Web corroboration (Brave): not checked."
+    status = "corroborated" if corr.get("corroborated") else \
+        "NOT corroborated by an independent source"
+    lines = [f"  Web corroboration (Brave): {status}."]
+    for s in corr.get("sources", []):
+        lines.append(f"    - [tier {s.get('tier')}] {(s.get('title') or '')[:70]} — {s.get('url', '')}")
+    return "\n".join(lines)
 
 
 # Indent a possibly-multiline block by two spaces for the labeled layout.

@@ -2,7 +2,8 @@
 
   python -m sma_monitor.news poll [--ticker T] [--bucket N] [--from-file F]
                                   [--num-results N] [--lookback-hours N]
-  python -m sma_monitor.news poll-literature [--ticker T] [--from-file F]   (Scite → #10)
+  python -m sma_monitor.news poll-literature [--ticker T] [--from-file F]   (Semantic Scholar → #10)
+  python -m sma_monitor.news sec [--ticker T] [--from-file F]               (SEC filings → #7)
   python -m sma_monitor.news fmp [--ticker T] [--from-file F]               (FMP financials)
   python -m sma_monitor.news show [--ticker T] [--bucket N] [--limit N]
   python -m sma_monitor.news show-buckets
@@ -24,6 +25,7 @@ from .buckets import load_buckets
 from .fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from .pipeline import poll as run_poll
 from .pipeline import poll_literature as run_poll_literature
+from .pipeline import poll_sec as run_poll_sec
 from .query import per_holding_query, sector_query
 from .store import bucket_activity, init_news_schema, recent_articles
 
@@ -46,11 +48,11 @@ def cmd_poll(args, log):
     return 0
 
 
-# CLI: run one Scite literature poll (bucket #10). 2 on missing creds.
+# CLI: run one Semantic Scholar literature poll (bucket #10). 2 on missing creds.
 def cmd_poll_literature(args, log):
     try:
         res = run_poll_literature(
-            api_key=settings.scite_api_key,
+            api_key=settings.semantic_scholar_api_key,
             from_file=Path(args.from_file) if args.from_file else None,
             filter_ticker=args.ticker,
             num_results=args.num_results,
@@ -59,6 +61,20 @@ def cmd_poll_literature(args, log):
         log.error("literature_poll_missing_creds", extra={"err": str(e)})
         return 2
     log.info("literature_poll_done", extra=res)
+    return 0
+
+
+# CLI: run one SEC EDGAR filings poll (financials primary → bucket #7). SEC needs
+# no key, so this returns 0; per-holding errors are recorded, not fatal.
+def cmd_sec(args, log):
+    res = run_poll_sec(
+        user_agent=settings.sec_edgar_user_agent,
+        filter_ticker=args.ticker,
+        from_file=Path(args.from_file) if args.from_file else None,
+        num_results=args.num_results,
+    )
+    log.info("sec_poll_done", extra=res)
+    print(res)
     return 0
 
 
@@ -170,10 +186,15 @@ def main(argv=None):
     p_poll.add_argument("--num-results", type=int, default=5)
     p_poll.add_argument("--lookback-hours", type=int, default=24)
 
-    p_lit = sub.add_parser("poll-literature", help="Scite literature poll → bucket #10")
+    p_lit = sub.add_parser("poll-literature", help="Semantic Scholar literature poll → bucket #10")
     p_lit.add_argument("--ticker", help="Restrict to one holding")
-    p_lit.add_argument("--from-file", help="Load Scite response from JSON fixture")
+    p_lit.add_argument("--from-file", help="Load Semantic Scholar response from JSON fixture")
     p_lit.add_argument("--num-results", type=int, default=5)
+
+    p_sec = sub.add_parser("sec", help="SEC EDGAR filings poll → bucket #7 (financials primary)")
+    p_sec.add_argument("--ticker", help="Restrict to one holding")
+    p_sec.add_argument("--from-file", help="Load EDGAR submissions JSON from fixture")
+    p_sec.add_argument("--num-results", type=int, default=5)
 
     p_fmp = sub.add_parser("fmp", help="Refresh FMP financials + daily price series")
     p_fmp.add_argument("--ticker", help="Restrict to one ticker")
@@ -197,6 +218,7 @@ def main(argv=None):
     handlers = {
         "poll": cmd_poll,
         "poll-literature": cmd_poll_literature,
+        "sec": cmd_sec,
         "fmp": cmd_fmp,
         "show": cmd_show,
         "show-buckets": cmd_show_buckets,

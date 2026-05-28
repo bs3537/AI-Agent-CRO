@@ -18,13 +18,23 @@ class Settings(BaseSettings):
     ibkr_flex_query_id: str | None = None
 
     # News ingestion — Phase 2
-    # W2: Brave replaces Exa as the primary search source; Scite adds
-    # literature (bucket #10) and FMP adds financials (#4/#7/#12 + dashboard).
-    # exa_api_key is retained as a fallback search provider.
+    # W2: Brave replaces Exa as the primary search source; Semantic Scholar
+    # provides literature (bucket #10, replacing Scite) and FMP adds financials
+    # (#4/#7/#12 + dashboard). exa_api_key/scite_api_key are retained as legacy
+    # fallbacks.
     exa_api_key: str | None = None
     brave_search_api_key: str | None = None
     scite_api_key: str | None = None
+    # W2 (updated): Semantic Scholar is the live literature source for bucket
+    # #10 — a plain REST key (x-api-key header), so no OAuth/logout on the host.
+    semantic_scholar_api_key: str | None = None
     fmp_api_key: str | None = None
+    # SEC EDGAR (financials primary, ahead of FMP) needs no key — only a
+    # descriptive User-Agent per SEC's fair-access policy. Set a real contact.
+    sec_edgar_user_agent: str = "sma-monitor (contact: admin@example.com)"
+    # PubMed (NCBI E-utilities) is the biomed-literature primary; works without
+    # a key (3 req/s). An optional NCBI_API_KEY raises the limit to 10 req/s.
+    ncbi_api_key: str | None = None
 
     # Scoring & red team — Phase 3-4
     anthropic_api_key: str | None = None
@@ -41,9 +51,10 @@ class Settings(BaseSettings):
     data_root: str = "./data"
     log_level: str = "INFO"
 
-    # Return the list of secrets required by `phase` that aren't set.
-    # Bootstrap and each CLI uses this to skip work gracefully when
-    # credentials are missing rather than crashing.
+    # Return the list of secrets required by `phase` that aren't set. Treats
+    # both unset (None) and present-but-empty ("") as missing, so a blank
+    # `KEY=` line in .env skips the phase gracefully instead of crashing.
+    # Bootstrap and each CLI uses this to skip work when creds are missing.
     def missing_for(self, phase: int) -> list[str]:
         required_by_phase: dict[int, list[str]] = {
             1: ["ibkr_flex_token", "ibkr_flex_query_id"],
@@ -58,7 +69,7 @@ class Settings(BaseSettings):
                 "smtp_password",
             ],
         }
-        return [v for v in required_by_phase.get(phase, []) if getattr(self, v) is None]
+        return [v for v in required_by_phase.get(phase, []) if not getattr(self, v)]
 
 
 # Singleton settings instance imported by every phase via `from .config import settings`.

@@ -18,9 +18,12 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from ..config import settings
 from ..identity import event_id
 from ..llm import LLMError, get_provider
 from ..news.fmp_client import latest_fmp_metrics
+from ..news.source_tiers import source_tier
+from ..news.verification import verify_fmp
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..portfolio.uploads import combined_text
@@ -41,7 +44,7 @@ log = logging.getLogger("sma_monitor.decision.engine")
 
 # Version string the engine keys idempotency off. Bump when the prompt, the
 # heuristic, or the candidate shape changes so every holding re-computes.
-DECISION_VERSION = "v1.0-2026.05"
+DECISION_VERSION = "v1.1-2026.05"
 
 # Label written to position_decisions.model_used for the offline path.
 HEURISTIC_MODEL = "heuristic-v1"
@@ -345,6 +348,21 @@ def run_decisions(
     decided = skipped = errors = 0
     for h in holdings:
         candidate = build_candidate(h)
+        # Corroborate the FMP financials against the web (Brave) so Codex can
+        # weigh them per the source policy. Live call — skipped offline / keyless.
+        # Display-only: deliberately NOT folded into inputs_hash (Brave results
+        # are volatile and shouldn't churn the re-compute gate).
+        if not offline and candidate.fmp_metrics and settings.brave_search_api_key:
+            try:
+                ver = verify_fmp(candidate.company_name or candidate.ticker,
+                                 api_key=settings.brave_search_api_key)
+                candidate.fmp_corroboration = {
+                    "corroborated": ver.corroborated,
+                    "sources": [{"title": s.title, "url": s.url, "tier": source_tier(s.url)}
+                                for s in ver.sources[:3]],
+                }
+            except Exception as e:
+                log.warning("fmp_verification_skipped", extra={"ticker": h.ticker, "err": str(e)})
         th = thesis_hash(h.ticker, candidate.thesis)
         # Hash the uploaded-doc text + FMP metrics so a doc change or a fresh
         # financial snapshot re-computes this holding's decision.

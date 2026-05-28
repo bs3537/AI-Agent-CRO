@@ -19,6 +19,7 @@ from ..portfolio.schema import Holding
 from .buckets import Bucket, load_buckets
 from .exa_client import ExaError, ExaResult, load_response_file, search as exa_search
 from .query import entity_terms, literature_query, per_holding_query, sector_query
+from .source_policy import literature_order
 from .source_tiers import source_label, source_tier
 from .store import init_news_schema, save_article, save_poll_record
 from .tagger import match_tickers, tag_text
@@ -112,7 +113,7 @@ def poll(
 #   2. Brave when BRAVE_SEARCH_API_KEY is set (W2 — the primary source);
 #   3. Exa when EXA_API_KEY is set (legacy fallback);
 #   4. otherwise error loudly.
-# `api_key` is the Exa key passed by callers; Brave/Scite/FMP keys are read
+# `api_key` is the Exa key passed by callers; Brave/Semantic Scholar/FMP keys are read
 # from settings so the existing poll() signature stays unchanged.
 def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
     if fixture:
@@ -226,7 +227,7 @@ def _store_one(
     if not bucket_tags and query_bucket_id:
         bucket_tags = [(query_bucket_id, 0.1)]
     # force_bucket_id (W2 literature): the source guarantees this bucket
-    # (e.g. Scite → #10), so ensure it's tagged even if the keyword tagger
+    # (e.g. Semantic Scholar → #10), so ensure it's tagged even if the keyword tagger
     # latched onto a different bucket from the abstract.
     if force_bucket_id is not None and not any(bid == force_bucket_id for bid, _ in bucket_tags):
         bucket_tags.append((force_bucket_id, 0.6))
@@ -246,10 +247,10 @@ def _store_one(
     return is_new
 
 
-# Run a literature poll (W2 / bucket #10): for each holding, search Scite on
-# its drug/indication terms and store the hits as bucket-#10 articles. Mirrors
-# poll()'s structure but on a single bucket. Skips gracefully (RuntimeError)
-# when no Scite key and no fixture is available, so the daily cycle is safe.
+# Run a literature poll (bucket #10): for each holding, query the biomed/general
+# literature primaries per source_policy (PubMed/ClinicalTrials.gov/web) plus
+# Semantic Scholar, storing every hit as a bucket-#10 article. Each source is
+# isolated — a flaky one records an error poll row and the cycle goes on.
 def poll_literature(
     *,
     api_key: str | None,
@@ -257,7 +258,8 @@ def poll_literature(
     filter_ticker: str | None = None,
     num_results: int = 5,
 ) -> dict:
-    """Scite literature poll → bucket #10. Returns a summary dict."""
+    """Literature poll → bucket #10 (PubMed/ClinicalTrials.gov/web + Semantic
+    Scholar, in source_policy order). Returns a summary dict."""
     init_news_schema()
     holdings, missing, _ = latest_joined()
     if filter_ticker:
@@ -269,20 +271,134 @@ def poll_literature(
 
     all_buckets = load_buckets()
     holdings_entities = {h.ticker: entity_terms(h) for h in holdings}
-    provider = _make_scite_provider(api_key, from_file)
 
     queries = articles_new = 0
     for h in holdings:
         term = literature_query(h)
         if not term:
             continue
+        sources = _literature_sources(
+            h, s2_key=api_key, brave_key=settings.brave_search_api_key,
+            ncbi_key=settings.ncbi_api_key, fixture=from_file,
+        )
+        for source_name, fetch in sources:
+            queries += 1
+            started_at = datetime.now(timezone.utc)
+            try:
+                results = fetch(term, num_results)
+            except Exception as e:  # one flaky source must not sink the cycle
+                log.error("literature_query_failed",
+                          extra={"ticker": h.ticker, "source": source_name, "err": str(e)})
+                save_poll_record(ticker=h.ticker, bucket_id=10,
+                                 query_text=f"{source_name}: {term}",
+                                 started_at=started_at, ended_at=datetime.now(timezone.utc),
+                                 n_results=0, n_new=0, status="error")
+                continue
+            fetched_at = datetime.now(timezone.utc)
+            n_new = 0
+            for res in results:
+                if _store_one(res, fetched_at=fetched_at, holdings_entities=holdings_entities,
+                              all_buckets=all_buckets, query_ticker=h.ticker,
+                              query_bucket_id=10, force_bucket_id=10):
+                    n_new += 1
+            save_poll_record(ticker=h.ticker, bucket_id=10,
+                             query_text=f"{source_name}: {term}",
+                             started_at=started_at, ended_at=fetched_at,
+                             n_results=len(results), n_new=n_new, status="ok")
+            articles_new += n_new
+            log.info("literature_query_ok",
+                     extra={"ticker": h.ticker, "source": source_name,
+                            "n_results": len(results), "n_new": n_new})
+
+    return {"holdings": len(holdings), "missing_sidecars": missing,
+            "queries": queries, "articles_new": articles_new}
+
+
+# Build the ordered (source_name, fetch) list for a holding's literature poll,
+# following source_policy precedence (biomed: PubMed/CT.gov/web → S2; general:
+# web → S2) and including only sources whose key is available. PubMed and
+# ClinicalTrials.gov are keyless; web needs Brave, Semantic Scholar its key.
+# Keys are passed in (not read from settings) so the ordering is unit-testable.
+def _literature_sources(h, *, s2_key, brave_key, ncbi_key, fixture):
+    # Offline replay: a single Semantic Scholar fixture (tests / --from-file).
+    if fixture:
+        return [("semantic_scholar", _make_literature_provider(s2_key, fixture))]
+    from . import brave_client, clinicaltrials_client, pubmed_client, semantic_scholar_client
+
+    available = {
+        "pubmed": lambda term, n: pubmed_client.search(term, api_key=ncbi_key, num_results=n),
+        "clinicaltrials_gov": lambda term, n: clinicaltrials_client.search(term, num_results=n),
+    }
+    if brave_key:
+        available["web_search"] = lambda term, n: brave_client.search(
+            term, api_key=brave_key, num_results=n)
+    if s2_key:
+        available["semantic_scholar"] = lambda term, n: semantic_scholar_client.search(
+            term, api_key=s2_key, num_results=n)
+    return [(name, available[name]) for name in literature_order(h) if name in available]
+
+
+# Pick the literature provider: fixture replay when from_file is set, else live
+# Semantic Scholar when the key is present, else raise (literature poll skipped).
+def _make_literature_provider(api_key: str | None, fixture: Path | None):
+    if fixture:
+        from .semantic_scholar_client import load_response_file as s2_load
+        cached = s2_load(fixture)
+
+        def provider(_term: str, n: int) -> list[ExaResult]:
+            return cached[:n]
+
+        return provider
+    if not api_key:
+        raise RuntimeError(
+            "SEMANTIC_SCHOLAR_API_KEY is not set and no --from-file fixture was "
+            "provided; literature (bucket #10) poll skipped."
+        )
+    from .semantic_scholar_client import search as s2_search
+
+    def live_provider(term: str, n: int) -> list[ExaResult]:
+        return s2_search(term, api_key=api_key, num_results=n)
+
+    return live_provider
+
+
+# Run a SEC filings poll (financials primary -> bucket #7): for each holding,
+# fetch recent EDGAR filings and store them as tier-1 articles. Per-holding
+# failures are isolated; the cycle goes on. SEC needs no key — only a User-Agent.
+def poll_sec(
+    *,
+    user_agent: str,
+    filter_ticker: str | None = None,
+    num_results: int = 5,
+    from_file: Path | None = None,
+) -> dict:
+    """SEC filings poll -> bucket #7 (Capital Structure & Liquidity). Summary dict."""
+    from . import sec_client
+
+    init_news_schema()
+    holdings, missing, _ = latest_joined()
+    if filter_ticker:
+        ft = filter_ticker.upper()
+        holdings = [h for h in holdings if h.ticker == ft]
+    if not holdings:
+        log.warning("no_holdings_to_poll_sec")
+        return {"holdings": 0, "queries": 0, "articles_new": 0}
+
+    all_buckets = load_buckets()
+    holdings_entities = {h.ticker: entity_terms(h) for h in holdings}
+
+    queries = articles_new = 0
+    for h in holdings:
         queries += 1
         started_at = datetime.now(timezone.utc)
         try:
-            results = provider(term, num_results)
-        except RuntimeError as e:
-            log.error("literature_query_failed", extra={"ticker": h.ticker, "err": str(e)})
-            save_poll_record(ticker=h.ticker, bucket_id=10, query_text=term,
+            if from_file is not None:
+                results = sec_client.load_response_file(from_file, num_results=num_results)
+            else:
+                results = sec_client.search(h.ticker, user_agent=user_agent, num_results=num_results)
+        except Exception as e:  # an EDGAR hiccup on one name must not sink the cycle
+            log.error("sec_query_failed", extra={"ticker": h.ticker, "err": str(e)})
+            save_poll_record(ticker=h.ticker, bucket_id=7, query_text=f"sec:{h.ticker}",
                              started_at=started_at, ended_at=datetime.now(timezone.utc),
                              n_results=0, n_new=0, status="error")
             continue
@@ -291,41 +407,17 @@ def poll_literature(
         for res in results:
             if _store_one(res, fetched_at=fetched_at, holdings_entities=holdings_entities,
                           all_buckets=all_buckets, query_ticker=h.ticker,
-                          query_bucket_id=10, force_bucket_id=10):
+                          query_bucket_id=7, force_bucket_id=7):
                 n_new += 1
-        save_poll_record(ticker=h.ticker, bucket_id=10, query_text=term,
+        save_poll_record(ticker=h.ticker, bucket_id=7, query_text=f"sec:{h.ticker}",
                          started_at=started_at, ended_at=fetched_at,
                          n_results=len(results), n_new=n_new, status="ok")
         articles_new += n_new
-        log.info("literature_query_ok",
+        log.info("sec_query_ok",
                  extra={"ticker": h.ticker, "n_results": len(results), "n_new": n_new})
 
     return {"holdings": len(holdings), "missing_sidecars": missing,
             "queries": queries, "articles_new": articles_new}
-
-
-# Pick the Scite provider: fixture replay when from_file is set, else live
-# Scite when the key is present, else raise (literature poll skipped).
-def _make_scite_provider(api_key: str | None, fixture: Path | None):
-    if fixture:
-        from .scite_client import load_response_file as scite_load
-        cached = scite_load(fixture)
-
-        def provider(_term: str, n: int) -> list[ExaResult]:
-            return cached[:n]
-
-        return provider
-    if not api_key:
-        raise RuntimeError(
-            "SCITE_API_KEY is not set and no --from-file fixture was provided; "
-            "literature (bucket #10) poll skipped."
-        )
-    from .scite_client import search as scite_search
-
-    def live_provider(term: str, n: int) -> list[ExaResult]:
-        return scite_search(term, api_key=api_key, num_results=n)
-
-    return live_provider
 
 
 # Extract the lede (first sentence) from a longer excerpt, with a hard

@@ -1,0 +1,35 @@
+{
+  "header": {"type": "esummary", "version": "0.3"},
+  "result": {
+    "uids": ["38661449", "33283989"],
+    "38661449": {
+      "uid": "38661449",
+      "pubdate": "2024 May 9",
+      "source": "N Engl J Med",
+      "authors": [
+        {"name": "Frangoul H"},
+        {"name": "Locatelli F"},
+        {"name": "Bhatia M"}
+      ],
+      "title": "Exagamglogene Autotemcel for Severe Sickle Cell Disease.",
+      "articleids": [
+        {"idtype": "pubmed", "value": "38661449"},
+        {"idtype": "doi", "value": "10.1056/NEJMoa2309676"}
+      ]
+    },
+    "33283989": {
+      "uid": "33283989",
+      "pubdate": "2021 Jan 21",
+      "source": "N Engl J Med",
+      "authors": [
+        {"name": "Frangoul H"},
+        {"name": "Altshuler D"}
+      ],
+      "title": "CRISPR-Cas9 Gene Editing for Sickle Cell Disease and beta-Thalassemia.",
+      "articleids": [
+        {"idtype": "pubmed", "value": "33283989"},
+        {"idtype": "doi", "value": "10.1056/NEJMoa2031054"}
+      ]
+    }
+  }
+}

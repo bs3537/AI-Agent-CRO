@@ -7,6 +7,8 @@ the condition resolves; if a flag never clears, that's a tuning signal.
 Conventional flag names:
   stale_positions     — Flex Query refresh failed or pull is > N hours old
   exa_failure         — News pipeline saw repeated Exa errors
+  literature_failure  — Literature poll (#10, Semantic Scholar) had no source
+  sec_failure         — SEC EDGAR filings poll (#7, financials primary) failed
   budget_degraded     — Today's spend has crossed the first cascade threshold
   scorer_dead_letter  — One or more scored pairs failed even after retry
   red_team_dead_letter — Same, for red team

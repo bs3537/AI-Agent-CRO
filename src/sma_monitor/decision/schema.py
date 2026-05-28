@@ -73,6 +73,7 @@ class DecisionCandidate(BaseModel):
     scores: list[ScoreEvidence] = Field(default_factory=list)
     bears: list[BearEvidence] = Field(default_factory=list)
     fmp_metrics: dict | None = None    # W2: FMP fundamentals/ratios (#4/#7/#12)
+    fmp_corroboration: dict | None = None  # Brave web cross-check of the FMP data (display-only)
     # Pre-reduced extremes the heuristic and the guard rule key off
     max_severity: int = 1
     max_composite: float = 0.0

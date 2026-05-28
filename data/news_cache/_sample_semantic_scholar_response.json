@@ -1,0 +1,30 @@
+{
+  "total": 2,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "0a1b2c3d4e5f60718293a4b5c6d7e8f900112233",
+      "externalIds": {"DOI": "10.1056/NEJMoa2309676", "PubMed": "38661449"},
+      "url": "https://www.semanticscholar.org/paper/0a1b2c3d4e5f60718293a4b5c6d7e8f900112233",
+      "title": "Exagamglogene Autotemcel for Severe Sickle Cell Disease",
+      "abstract": "In this open-label phase 3 study, a single infusion of exagamglogene autotemcel (exa-cel) eliminated severe vaso-occlusive crises in 29 of 30 patients with sickle cell disease over a follow-up of up to 24 months.",
+      "venue": "New England Journal of Medicine",
+      "year": 2024,
+      "publicationDate": "2024-05-09",
+      "citationCount": 187,
+      "authors": [{"authorId": "1", "name": "Haydar Frangoul"}, {"authorId": "2", "name": "Franco Locatelli"}]
+    },
+    {
+      "paperId": "112233445566778899aabbccddeeff0011223344",
+      "externalIds": {"DOI": "10.1056/NEJMoa2031054", "PubMed": "33283989"},
+      "url": "https://www.semanticscholar.org/paper/112233445566778899aabbccddeeff0011223344",
+      "title": "CRISPR-Cas9 Gene Editing for Sickle Cell Disease and Transfusion-Dependent Thalassemia",
+      "abstract": "Two patients with transfusion-dependent beta-thalassemia and sickle cell disease were treated with CTX001, an autologous CRISPR-Cas9-edited CD34+ cell product, producing sustained increases in fetal hemoglobin.",
+      "venue": "New England Journal of Medicine",
+      "year": 2021,
+      "publicationDate": "2021-01-21",
+      "citationCount": 1203,
+      "authors": [{"authorId": "3", "name": "Haydar Frangoul"}]
+    }
+  ]
+}
