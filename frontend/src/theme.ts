@@ -12,6 +12,15 @@ export const VERDICT_HEX: Record<string, string> = {
   red: '#FF5470',
 }
 
+// Letter-grade → color, gradient from strong-hold green to sell red. A/B sit in
+// the green family (B lighter), C is amber (on-watch), D is the sell red.
+export const GRADE_HEX: Record<string, string> = {
+  A: '#39D98A',
+  B: '#A3D977',
+  C: '#F5B14C',
+  D: '#FF5470',
+}
+
 // Professional dark theme with the neon-orange primary. Near-black surfaces
 // keep the accent and the green/red P&L the loudest things on screen.
 export const theme = createTheme({

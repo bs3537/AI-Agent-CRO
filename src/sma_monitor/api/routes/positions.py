@@ -46,8 +46,31 @@ from ..schemas import (
 router = APIRouter(prefix="/api/positions", tags=["positions"])
 
 
-# Parse a position_decisions row into the wire shape (drivers stored as JSON).
-def _decision_out(row) -> DecisionOut | None:
+# Map a decision (+ its strongest red-team bear severity) to an A/B/C/D letter
+# grade. The verdict sets the band; within a hold, severity then confidence
+# split it. A = strong hold, B/C = hold (B solid, C weak/on-watch), D = sell.
+def _grade(verdict: str, confidence: float, severity: int) -> str:
+    if verdict == "sell":
+        return "D"
+    if verdict == "watch":
+        return "C"
+    # verdict == "hold"
+    if severity >= 4:           # held, but a serious bear case is on the books
+        return "C"
+    if severity == 3 or confidence < 0.60:
+        return "B"
+    return "A"
+
+
+# Highest red-team severity_of_concern recorded for a ticker (0 when none) —
+# the bear-pressure signal that splits a hold into A/B/C.
+def _max_severity(ticker: str) -> int:
+    return max((p["severity_of_concern"] or 0 for p in recent_passes(ticker=ticker, limit=50)), default=0)
+
+
+# Parse a position_decisions row into the wire shape (drivers stored as JSON),
+# attaching the letter grade derived from the verdict + bear severity.
+def _decision_out(row, severity: int = 0) -> DecisionOut | None:
     if row is None:
         return None
     try:
@@ -55,8 +78,9 @@ def _decision_out(row) -> DecisionOut | None:
     except (json.JSONDecodeError, TypeError):
         drivers = []
     return DecisionOut(
-        verdict=row["verdict"], color=row["color"], note=row["note"],
-        drivers=drivers, confidence=row["confidence"],
+        verdict=row["verdict"], color=row["color"],
+        grade=_grade(row["verdict"], row["confidence"], severity),
+        note=row["note"], drivers=drivers, confidence=row["confidence"],
         model_used=row["model_used"], decided_at=row["decided_at"],
     )
 
@@ -69,6 +93,7 @@ def _summary(h: Holding) -> PositionSummary:
         open_pnl = h.market_value - h.cost_basis
         if h.cost_basis:
             pnl_pct = open_pnl / h.cost_basis
+    dec_row = latest_decision(h.ticker)
     return PositionSummary(
         ticker=h.ticker, company_name=h.company_name, stage=h.stage,
         conviction_tier=int(h.conviction_tier), qty=h.qty,
@@ -78,7 +103,7 @@ def _summary(h: Holding) -> PositionSummary:
         has_overdue_catalyst=h.has_overdue_catalyst,
         thesis=h.thesis, n_files=len(list_files(h.ticker)),
         spark=latest_price_series(h.ticker),  # W6: 1yr daily-close sparkline (None offline)
-        decision=_decision_out(latest_decision(h.ticker)),
+        decision=_decision_out(dec_row, _max_severity(h.ticker) if dec_row else 0),
     )
 
 
@@ -214,8 +239,9 @@ def recompute(
     _holding_or_404(want)  # 404 if not a current holding
     if wait:
         run_decisions(only_ticker=want, force=True, offline=offline)
+        row = latest_decision(want)
         return RecomputeResponse(ticker=want, scheduled=False,
-                                 decision=_decision_out(latest_decision(want)))
+                                 decision=_decision_out(row, _max_severity(want) if row else 0))
     background.add_task(run_decisions, only_ticker=want, force=True, offline=offline)
     return RecomputeResponse(ticker=want, scheduled=True, decision=None)
 

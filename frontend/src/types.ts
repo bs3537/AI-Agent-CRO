@@ -3,11 +3,14 @@
 
 export type Verdict = 'hold' | 'watch' | 'sell'
 export type Color = 'green' | 'yellow' | 'red'
+// Letter grade: A strong hold · B/C hold · D sell.
+export type Grade = 'A' | 'B' | 'C' | 'D'
 
 // Latest thesis-drift decision for a position.
 export interface Decision {
   verdict: Verdict
   color: Color
+  grade: Grade
   note: string
   drivers: string[]
   confidence: number

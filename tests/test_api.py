@@ -29,6 +29,20 @@ def test_health(client):
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
+# The A/B/C/D rubric: verdict sets the band; within a hold, bear severity then
+# confidence split it (A strong hold, B/C hold, D sell).
+def test_grade_rubric():
+    from sma_monitor.api.routes.positions import _grade
+
+    assert _grade("sell", 0.9, 0) == "D"      # sell is always D
+    assert _grade("watch", 0.9, 0) == "C"     # watch is the weakest hold
+    assert _grade("hold", 0.9, 5) == "C"      # held, but a serious bear case
+    assert _grade("hold", 0.9, 3) == "B"      # moderate bear case
+    assert _grade("hold", 0.50, 0) == "B"     # low confidence
+    assert _grade("hold", 0.9, 2) == "A"      # clean, confident hold
+    assert _grade("hold", 0.60, 0) == "A"     # confidence exactly at threshold
+
+
 # The grid returns held positions with P&L derived from market_value − cost_basis.
 def test_list_positions(client):
     r = client.get("/api/positions")

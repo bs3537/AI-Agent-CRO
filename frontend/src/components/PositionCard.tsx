@@ -11,6 +11,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import type { PositionSummary } from '../types'
 import { VERDICT_HEX } from '../theme'
 import DecisionChip from './DecisionChip'
+import GradeBadge from './GradeBadge'
 import PnL from './PnL'
 import Sparkline from './Sparkline'
 import ThesisEditor from './ThesisEditor'
@@ -63,7 +64,11 @@ export default function PositionCard({
               </Typography>
             </Box>
           </Stack>
-          <DecisionChip decision={pos.decision} />
+          {/* Letter grade (headline) beside the verdict chip. */}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <GradeBadge grade={pos.decision?.grade ?? null} />
+            <DecisionChip decision={pos.decision} />
+          </Stack>
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>

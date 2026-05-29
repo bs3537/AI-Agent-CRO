@@ -18,6 +18,7 @@ from ..decision.schema import Color, Verdict
 class DecisionOut(BaseModel):
     verdict: Verdict
     color: Color
+    grade: str                         # A/B/C/D letter grade (see routes.positions._grade)
     note: str
     drivers: list[str] = Field(default_factory=list)
     confidence: float
