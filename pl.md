@@ -6,7 +6,7 @@
 
 ---
 
-## ✅ Progress tracker (updated 2026-05-27)
+## ✅ Progress tracker (updated 2026-05-29)
 
 | WS | Scope | Status |
 |----|-------|--------|
@@ -18,14 +18,65 @@
 | **W2** | Data sources — Brave, FMP, **Semantic Scholar (replaced Scite)**, SEC EDGAR, PubMed, ClinicalTrials.gov | **LIVE (keys set; live-verified 2026-05-28)** |
 | **W7** | 9 AM ET thesis-drift email + scheduling | **DONE (offline-verified)** |
 | **W8** | systemd units (API + timers) + packaging/codex-login docs | **DONE (units validated)** |
-| **W9** | LLM throughput: per-stage model/effort + bounded concurrency + 429 backoff | **PLANNED — next session** |
+| **W9** | LLM throughput: per-stage model/effort + bounded concurrency + 429 backoff | **DONE (73 tests green; stub-codex concurrency-verified 2026-05-29)** |
 | **W10** | Codex due-diligence **source policy** — precedence (SEC→FMP; PubMed/CT.gov/web→S2) + Brave-verification, wired into daily collect | **DONE (62 tests green; live-verified 2026-05-28)** |
 
 ---
 
-## ⏭ LEFT OFF HERE (2026-05-28) — scaffold sidecars for the live IBKR portfolio
+## ✅ CODE-COMPLETE (2026-05-29) — W1–W10 done; go-live gated on two HOST steps
 
-**Done this session:** all data-source keys wired in `.env` (Brave, FMP, Semantic Scholar, IBKR Flex
+**Done 2026-05-29 (W9 — LLM throughput tiering):** per-stage model/effort + bounded concurrency +
+429 backoff + SQLite busy_timeout — see "W9 — what's already implemented" below. 73 tests green;
+stub-codex run proved the concurrent path (8 holdings, 4 concurrent `codex exec`, 0 errors, idempotent
+re-run skips, cost ledger captured all 8).
+
+**Real-book end-to-end verified (2026-05-29, heuristic path, sandbox copy of `data/`):** all **56**
+holdings flow through `decision recompute` → `thesis-email` → `dispatch`. The morning thesis email
+(`digests/thesis/2026-05-29.md`, 56 positions, NAV-ordered) and evening digest render correctly with
+real company names/tiers/stages; the dashboard API serves all 56 (`/api/positions`, `/status`,
+`/positions/{t}` → 200). Decisions are all HOLD because no contradicting news is ingested yet (correct,
+not a bug). *(Note: the live IBKR Flex pull did not populate `cost_basis`, so open-P&L shows "—" — a
+Flex-query field property, handled gracefully end to end.)*
+
+**✅ GO-LIVE DONE 2026-05-29 — Codex login + working schedule:**
+- **Codex CLI installed + logged in.** `@openai/codex` 0.135.0 at `~/.local/node/bin/codex`; device-auth
+  `codex login` complete (`~/.codex/auth.json`). `codex_available()` → True; LLM path is live. Brief real-Codex
+  test passed: decisions on 3 holdings returned genuine LLM verdicts/notes (model=`codex-cli`, effort=high,
+  ~15s/3-concurrent, cost ledger logged 3 calls) — not heuristic.
+- **Schedule wired via USER CRON** (not the prod systemd units — those assume `/opt` + user `sma`, which wouldn't
+  see the `bhavy` Codex login). `scripts/sma_cron.sh` restores the scheduler-missing env (Node+Codex on PATH,
+  `CODEX_HOME`, absolute `DATA_ROOT`, `SMA_LLM_CONCURRENCY`) then runs the cycle + logs to `data/logs/`.
+  Crontab (system TZ = America/New_York, so these are true ET): `0 18 collect · 0 21 dispatch · 0 9 thesis-email`.
+  **Verified full-powered under a simulated cron env** (`env -i`): `codex_available: True`. cron is running + boot-enabled.
+
+**⛔ STILL OPEN (not agent-fixable):**
+1. **SMTP creds** in `.env` (`ALERT_EMAIL_FROM/TO`, `SMTP_HOST/USERNAME/PASSWORD`) — until set, the 9 AM email +
+   9 PM digest **archive to `data/digests/…` but do not send**.
+2. **WSL uptime** — cron only fires while this WSL distro is running. For a guaranteed 9 AM firing the box/WSL
+   must be up at 9 AM ET; otherwise deploy to the always-on VM (the `systemd/` units, pointed at the host's
+   Codex login). Also: the `codex login` token may need periodic re-auth.
+3. **W9 live budget measurement** still worth doing once a full `collect` has run (read `codex /status`).
+
+**Data-source keys ARE set** (IBKR Flex, Brave, Semantic Scholar, FMP; W2 live-verified 2026-05-28).
+After `codex login`, the first real cycle is just: `python -m sma_monitor.orchestrator collect` then
+`dispatch` — do NOT pre-run the heuristic scorer/decisions against the **live** DB or it will pre-empt
+the LLM pass (scores/decisions are idempotent per inputs_hash). **Manager to-dos before trusting
+output:** replace the 56 STUB theses + set real conviction tiers; re-confirm the recently
+renamed/IPO'd names flagged below (HELP/DMRA/DFTX/AKTS/AGMB/FPS/SPRB/PTHS).
+
+
+**Done 2026-05-29:** scaffolded all **56** sidecars at `data/portfolio/sidecar/<TICKER>.yaml`
+(neutral `conviction_tier: 3` stubs; researched `company_name`/`aliases`/`brands`/`products`/
+`indications`; `thesis` is a clearly-marked STUB seeded with a one-line description; `catalysts: []`
+— no fabricated dates). `latest_joined()` now returns **56/56** holdings with **0 missing sidecars**
+(45 biomed names carry `indications` → biomed lit branch; 11 non-biotech —
+NBIS/KTOS/NOW/FPS/ALTO/AMSC/OTEX/CLSK/VRNS/AXON/AVAV — have empty `indications` → general/web branch).
+Full suite **62 green**. **Before going live, the manager should:** replace the STUB theses with the
+real long view + set true conviction tiers; and re-confirm a few recently-renamed/IPO'd names —
+**HELP** (flagged low-confidence: claimed Cybin→"Helus Pharma" rebrand), and double-check
+**DMRA, DFTX, AKTS, AGMB, FPS, SPRB, PTHS**.
+
+**Prior session (2026-05-28):** all data-source keys wired in `.env` (Brave, FMP, Semantic Scholar, IBKR Flex
 token + query `1524108`); a **live IBKR Flex pull** loaded the real **56-position** book into
 `data/sma.db` (top weight AQST 18.05%); and the **Codex due-diligence source policy (W10)** was built
 + live-verified end-to-end:
@@ -37,12 +88,10 @@ token + query `1524108`); a **live IBKR Flex pull** loaded the real **56-positio
 - Integration: multi-source `poll_literature`, `poll_sec` + EDGAR CIK-map cache, FMP corroboration in
   the decision packet; all run by `run_collect_cycle`. **62 tests green.**
 
-**⛔ BLOCKER / RESUME HERE:** the 56 live holdings have **no sidecars**, and `latest_joined()` returns
-only sidecar-backed holdings → every poll currently iterates over **0 holdings** (the whole pipeline is
-a no-op on the real book). **Resume by scaffolding `data/portfolio/sidecar/<TICKER>.yaml`** for the
-real names (thesis stub + `indications`/`products`; note `indications` drives the biomed-vs-general
-literature branch). Start with the top holdings by %NAV:
-**AQST, GRCE, NBIS, TARS, COGT, SLDB, IOVA, XNCR, KTOS, DMRA** (then the remaining 46).
+**✅ BLOCKER RESOLVED (2026-05-29):** the pipeline is no longer a no-op — all 56 holdings now have
+sidecars (see "Done 2026-05-29" above), so `latest_joined()` feeds the full book into every poll.
+**Resume at W9** (LLM throughput tiering) below; a live `collect` cycle can now actually iterate the
+real names.
 
 ---
 
@@ -83,6 +132,45 @@ window is NOT the constraint — call **volume + token burn + throughput** are.
 (stage-aware selection or per-call params), `scorer/pipeline.py` + `red_team/pipeline.py` +
 `decision/engine.py` (thread pools), `config.py` (`SMA_LLM_CONCURRENCY` + per-stage model/effort env),
 `db.py` (busy_timeout). Verify offline first (heuristic path unaffected), then measure live.
+
+---
+
+### W9 — what's already implemented and verified
+- **New `src/sma_monitor/llm/throughput.py`**: the W9 control surface. `stage_model(stage)` /
+  `stage_effort(stage)` resolve per-stage overrides (`SMA_CODEX_MODEL_<STAGE>` → `SMA_CODEX_MODEL` →
+  account default; `SMA_CODEX_EFFORT_<STAGE>` → `SMA_CODEX_EFFORT` → `DEFAULT_EFFORT`
+  scorer/red_team=**medium**, decision/digest=**high**). `llm_concurrency()` parses
+  `SMA_LLM_CONCURRENCY` (clamped 1..16, default 4). `map_concurrent(fn, items, workers)` runs the
+  per-item LLM calls in a thread pool, **preserving input order** and returning `(result, error)` per
+  item (an item's exception never aborts the batch); `workers<=1` runs inline so the heuristic/offline
+  path stays exactly sequential. *(Lives in the llm layer, matching the SMA_CODEX_* env convention,
+  rather than in `config.py`/pydantic-settings.)*
+- **`llm/codex_client.py`**: `CodexProvider(model=…, effort=…)` carries the per-stage tier (stateless +
+  thread-safe — temp dir + subprocess per call). `_run` injects `-m <model>` and
+  `-c model_reasoning_effort=<effort>` after `exec`, and wraps the call in a **bounded
+  exponential-backoff retry on rate-limited (429) execs** (`_is_rate_limited` markers; tunable via
+  `SMA_LLM_MAX_RETRIES`=4, `SMA_LLM_BACKOFF_BASE_S`=2.0, cap 60s). `MODEL_LABEL` stays `"codex-cli"` so
+  cost-ledger pricing is unaffected by tiering.
+- **`llm/provider.py`**: `get_provider(*, prefer_offline=False, stage=None)` builds a tiered
+  `CodexProvider` for the stage (no `stage` → bare account default).
+- **Pipelines refactored to 3 phases** (sequential reads → bounded-concurrent LLM → sequential
+  writes): `scorer/pipeline.py` (`stage="scorer"`), `red_team/pipeline.py` (`stage="red_team"`),
+  `decision/engine.py` (`stage="decision"`; the Brave FMP cross-check moved into the concurrent worker
+  since it must precede the verdict and is display-only). `outputs/digest.py` → `stage="digest"`;
+  `scorer/calibration.py` → `stage="scorer"`. Workers = `llm_concurrency()` when LLM-backed, else 1.
+- **`db.py`**: `connection()` now sets `PRAGMA busy_timeout` (+ a matching connect timeout), default
+  30 000 ms, env `SMA_SQLITE_BUSY_TIMEOUT_MS` — serializes the concurrent result + cost-ledger writes.
+- **Tests**: `tests/test_llm_throughput.py` (11) — effort/model precedence, concurrency clamp,
+  `map_concurrent` order/error-capture/real-parallelism, stage-aware provider, CLI flag injection,
+  429 retry/give-up/no-retry-on-other-errors, and an end-to-end `run_decisions` concurrent run with a
+  fake provider. Full suite **73 passing**.
+- **Verified offline + concurrency**: against a sandbox copy of the live book with the stub `codex` on
+  `SMA_CODEX_BIN` and `SMA_LLM_CONCURRENCY=4`, `decision recompute --force --limit 8` selected the real
+  `CodexProvider` (effort=high), ran 8 holdings via 4 concurrent stub processes → **decided=8 errors=0**
+  with no "database is locked"; the cost ledger recorded all 8 `decision` calls; a no-`--force` re-run
+  **skipped 8** (idempotency intact). Heuristic/offline path unchanged (still sequential).
+- **NOT done (needs real credentials):** the live measured 40+-name cycle + `codex /status` budget read
+  (W9 plan step 5) to tune concurrency/effort to the 6 PM→9 PM window. Defaults are conservative.
 
 ---
 
