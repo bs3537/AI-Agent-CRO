@@ -21,12 +21,14 @@ import FileUpload from './FileUpload'
 // (upload, recompute, details). All mutations call back up to App.
 export default function PositionCard({
   pos,
+  stale = false,
   onSaveThesis,
   onUpload,
   onRecompute,
   onOpenDetail,
 }: {
   pos: PositionSummary
+  stale?: boolean
   onSaveThesis: (ticker: string, thesis: string) => Promise<void>
   onUpload: (ticker: string, file: File) => Promise<void>
   onRecompute: (ticker: string) => Promise<void>
@@ -34,6 +36,8 @@ export default function PositionCard({
 }) {
   const [recomputing, setRecomputing] = useState(false)
   const accent = pos.decision ? VERDICT_HEX[pos.decision.color] ?? '#888' : '#444'
+  // A thesis is a placeholder until the manager replaces the scaffolded stub.
+  const isStub = pos.thesis.trim().toUpperCase().startsWith('STUB')
 
   // Recompute this position's decision, showing a busy label meanwhile.
   const recompute = async () => {
@@ -62,9 +66,12 @@ export default function PositionCard({
           <DecisionChip decision={pos.decision} />
         </Stack>
 
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
           <PnL openPnl={pos.open_pnl} pnlPct={pos.pnl_pct} />
           <Chip size="small" variant="outlined" label={`${(pos.pct_nav * 100).toFixed(1)}% NAV`} />
+          {/* Per-tile operational flags: stale pull (book-wide) + un-filled thesis. */}
+          {stale && <Chip size="small" color="warning" label="STALE DATA" />}
+          {isStub && <Chip size="small" color="warning" variant="outlined" label="STUB THESIS" />}
           {pos.nearest_catalyst_days !== null && (
             <Chip
               size="small"

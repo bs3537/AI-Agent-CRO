@@ -70,6 +70,12 @@ export default function App() {
     [refresh],
   )
 
+  // Book-wide staleness: true while the orchestrator's stale_positions flag is
+  // active (failed/old Flex pull). Passed to every tile as a STALE DATA badge.
+  const stale = (status?.flags ?? []).some(
+    (f) => f.flag_name === 'stale_positions' && Boolean(f.active),
+  )
+
   return (
     <Box sx={{ pb: 6 }}>
       <AppBar position="sticky" color="default" enableColorOnDark elevation={0}>
@@ -108,6 +114,7 @@ export default function App() {
             <PositionCard
               key={pos.ticker}
               pos={pos}
+              stale={stale}
               onSaveThesis={onSaveThesis}
               onUpload={onUpload}
               onRecompute={onRecompute}
