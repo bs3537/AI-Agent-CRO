@@ -103,6 +103,15 @@ export interface RecomputeResponse {
   decision: Decision | null
 }
 
+// POST /api/positions/recompute (whole-portfolio) response.
+export interface RecomputeAllResponse {
+  scheduled: boolean
+  decided: number
+  skipped: number
+  errors: number
+  holdings: number
+}
+
 // GET /api/status snapshot.
 export interface Status {
   spend: { spent_usd: number; budget_usd: number; fraction_spent: number }

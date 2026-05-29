@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
 import LinearProgress from '@mui/material/LinearProgress'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
 import type { PositionsResponse, Status } from './types'
 import PositionCard from './components/PositionCard'
@@ -23,6 +25,8 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [detailTicker, setDetailTicker] = useState<string | null>(null)
+  const [recomputingAll, setRecomputingAll] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Refetch the grid + status snapshot.
   const refresh = useCallback(async () => {
@@ -70,6 +74,24 @@ export default function App() {
     [refresh],
   )
 
+  // Kick off a whole-portfolio recompute in the background, then refresh. The
+  // engine runs server-side across all holdings; decisions land over the next
+  // poll cycles, so we just confirm it started rather than blocking on it.
+  const onRecomputeAll = useCallback(async () => {
+    setRecomputingAll(true)
+    setNotice(null)
+    try {
+      await api.recomputeAll()
+      const n = data?.positions.length ?? 0
+      setNotice(`Recompute started for ${n} position${n === 1 ? '' : 's'} — the grid updates as decisions complete.`)
+      await refresh()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setRecomputingAll(false)
+    }
+  }, [refresh, data])
+
   // Book-wide staleness: true while the orchestrator's stale_positions flag is
   // active (failed/old Flex pull). Passed to every tile as a STALE DATA badge.
   const stale = (status?.flags ?? []).some(
@@ -85,6 +107,17 @@ export default function App() {
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
           <StatusBar status={status} />
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            startIcon={<RefreshIcon />}
+            disabled={recomputingAll || !data || data.positions.length === 0}
+            onClick={() => void onRecomputeAll()}
+            sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            {recomputingAll ? 'Recomputing…' : 'Recompute all'}
+          </Button>
         </Toolbar>
         {!data && !error && <LinearProgress color="primary" />}
       </AppBar>
@@ -93,6 +126,12 @@ export default function App() {
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
+          </Alert>
+        )}
+
+        {notice && (
+          <Alert severity="info" sx={{ mb: 2 }} onClose={() => setNotice(null)}>
+            {notice}
           </Alert>
         )}
 

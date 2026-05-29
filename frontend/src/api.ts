@@ -6,6 +6,7 @@ import type {
   PositionDetail,
   PositionsResponse,
   PositionSummary,
+  RecomputeAllResponse,
   RecomputeResponse,
   Status,
 } from './types'
@@ -56,6 +57,14 @@ export const api = {
   recompute: (ticker: string, wait = true) =>
     fetch(`/api/positions/${ticker}/recompute?wait=${wait}`, { method: 'POST' }).then(
       json<RecomputeResponse>,
+    ),
+
+  // Recompute every holding's decision in one call. Defaults to background
+  // (wait=false) so the request returns immediately; the grid poll surfaces
+  // each decision as it lands.
+  recomputeAll: (wait = false) =>
+    fetch(`/api/positions/recompute?wait=${wait}`, { method: 'POST' }).then(
+      json<RecomputeAllResponse>,
     ),
 
   // Operational snapshot for the status bar.

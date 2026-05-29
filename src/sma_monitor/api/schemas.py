@@ -118,6 +118,15 @@ class RecomputeResponse(BaseModel):
     decision: DecisionOut | None = None  # populated only when ?wait=true
 
 
+# POST /api/positions/recompute response — summary of a whole-portfolio run.
+class RecomputeAllResponse(BaseModel):
+    scheduled: bool                    # True when run in the background
+    decided: int = 0                   # counts populated only when ?wait=true
+    skipped: int = 0
+    errors: int = 0
+    holdings: int = 0
+
+
 # GET /api/status: operational snapshot wrapped from the orchestrator helpers.
 class StatusOut(BaseModel):
     spend: dict[str, Any]

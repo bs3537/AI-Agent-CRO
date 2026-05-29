@@ -36,6 +36,7 @@ from ..schemas import (
     PositionDetail,
     PositionSummary,
     PositionsResponse,
+    RecomputeAllResponse,
     RecomputeResponse,
     RedTeamOut,
     ScoreOut,
@@ -217,3 +218,25 @@ def recompute(
                                  decision=_decision_out(latest_decision(want)))
     background.add_task(run_decisions, only_ticker=want, force=True, offline=offline)
     return RecomputeResponse(ticker=want, scheduled=True, decision=None)
+
+
+# POST /api/positions/recompute — run the decision engine for EVERY holding in
+# one call (the bulk version of the per-ticker route). Background by default;
+# ?wait=true runs inline and returns the {decided, skipped, errors, holdings}
+# summary. The engine fans out across holdings concurrently (W9 throughput).
+@router.post("/recompute", response_model=RecomputeAllResponse)
+def recompute_all(
+    background: BackgroundTasks,
+    wait: bool = False,
+    force: bool = True,
+    offline: bool = False,
+) -> RecomputeAllResponse:
+    if wait:
+        s = run_decisions(force=force, offline=offline)
+        return RecomputeAllResponse(
+            scheduled=False,
+            decided=s.get("decided", 0), skipped=s.get("skipped", 0),
+            errors=s.get("errors", 0), holdings=s.get("holdings", 0),
+        )
+    background.add_task(run_decisions, force=force, offline=offline)
+    return RecomputeAllResponse(scheduled=True)
