@@ -16,26 +16,54 @@ Env overrides:
   SMA_CODEX_BIN    path to the codex binary (default: "codex"; lets tests stub it)
   SMA_CODEX_MODEL  model slug passed via -m (optional; default = account default)
   CODEX_HOME       auth/config dir (default: ~/.codex), per the Codex CLI
+
+W9 throughput knobs (per-call model/effort come from llm/throughput.py; rate-
+limit retry is local to _run):
+  SMA_LLM_MAX_RETRIES     bounded retries on a rate-limited (429) exec (default 4)
+  SMA_LLM_BACKOFF_BASE_S  base seconds for exponential backoff (default 2.0)
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from .provider import LLMError
 
+log = logging.getLogger("sma_monitor.llm.codex_client")
+
 # Label written to model_used columns and the cost ledger. The concrete model
 # (gpt-5.x) is whatever the logged-in account/config selects; we don't pin it.
+# Per-stage model/effort tiering (W9) is applied at the CLI layer only, so this
+# label — and therefore cost-ledger pricing — stays stable across stages.
 MODEL_LABEL = "codex-cli"
 
 # Wall-clock ceiling for a single exec call. A stuck call should fail fast and
 # let the caller dead-letter or fall back rather than hang a batch.
 CALL_TIMEOUT_S = 180
+
+# Defaults for the W9 rate-limit retry; both overridable via env (read at call
+# time). The backoff is capped so a long batch can't stall indefinitely.
+DEFAULT_MAX_RETRIES = 4
+DEFAULT_BACKOFF_BASE_S = 2.0
+BACKOFF_CAP_S = 60.0
+
+# Substrings (case-insensitive) that mark a failed exec as rate-limited and
+# therefore worth retrying with backoff, rather than a hard failure.
+_RATE_LIMIT_MARKERS = (
+    "429",
+    "rate limit",
+    "rate_limit",
+    "too many requests",
+    "usage limit",
+    "quota",
+)
 
 
 # Path to the codex binary, honoring the SMA_CODEX_BIN override used by tests.
@@ -59,9 +87,18 @@ def codex_available() -> bool:
     return (_codex_home() / "auth.json").exists()
 
 
-# Codex-backed provider. One instance per call site is fine; it holds no state.
+# Codex-backed provider. Stateless apart from the optional per-stage model +
+# reasoning effort (W9 tiering); a fresh instance per stage is the norm.
+# Thread-safe: every call uses its own temp dir + subprocess, so the per-item
+# loops can run several instances concurrently.
 class CodexProvider:
     model_label = MODEL_LABEL
+
+    # model/effort are the W9 per-stage overrides (None = account default / no
+    # effort flag). get_provider(stage=...) fills them from llm/throughput.py.
+    def __init__(self, *, model: str | None = None, effort: str | None = None):
+        self.model = model
+        self.effort = effort
 
     # Run a structured completion. Writes `schema` to a temp file, asks Codex
     # to emit schema-conforming JSON to an output file, and parses it. Falls
@@ -84,7 +121,7 @@ class CodexProvider:
                 schema_path.write_text(json.dumps(schema))
                 args += ["--output-schema", str(schema_path), "-o", str(out_path)]
             args.append("-")  # read the full prompt from stdin
-            stdout = _run(args, prompt)
+            stdout = _run(args, prompt, model=self.model, effort=self.effort)
             raw = out_path.read_text() if out_path and out_path.exists() else stdout
         return _extract_json_object(raw)
 
@@ -98,7 +135,10 @@ class CodexProvider:
         max_tokens: int = 600,
     ) -> str:
         prompt = _combine(system, user)
-        stdout = _run(["exec", "--skip-git-repo-check", "--color", "never", "-"], prompt)
+        stdout = _run(
+            ["exec", "--skip-git-repo-check", "--color", "never", "-"],
+            prompt, model=self.model, effort=self.effort,
+        )
         return _strip_fence(stdout).strip()
 
 
@@ -109,30 +149,75 @@ def _combine(system: str, user: str) -> str:
 
 
 # Invoke `codex` with the given args, feeding `prompt` on stdin. Returns
-# stdout. Raises LLMError on non-zero exit, timeout, or a missing binary.
-def _run(args: list[str], prompt: str) -> str:
+# stdout. Injects the W9 per-call model (-m) and reasoning effort
+# (-c model_reasoning_effort=…) right after the `exec` subcommand, and retries
+# with exponential backoff when the exec fails as rate-limited. Raises LLMError
+# on non-rate-limit non-zero exit, timeout, or a missing binary.
+def _run(args: list[str], prompt: str, *, model: str | None = None, effort: str | None = None) -> str:
     cmd = [_codex_bin(), *args]
-    model = os.environ.get("SMA_CODEX_MODEL")
+    # Per-call override falls back to the legacy global SMA_CODEX_MODEL.
+    model = model or os.environ.get("SMA_CODEX_MODEL")
+    opts: list[str] = []
+    if effort:
+        opts += ["-c", f"model_reasoning_effort={effort}"]
     if model:
-        # Insert -m right after the `exec` subcommand.
-        cmd[2:2] = ["-m", model]
+        opts += ["-m", model]
+    if opts:
+        cmd[2:2] = opts  # insert just after the `exec` subcommand
+
+    max_retries = _max_retries()
+    attempt = 0
+    while True:
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=CALL_TIMEOUT_S,
+            )
+        except FileNotFoundError as e:
+            raise LLMError(f"codex binary not found: {cmd[0]}") from e
+        except subprocess.TimeoutExpired as e:
+            raise LLMError(f"codex exec timed out after {CALL_TIMEOUT_S}s") from e
+        if proc.returncode == 0:
+            return proc.stdout or ""
+        stderr = proc.stderr or ""
+        # Rate-limited and retries remain → back off and try again.
+        if _is_rate_limited(stderr) and attempt < max_retries:
+            delay = _backoff_delay(attempt)
+            log.warning(
+                "codex_rate_limited_retry",
+                extra={"attempt": attempt + 1, "max": max_retries, "sleep_s": delay},
+            )
+            time.sleep(delay)
+            attempt += 1
+            continue
+        raise LLMError(f"codex exec failed (exit {proc.returncode}): {stderr[:400]}")
+
+
+# True when a failed exec's stderr looks like a rate-limit / quota response
+# (worth retrying) rather than a hard error.
+def _is_rate_limited(stderr: str) -> bool:
+    s = stderr.lower()
+    return any(m in s for m in _RATE_LIMIT_MARKERS)
+
+
+# Bounded retry count for rate-limited execs (env-overridable, read at call time).
+def _max_retries() -> int:
     try:
-        proc = subprocess.run(
-            cmd,
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=CALL_TIMEOUT_S,
-        )
-    except FileNotFoundError as e:
-        raise LLMError(f"codex binary not found: {cmd[0]}") from e
-    except subprocess.TimeoutExpired as e:
-        raise LLMError(f"codex exec timed out after {CALL_TIMEOUT_S}s") from e
-    if proc.returncode != 0:
-        raise LLMError(
-            f"codex exec failed (exit {proc.returncode}): {(proc.stderr or '')[:400]}"
-        )
-    return proc.stdout or ""
+        return max(0, int(os.environ.get("SMA_LLM_MAX_RETRIES", str(DEFAULT_MAX_RETRIES))))
+    except ValueError:
+        return DEFAULT_MAX_RETRIES
+
+
+# Exponential backoff delay for the Nth (0-based) retry: base * 2**n, capped.
+def _backoff_delay(attempt: int) -> float:
+    try:
+        base = float(os.environ.get("SMA_LLM_BACKOFF_BASE_S", str(DEFAULT_BACKOFF_BASE_S)))
+    except ValueError:
+        base = DEFAULT_BACKOFF_BASE_S
+    return min(BACKOFF_CAP_S, base * (2 ** attempt))
 
 
 # Strip a leading/trailing ```json fence from a text block, if present.

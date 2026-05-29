@@ -20,7 +20,8 @@ from datetime import datetime, timezone
 
 from ..config import settings
 from ..identity import event_id
-from ..llm import LLMError, get_provider
+from ..llm import get_provider
+from ..llm.throughput import llm_concurrency, map_concurrent
 from ..news.fmp_client import latest_fmp_metrics
 from ..news.source_tiers import source_tier
 from ..news.verification import verify_fmp
@@ -342,27 +343,17 @@ def run_decisions(
         return {"decided": 0, "skipped": 0, "errors": 0, "holdings": 0}
 
     # Codex when available; otherwise None → heuristic. --offline forces None.
-    provider = get_provider(prefer_offline=offline)
+    # W9: low-volume synthesis runs on the deeper "decision" tier.
+    provider = get_provider(prefer_offline=offline, stage="decision")
     model_label = provider.model_label if provider else HEURISTIC_MODEL
+    workers = llm_concurrency() if provider is not None else 1
 
-    decided = skipped = errors = 0
+    # Phase 1 (sequential reads): build each holding's candidate + hashes and
+    # skip the ones whose thesis + evidence are unchanged since last compute.
+    work: list[tuple[Holding, DecisionCandidate, str, str]] = []
+    skipped = 0
     for h in holdings:
         candidate = build_candidate(h)
-        # Corroborate the FMP financials against the web (Brave) so Codex can
-        # weigh them per the source policy. Live call — skipped offline / keyless.
-        # Display-only: deliberately NOT folded into inputs_hash (Brave results
-        # are volatile and shouldn't churn the re-compute gate).
-        if not offline and candidate.fmp_metrics and settings.brave_search_api_key:
-            try:
-                ver = verify_fmp(candidate.company_name or candidate.ticker,
-                                 api_key=settings.brave_search_api_key)
-                candidate.fmp_corroboration = {
-                    "corroborated": ver.corroborated,
-                    "sources": [{"title": s.title, "url": s.url, "tier": source_tier(s.url)}
-                                for s in ver.sources[:3]],
-                }
-            except Exception as e:
-                log.warning("fmp_verification_skipped", extra={"ticker": h.ticker, "err": str(e)})
         th = thesis_hash(h.ticker, candidate.thesis)
         # Hash the uploaded-doc text + FMP metrics so a doc change or a fresh
         # financial snapshot re-computes this holding's decision.
@@ -381,10 +372,36 @@ def run_decisions(
         if not force and has_decision_for(h.ticker, ih, DECISION_VERSION):
             skipped += 1
             continue
-        try:
-            decision = decide(candidate, th, ih, provider=provider)
-        except (LLMError, ValueError) as e:
-            log.error("decision_failed", extra={"ticker": h.ticker, "err": str(e)})
+        work.append((h, candidate, th, ih))
+
+    # Per-holding compute (runs in the worker pool): corroborate the FMP
+    # financials against the web (Brave) so Codex can weigh them per the source
+    # policy — display-only, deliberately NOT in inputs_hash — then ask for the
+    # verdict. Live Brave call is skipped offline / keyless.
+    def _compute(item: tuple[Holding, DecisionCandidate, str, str]) -> PositionDecision:
+        h, candidate, th, ih = item
+        if not offline and candidate.fmp_metrics and settings.brave_search_api_key:
+            try:
+                ver = verify_fmp(candidate.company_name or candidate.ticker,
+                                 api_key=settings.brave_search_api_key)
+                candidate.fmp_corroboration = {
+                    "corroborated": ver.corroborated,
+                    "sources": [{"title": s.title, "url": s.url, "tier": source_tier(s.url)}
+                                for s in ver.sources[:3]],
+                }
+            except Exception as e:
+                log.warning("fmp_verification_skipped", extra={"ticker": h.ticker, "err": str(e)})
+        return decide(candidate, th, ih, provider=provider)
+
+    # Phase 2 (bounded concurrency): compute verdicts. Sequential on the
+    # heuristic path; ~SMA_LLM_CONCURRENCY codex processes when LLM-backed.
+    results = map_concurrent(_compute, work, workers=workers)
+
+    # Phase 3 (sequential writes): persist decisions, count failures.
+    decided = errors = 0
+    for (h, candidate, _th, _ih), (decision, err) in zip(work, results):
+        if err is not None:
+            log.error("decision_failed", extra={"ticker": h.ticker, "err": str(err)})
             errors += 1
             continue
         save_decision(decision, decision_version=DECISION_VERSION)

@@ -13,10 +13,11 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 from ..llm import get_provider
+from ..llm.throughput import llm_concurrency, map_concurrent
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..news.buckets import load_buckets
-from .claude_client import ClaudeError, DEFAULT_MODEL, score_with_llm
+from .claude_client import DEFAULT_MODEL, score_with_llm
 from .heuristic import MODEL_LABEL as HEURISTIC_MODEL, score_heuristically
 from .multipliers import (
     BUCKET_WEIGHTS,
@@ -65,7 +66,8 @@ def score_unscored(
     # Use the LLM provider when one is available (Codex login); otherwise
     # fall back to the deterministic heuristic. `--offline` forces heuristic.
     # `api_key` is retained for signature compatibility but no longer gates.
-    provider = get_provider(prefer_offline=offline)
+    # W9: high-volume triage runs on the "scorer" tier (model + reasoning effort).
+    provider = get_provider(prefer_offline=offline, stage="scorer")
     if provider is None:
         scorer: Scorer = lambda c: (score_heuristically(c), HEURISTIC_MODEL)
         scorer_label = HEURISTIC_MODEL
@@ -74,13 +76,15 @@ def score_unscored(
         scorer_label = provider.model_label
 
     rows = unscored_pairs(MULTIPLIERS_VERSION, limit=limit)
-    scored = errors = skipped = 0
+
+    # Phase 1 (sequential reads): build a candidate per scorable pair; tally the
+    # pairs we can't score (ticker no longer held, or missing/unknown bucket).
+    candidates: list[ScoreCandidate] = []
+    skipped = 0
     for row in rows:
-        ticker = row["ticker"]
-        holding = holdings_by_ticker.get(ticker)
+        holding = holdings_by_ticker.get(row["ticker"])
         if holding is None:
-            # Article tagged to a ticker we no longer hold — skip.
-            skipped += 1
+            skipped += 1  # article tagged to a ticker we no longer hold
             continue
         primary_bid = row["primary_bucket_id"]
         if primary_bid is None or primary_bid not in buckets:
@@ -91,14 +95,14 @@ def score_unscored(
             (r["bucket_id"], r["confidence"])
             for r in secondary_buckets_for(row["article_event_id"], primary_bid)
         ]
-        candidate = ScoreCandidate(
+        candidates.append(ScoreCandidate(
             article_event_id=row["article_event_id"],
             title=row["title"] or "",
             excerpt=row["excerpt"] or "",
             source=row["source"],
             source_tier=row["source_tier"],
             published_at=_parse_dt(row["published_at"]),
-            ticker=ticker,
+            ticker=row["ticker"],
             pct_nav=holding.pct_nav,
             conviction_tier=int(holding.conviction_tier),
             stage=holding.stage,
@@ -108,42 +112,31 @@ def score_unscored(
             primary_bucket_name=bucket.name,
             primary_bucket_confidence=float(row["primary_bucket_confidence"] or 0.0),
             secondary_buckets=secondaries,
-        )
-        try:
-            axes, model_used = scorer(candidate)
-        except (ClaudeError, ValueError) as e:
-            try:
-                from ..orchestrator.dead_letter import record_failure
-                record_failure(
-                    kind="score",
-                    article_event_id=candidate.article_event_id,
-                    ticker=ticker, error=str(e)[:500],
-                )
-            except Exception:
-                pass  # dead-letter recording must not break scoring
-            log.error(
-                "scorer_failed",
-                extra={"article_event_id": candidate.article_event_id,
-                       "ticker": ticker, "err": str(e)},
-            )
+        ))
+
+    # Phase 2 (bounded concurrency): score the candidates. Sequential on the
+    # heuristic path (workers=1); ~SMA_LLM_CONCURRENCY codex processes when an
+    # LLM provider is active.
+    workers = llm_concurrency() if provider is not None else 1
+    results = map_concurrent(scorer, candidates, workers=workers)
+
+    # Phase 3 (sequential writes): persist successes, dead-letter failures.
+    scored = errors = 0
+    for candidate, (res, err) in zip(candidates, results):
+        if err is not None:
+            _record_score_failure(candidate, err)
             errors += 1
             continue
-        # Successful (re)try — clear any dead-letter row for this pair.
-        try:
-            from ..orchestrator.dead_letter import clear_on_success
-            from ..orchestrator.store import dead_letter_event_id
-            clear_on_success(dead_letter_event_id("score", candidate.article_event_id, ticker))
-        except Exception:
-            pass
-
+        axes, model_used = res
+        _clear_score_dead_letter(candidate)
         composite = _compose(axes, candidate)
         save_score(_to_row(candidate, axes, composite, model_used))
         scored += 1
         log.info(
             "scored",
             extra={
-                "ticker": ticker,
-                "bucket": primary_bid,
+                "ticker": candidate.ticker,
+                "bucket": candidate.primary_bucket_id,
                 "composite": composite["composite"],
                 "band": composite["band"],
                 "title": candidate.title[:80],
@@ -154,6 +147,33 @@ def score_unscored(
              extra={"scored": scored, "errors": errors, "skipped": skipped,
                     "model": scorer_label, "version": MULTIPLIERS_VERSION})
     return {"scored": scored, "errors": errors, "skipped": skipped}
+
+
+# Record a failed scoring attempt to the dead-letter table (best-effort) and
+# log it. Concurrency surfaces every exception type here uniformly, so we
+# dead-letter rather than crash the batch (per this module's failure policy).
+def _record_score_failure(candidate: ScoreCandidate, err: BaseException) -> None:
+    try:
+        from ..orchestrator.dead_letter import record_failure
+        record_failure(kind="score", article_event_id=candidate.article_event_id,
+                        ticker=candidate.ticker, error=str(err)[:500])
+    except Exception:
+        pass  # dead-letter recording must not break scoring
+    log.error("scorer_failed",
+              extra={"article_event_id": candidate.article_event_id,
+                     "ticker": candidate.ticker, "err": str(err)})
+
+
+# Clear any dead-letter row for a pair after a successful (re)score.
+def _clear_score_dead_letter(candidate: ScoreCandidate) -> None:
+    try:
+        from ..orchestrator.dead_letter import clear_on_success
+        from ..orchestrator.store import dead_letter_event_id
+        clear_on_success(
+            dead_letter_event_id("score", candidate.article_event_id, candidate.ticker)
+        )
+    except Exception:
+        pass
 
 
 # Apply the five multipliers + threshold-band classification to the LLM's

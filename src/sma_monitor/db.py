@@ -1,8 +1,15 @@
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from .paths import DB_PATH
+
+# How long a connection waits on a locked DB before raising "database is
+# locked" (W9: the bounded-concurrency LLM loops write results + cost-ledger
+# rows from several threads at once). Overridable via env. WAL already lets
+# readers and a single writer coexist; busy_timeout serializes the writers.
+BUSY_TIMEOUT_MS = int(os.environ.get("SMA_SQLITE_BUSY_TIMEOUT_MS", "30000"))
 
 # Universal idempotency table. Every artifact across all phases registers
 # its event_id here on creation. Per-phase tables (articles, scores,
@@ -28,10 +35,11 @@ CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen);
 # always closes the connection. Used by every phase's store.py module.
 @contextmanager
 def connection() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
     try:
         yield conn
         conn.commit()

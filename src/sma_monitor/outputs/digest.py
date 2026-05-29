@@ -174,7 +174,8 @@ def _synthesize_narrative(
     from ..llm import get_provider
     if skip_opus:
         return _template_narrative(summary)
-    provider = get_provider()
+    # W9: the once-a-day synthesis runs on the deeper "digest" tier.
+    provider = get_provider(stage="digest")
     if provider is None:
         return _template_narrative(summary)
 

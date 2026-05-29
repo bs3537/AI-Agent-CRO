@@ -49,13 +49,21 @@ class LLMProvider(Protocol):
 # Return the active provider, or None when no backend is available (the
 # signal for callers to use their heuristic fallback). `prefer_offline`
 # forces None so `--offline` flags and tests bypass the model entirely.
-def get_provider(*, prefer_offline: bool = False) -> LLMProvider | None:
+# `stage` (W9) selects that stage's tiered model + reasoning effort; omit it
+# to get the account default (no effort flag).
+def get_provider(
+    *, prefer_offline: bool = False, stage: str | None = None
+) -> LLMProvider | None:
     if prefer_offline:
         return None
     # Codex is the only backend today; import lazily so a missing CLI never
     # breaks import of modules that merely *might* use an LLM.
     from .codex_client import CodexProvider, codex_available
 
-    if codex_available():
+    if not codex_available():
+        return None
+    if stage is None:
         return CodexProvider()
-    return None
+    from .throughput import stage_effort, stage_model
+
+    return CodexProvider(model=stage_model(stage), effort=stage_effort(stage))
