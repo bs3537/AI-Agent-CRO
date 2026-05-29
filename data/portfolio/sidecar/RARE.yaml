@@ -1,0 +1,30 @@
+ticker: RARE
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Ultragenyx is a biopharma that develops and markets therapies for rare and ultra-rare
+  genetic diseases, with commercial products including Crysvita and a late-stage gene-therapy
+  and rare-disease pipeline.
+company_name: Ultragenyx Pharmaceutical Inc.
+aliases:
+- Ultragenyx
+- Ultragenyx Pharmaceutical
+brands:
+- Crysvita
+- Dojolvi
+- Mepsevii
+- Evkeeza
+products:
+- GTX-102
+- DTX401
+- UX111
+- setrusumab
+indications:
+- rare genetic disease
+- X-linked hypophosphatemia
+- long-chain fatty acid oxidation disorders
+- Angelman syndrome
+- osteogenesis imperfecta
+- glycogen storage disease
+- Sanfilippo syndrome
+catalysts: []

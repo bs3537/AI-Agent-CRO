@@ -1,0 +1,24 @@
+ticker: DMRA
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage biotech (formerly Galecto, Inc.) developing biologics targeting mutant
+  calreticulin (mutCALR)-driven myeloproliferative neoplasms, led by DMR-001 heading
+  toward clinical proof-of-concept.
+company_name: Damora Therapeutics, Inc.
+aliases:
+- Damora
+- Damora Therapeutics
+- Galecto
+brands: []
+products:
+- DMR-001
+- DMR-002
+- DMR-003
+- GB3226
+indications:
+- myeloproliferative neoplasms
+- essential thrombocythemia
+- myelofibrosis
+- mutant calreticulin-driven disorders
+catalysts: []

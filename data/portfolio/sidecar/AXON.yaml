@@ -1,0 +1,24 @@
+ticker: AXON
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Axon Enterprise makes TASER conducted-energy weapons, body and in-car cameras, and
+  a cloud software suite for law enforcement and public-safety agencies, with software
+  and services the primary growth driver.
+company_name: Axon Enterprise, Inc.
+aliases:
+- Axon
+- TASER International
+brands:
+- TASER
+- Axon Body
+- Evidence.com
+- Axon Fleet
+- Draft One
+products:
+- TASER energy weapons
+- body-worn cameras
+- digital evidence cloud software
+- real-time operations / AI software
+indications: []
+catalysts: []

@@ -1,0 +1,21 @@
+ticker: ENGN
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage genetic-medicines company using a non-viral, chitosan-based gene
+  delivery platform, with lead candidate detalimogene voraplasmid in the LEGEND Phase
+  2 trial for non-muscle invasive bladder cancer.
+company_name: enGene Therapeutics Inc.
+aliases:
+- enGene
+- enGene Therapeutics
+- enGene Holdings
+brands: []
+products:
+- detalimogene voraplasmid
+- EG-70
+indications:
+- non-muscle invasive bladder cancer
+- bladder cancer
+- oncology
+catalysts: []

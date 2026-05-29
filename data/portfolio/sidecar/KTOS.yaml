@@ -1,0 +1,23 @@
+ticker: KTOS
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Defense technology company specializing in jet-powered unmanned aerial drones, hypersonic
+  and rocket systems, and C5ISR, with the Valkyrie autonomous combat drone as a flagship
+  program.
+company_name: Kratos Defense & Security Solutions, Inc.
+aliases:
+- Kratos
+- Kratos Defense
+brands:
+- Valkyrie (XQ-58A)
+- Mako
+- Zeus
+- C5ISR
+products:
+- unmanned aerial drone systems
+- hypersonic and rocket systems
+- drone propulsion engines
+- C5ISR / satellite communications
+indications: []
+catalysts: []

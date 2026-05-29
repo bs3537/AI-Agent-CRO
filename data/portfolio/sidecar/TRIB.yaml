@@ -1,0 +1,26 @@
+ticker: TRIB
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Trinity Biotech is a commercial-stage diagnostics company selling HbA1c and infectious-disease
+  test systems while developing a wearable continuous glucose monitor and novel cancer
+  and pregnancy assays.
+company_name: Trinity Biotech plc
+aliases:
+- Trinity Biotech
+brands:
+- Premier Hb9210
+- TRINSCREEN HIV
+- Uni-Gold
+products:
+- HbA1c diagnostic systems
+- continuous glucose monitor (CGM+)
+- EpiCapture prostate cancer assay
+- PrePsia preeclampsia test
+indications:
+- diabetes
+- HIV
+- infectious disease diagnostics
+- prostate cancer
+- preeclampsia
+catalysts: []

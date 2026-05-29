@@ -1,0 +1,22 @@
+ticker: AMSC
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Provider of megawatt-scale power grid resiliency systems, wind turbine electrical
+  controls, and naval ship-protection systems, with Grid and Wind operating segments.
+company_name: American Superconductor Corporation
+aliases:
+- AMSC
+- American Superconductor
+brands:
+- D-VAR
+- Amperium
+- NEPSI
+- SPS Ship Protection Systems
+products:
+- D-VAR grid systems
+- wind turbine electrical control systems
+- Ship Protection Systems
+- power transformers
+indications: []
+catalysts: []

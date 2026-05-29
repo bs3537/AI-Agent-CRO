@@ -1,0 +1,24 @@
+ticker: FHTX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Foghorn Therapeutics uses its Gene Traffic Control platform to develop small-molecule
+  drugs targeting the chromatin regulatory system, led by the SMARCA2 inhibitor FHD-909
+  partnered with Lilly.
+company_name: Foghorn Therapeutics Inc.
+aliases:
+- Foghorn
+- Foghorn Therapeutics
+brands: []
+products:
+- FHD-909
+- FHT-171
+- selective EP300 degrader
+- ARID1B degrader
+indications:
+- oncology
+- lung cancer
+- breast cancer
+- hematological malignancies
+- prostate cancer
+catalysts: []

@@ -1,0 +1,34 @@
+ticker: ZLAB
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Commercial-stage biopharma marketing licensed products (e.g., Zejula, Vyvgart, Optune)
+  across Greater China while advancing a global internal pipeline led by the DLL3
+  ADC zocilurtatug pelitecan.
+company_name: Zai Lab Limited
+aliases:
+- Zai Lab
+- Zai
+brands:
+- Zejula
+- Optune
+- Qinlock
+- Nuzyra
+- Vyvgart
+- Augtyro
+products:
+- zocilurtatug pelitecan
+- ZL-1310
+- ZL-1503
+- ZL-1222
+- ZL-1311
+indications:
+- ovarian cancer
+- glioblastoma
+- myasthenia gravis
+- small cell lung cancer
+- gastric cancer
+- atopic dermatitis
+- oncology
+- autoimmune disease
+catalysts: []

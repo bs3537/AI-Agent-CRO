@@ -1,0 +1,19 @@
+ticker: MLYS
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Mineralys is a clinical-stage biopharma developing lorundrostat, an oral aldosterone
+  synthase inhibitor, with an NDA under FDA review for uncontrolled or resistant hypertension.
+company_name: Mineralys Therapeutics, Inc.
+aliases:
+- Mineralys
+- Mineralys Therapeutics
+brands: []
+products:
+- lorundrostat
+indications:
+- hypertension
+- resistant hypertension
+- chronic kidney disease
+- obstructive sleep apnea
+catalysts: []

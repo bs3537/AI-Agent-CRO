@@ -1,0 +1,20 @@
+ticker: EPRX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage biotech using its Diffusphere long-acting local drug-delivery technology,
+  with lead candidate EP-104GI in a Phase 1b/2 trial for eosinophilic esophagitis.
+company_name: Eupraxia Pharmaceuticals Inc.
+aliases:
+- Eupraxia
+- Eupraxia Pharmaceuticals
+brands: []
+products:
+- EP-104GI
+- EP-104IAR
+indications:
+- eosinophilic esophagitis
+- knee osteoarthritis
+- gastrointestinal disease
+- Crohn's disease
+catalysts: []

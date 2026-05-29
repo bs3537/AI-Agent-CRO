@@ -1,0 +1,28 @@
+ticker: XERS
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Commercial-stage biopharma marketing Gvoke, Recorlev and Keveyis using its proprietary
+  formulation technologies, with a Phase 2 once-weekly subcutaneous levothyroxine
+  candidate (XP-8121) in development.
+company_name: Xeris Biopharma Holdings, Inc.
+aliases:
+- Xeris
+- Xeris Biopharma
+- Xeris Pharmaceuticals
+brands:
+- Gvoke
+- Recorlev
+- Keveyis
+- Ogluo
+products:
+- XP-8121
+- XeriSol
+- XeriJect
+indications:
+- severe hypoglycemia
+- Cushing's syndrome
+- endogenous hypercortisolemia
+- primary periodic paralysis
+- hypothyroidism
+catalysts: []

@@ -1,0 +1,21 @@
+ticker: COGT
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage precision-medicine company developing the selective KIT inhibitor
+  bezuclastinib for systemic mastocytosis and GIST, with multiple NDA submissions
+  pending FDA review.
+company_name: Cogent Biosciences, Inc.
+aliases:
+- Cogent
+- Cogent Biosciences
+brands: []
+products:
+- bezuclastinib
+- CGT4859
+indications:
+- systemic mastocytosis
+- gastrointestinal stromal tumors
+- GIST
+- mast cell disorders
+catalysts: []

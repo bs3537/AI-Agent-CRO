@@ -1,0 +1,23 @@
+ticker: ZBIO
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Zenas BioPharma is a clinical-stage immunology company whose lead candidate obexelimab,
+  a bifunctional CD19/FcgRIIb antibody, met its Phase 3 endpoint in IgG4-related disease
+  and is heading toward BLA submission.
+company_name: Zenas BioPharma, Inc.
+aliases:
+- Zenas BioPharma
+- Zenas
+brands: []
+products:
+- obexelimab
+- orelabrutinib
+- ZB021
+- ZB022
+indications:
+- IgG4-related disease
+- autoimmune diseases
+- multiple sclerosis
+- systemic lupus erythematosus
+catalysts: []

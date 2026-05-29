@@ -1,0 +1,23 @@
+ticker: IRON
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Disc Medicine is a clinical-stage biopharma developing therapies that target red
+  blood cell and heme biology, led by bitopertin for erythropoietic porphyrias.
+company_name: Disc Medicine, Inc.
+aliases:
+- Disc Medicine
+- Disc
+brands: []
+products:
+- bitopertin
+- DISC-0974
+- DISC-3405
+indications:
+- erythropoietic porphyria
+- erythropoietic protoporphyria
+- anemia of myelofibrosis
+- chronic kidney disease anemia
+- polycythemia vera
+- hematologic disorders
+catalysts: []

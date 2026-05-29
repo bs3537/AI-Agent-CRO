@@ -1,0 +1,21 @@
+ticker: MESO
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Mesoblast develops allogeneic cellular medicines and markets Ryoncil (remestemcel-L),
+  the first FDA-approved mesenchymal stromal cell therapy, for pediatric steroid-refractory
+  acute graft-versus-host disease while advancing Revascor in heart failure.
+company_name: Mesoblast Limited
+aliases:
+- Mesoblast
+brands:
+- Ryoncil
+products:
+- remestemcel-L
+- rexlemestrocel-L (Revascor)
+indications:
+- graft-versus-host disease
+- ischemic heart failure
+- chronic low back pain
+- inflammatory diseases
+catalysts: []

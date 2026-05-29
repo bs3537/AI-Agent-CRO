@@ -1,0 +1,20 @@
+ticker: EQ
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Equillium is a clinical-stage biotech developing immunomodulatory therapies for
+  severe autoimmune and inflammatory disorders, led by the anti-CD6 antibody itolizumab.
+company_name: Equillium, Inc.
+aliases:
+- Equillium
+brands: []
+products:
+- itolizumab (EQ001)
+- EQ504
+- EQ101
+indications:
+- acute graft-versus-host disease
+- ulcerative colitis
+- lupus nephritis
+- autoimmune and inflammatory diseases
+catalysts: []

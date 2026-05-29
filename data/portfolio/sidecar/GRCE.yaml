@@ -1,0 +1,20 @@
+ticker: GRCE
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage rare-disease pharma (formerly Acasti Pharma) whose lead asset GTx-104
+  is an intravenous nimodipine formulation for aneurysmal subarachnoid hemorrhage
+  under FDA review.
+company_name: Grace Therapeutics, Inc.
+aliases:
+- Grace Therapeutics
+- Grace
+- Acasti Pharma
+brands: []
+products:
+- GTx-104
+indications:
+- aneurysmal subarachnoid hemorrhage
+- aSAH
+- cerebral vasospasm
+catalysts: []

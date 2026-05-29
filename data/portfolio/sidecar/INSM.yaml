@@ -1,0 +1,24 @@
+ticker: INSM
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Insmed is a commercial-stage biopharma in respiratory and rare disease, marketing
+  Arikayce and Brinsupri (brensocatib) while advancing a late-stage respiratory pipeline.
+company_name: Insmed Incorporated
+aliases:
+- Insmed
+brands:
+- Arikayce
+- Brinsupri
+products:
+- brensocatib
+- amikacin liposome inhalation suspension
+- TPIP
+- treprostinil palmitil inhalation powder
+indications:
+- non-cystic fibrosis bronchiectasis
+- nontuberculous mycobacterial lung disease
+- MAC lung disease
+- pulmonary hypertension
+- respiratory disease
+catalysts: []

@@ -1,0 +1,27 @@
+ticker: VCYT
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Commercial-stage genomic diagnostics company providing cancer tests including Decipher
+  Prostate, Afirma (thyroid), and Prosigna (breast), with newer launches in bladder
+  cancer MRD monitoring.
+company_name: Veracyte, Inc.
+aliases:
+- Veracyte
+brands:
+- Decipher Prostate
+- Afirma
+- Prosigna
+- Decipher Bladder
+products:
+- Decipher Prostate genomic test
+- Afirma thyroid test
+- Prosigna breast test
+- TrueMRD
+indications:
+- prostate cancer
+- thyroid cancer
+- breast cancer
+- bladder cancer
+- oncology diagnostics
+catalysts: []

@@ -1,0 +1,21 @@
+ticker: NBIS
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  AI infrastructure company (formerly Yandex N.V.) building full-stack GPU cloud computing
+  for the global AI industry, with rapidly scaling AI cloud revenue.
+company_name: Nebius Group N.V.
+aliases:
+- Nebius
+- Nebius Group
+- Yandex
+brands:
+- Nebius AI Cloud
+- TripleTen
+- Avride
+- Toloka
+products:
+- AI cloud / GPU infrastructure
+- large-scale GPU clusters
+indications: []
+catalysts: []

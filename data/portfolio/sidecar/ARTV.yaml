@@ -1,0 +1,23 @@
+ticker: ARTV
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Artiva Biotherapeutics develops allogeneic off-the-shelf NK-cell therapies led by
+  AlloNK, advancing toward a Phase 3 registrational trial in refractory rheumatoid
+  arthritis and other B-cell-driven autoimmune diseases.
+company_name: Artiva Biotherapeutics, Inc.
+aliases:
+- Artiva
+- Artiva Bio
+brands: []
+products:
+- AlloNK (AB-101)
+- AB-201
+- AB-205
+indications:
+- rheumatoid arthritis
+- lupus nephritis
+- autoimmune diseases
+- B-cell driven disorders
+- oncology
+catalysts: []

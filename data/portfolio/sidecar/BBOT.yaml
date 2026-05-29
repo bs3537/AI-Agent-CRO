@@ -1,0 +1,24 @@
+ticker: BBOT
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage oncology company developing small-molecule KRAS-targeted inhibitors,
+  including the direct KRAS-G12C inhibitor BBO-8520 and pan-KRAS inhibitor BBO-11818,
+  for solid tumors.
+company_name: BridgeBio Oncology Therapeutics, Inc.
+aliases:
+- BridgeBio Oncology
+- BBOT
+- BridgeBio Oncology Therapeutics
+brands: []
+products:
+- BBO-8520
+- BBO-11818
+- BBO-10203
+indications:
+- non-small cell lung cancer
+- KRAS-mutant cancers
+- colorectal cancer
+- breast cancer
+- oncology
+catalysts: []

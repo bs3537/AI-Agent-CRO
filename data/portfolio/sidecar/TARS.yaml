@@ -1,0 +1,23 @@
+ticker: TARS
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Commercial-stage eye-care company whose lead product Xdemvy (lotilaner) is the first
+  FDA-approved treatment for Demodex blepharitis, with a pipeline extending the lotilaner
+  platform.
+company_name: Tarsus Pharmaceuticals, Inc.
+aliases:
+- Tarsus
+- Tarsus Pharmaceuticals
+brands:
+- Xdemvy
+products:
+- TP-04
+- TP-05
+- lotilaner
+indications:
+- Demodex blepharitis
+- ocular rosacea
+- Lyme disease prophylaxis
+- Meibomian gland disease
+catalysts: []

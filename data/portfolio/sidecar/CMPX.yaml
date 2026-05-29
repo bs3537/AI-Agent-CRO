@@ -1,0 +1,22 @@
+ticker: CMPX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Compass Therapeutics is a clinical-stage oncology biopharma developing antibody-based
+  therapeutics, led by the bispecific tovecimig (CTX-009) in biliary tract cancer.
+company_name: Compass Therapeutics, Inc.
+aliases:
+- Compass Therapeutics
+- Compass
+brands: []
+products:
+- tovecimig
+- CTX-009
+- CTX-471
+- CTX-8371
+indications:
+- biliary tract cancer
+- cholangiocarcinoma
+- solid tumors
+- oncology
+catalysts: []

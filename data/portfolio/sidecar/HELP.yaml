@@ -1,0 +1,20 @@
+ticker: HELP
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Cybin, operating as Helus Pharma after its January 2026 rebrand and Nasdaq listing,
+  is a clinical-stage company developing novel serotonergic agonists led by HLP003
+  in Phase 3 for major depressive disorder.
+company_name: Cybin Inc.
+aliases:
+- Helus Pharma
+- Cybin
+brands: []
+products:
+- HLP003
+- HLP004
+indications:
+- major depressive disorder
+- generalized anxiety disorder
+- mental health disorders
+catalysts: []

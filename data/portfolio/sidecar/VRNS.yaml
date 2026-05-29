@@ -1,0 +1,20 @@
+ticker: VRNS
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Data and AI security software vendor whose SaaS Data Security Platform discovers,
+  classifies, and protects sensitive data across cloud, SaaS, and on-prem environments.
+company_name: Varonis Systems, Inc.
+aliases:
+- Varonis
+- Varonis Systems
+brands:
+- Varonis Data Security Platform
+- Varonis Atlas
+products:
+- Data Security Platform
+- data security posture management
+- data detection and response
+- Atlas AI security
+indications: []
+catalysts: []

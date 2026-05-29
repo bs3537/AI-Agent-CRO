@@ -1,0 +1,24 @@
+ticker: AVAV
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  AeroVironment is a defense technology company supplying loitering munitions, unmanned
+  aircraft, and (following its 2025 BlueHalo acquisition) space, cyber and directed-energy
+  systems to the U.S. military and allies.
+company_name: AeroVironment, Inc.
+aliases:
+- AeroVironment
+- AV
+- BlueHalo
+brands:
+- Switchblade
+- Puma
+- JUMP 20
+- Wasp
+products:
+- Switchblade 300/400/600 loitering munitions
+- unmanned aircraft systems
+- space and directed-energy systems
+- counter-UAS systems
+indications: []
+catalysts: []

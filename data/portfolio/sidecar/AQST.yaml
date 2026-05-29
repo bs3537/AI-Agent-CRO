@@ -1,0 +1,25 @@
+ticker: AQST
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Specialty pharma using oral/sublingual film drug-delivery technology, with lead
+  pipeline asset Anaphylm (dibutepinephrine) sublingual film for anaphylaxis awaiting
+  FDA resubmission after a January 2026 CRL.
+company_name: Aquestive Therapeutics, Inc.
+aliases:
+- Aquestive
+- Aquestive Therapeutics
+brands:
+- Libervant
+- Sympazan
+- Suboxone (film)
+products:
+- Anaphylm
+- AQST-108
+- AQST-305
+indications:
+- anaphylaxis
+- Type I allergic reactions
+- epilepsy
+- seizure clusters
+catalysts: []

@@ -1,0 +1,25 @@
+ticker: KYTX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Late-stage clinical biopharma developing autologous CD19-targeting CAR-T cell therapy
+  miv-cel for B-cell-driven autoimmune diseases, with a BLA anticipated in stiff person
+  syndrome.
+company_name: Kyverna Therapeutics, Inc.
+aliases:
+- Kyverna
+- Kyverna Therapeutics
+brands: []
+products:
+- miv-cel
+- mivocabtagene autoleucel
+- KYV-101
+- KYV-102
+indications:
+- stiff person syndrome
+- myasthenia gravis
+- lupus nephritis
+- multiple sclerosis
+- rheumatoid arthritis
+- autoimmune disease
+catalysts: []

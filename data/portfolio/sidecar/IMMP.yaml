@@ -1,0 +1,22 @@
+ticker: IMMP
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Immutep is a clinical-stage immunotherapy company built around the LAG-3 protein,
+  with lead candidate eftilagimod alfa (an antigen-presenting-cell activator) in multiple
+  solid-tumor combination trials.
+company_name: Immutep Limited
+aliases:
+- Immutep
+brands: []
+products:
+- eftilagimod alfa
+- IMP761
+- IMP701
+indications:
+- non-small cell lung cancer
+- head and neck cancer
+- soft tissue sarcoma
+- oncology
+- autoimmune disease
+catalysts: []

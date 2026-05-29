@@ -1,0 +1,21 @@
+ticker: BCRX
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  BioCryst markets the oral plasma kallikrein inhibitor Orladeyo for hereditary angioedema
+  and is advancing follow-on HAE and rare-disease candidates including navenibart.
+company_name: BioCryst Pharmaceuticals, Inc.
+aliases:
+- BioCryst
+brands:
+- Orladeyo
+- Rapivab
+products:
+- berotralstat
+- navenibart
+- BCX17725
+indications:
+- hereditary angioedema
+- rare diseases
+- complement-mediated diseases
+catalysts: []

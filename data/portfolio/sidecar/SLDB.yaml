@@ -1,0 +1,24 @@
+ticker: SLDB
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage gene-therapy company focused on neuromuscular and cardiac diseases,
+  with lead AAV microdystrophin candidate SGT-003 for Duchenne muscular dystrophy
+  advancing toward Phase 3.
+company_name: Solid Biosciences Inc.
+aliases:
+- Solid Biosciences
+- Solid Bio
+- Solid
+brands: []
+products:
+- SGT-003
+- SGT-212
+- SGT-501
+- AAV-SLB101
+indications:
+- Duchenne muscular dystrophy
+- Friedreich's ataxia
+- catecholaminergic polymorphic ventricular tachycardia
+- CPVT
+catalysts: []

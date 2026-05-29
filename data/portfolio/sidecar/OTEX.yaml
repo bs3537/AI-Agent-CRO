@@ -1,0 +1,25 @@
+ticker: OTEX
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Enterprise information-management software vendor offering content services, business
+  network, cybersecurity, IT operations management, and AI/analytics platforms to
+  global organizations.
+company_name: Open Text Corporation
+aliases:
+- OpenText
+- Open Text
+brands:
+- OpenText Content Cloud
+- OpenText Business Network
+- OpenText Cybersecurity
+- OpenText ITOM
+- OpenText AI Data Platform
+products:
+- Information Management software
+- Content management
+- Business Network
+- Cybersecurity
+- Aviator AI
+indications: []
+catalysts: []

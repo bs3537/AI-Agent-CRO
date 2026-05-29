@@ -1,0 +1,23 @@
+ticker: ARQT
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Arcutis is a commercial-stage medical dermatology company whose lead franchise is
+  the topical roflumilast brand Zoryve across psoriasis, atopic dermatitis, and seborrheic
+  dermatitis.
+company_name: Arcutis Biotherapeutics, Inc.
+aliases:
+- Arcutis
+- Arcutis Biotherapeutics
+brands:
+- Zoryve
+products:
+- roflumilast
+- ARQ-234
+- ARQ-255
+indications:
+- plaque psoriasis
+- atopic dermatitis
+- seborrheic dermatitis
+- immune-mediated dermatologic disease
+catalysts: []

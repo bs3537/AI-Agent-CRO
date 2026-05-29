@@ -1,0 +1,23 @@
+ticker: AGMB
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage biopharma developing ALK5/TGF-beta-receptor-1 inhibitors for chronic
+  fibrotic and inflammatory diseases, with lead asset ontunisertib (AGMB-129) in Phase
+  2a for fibrostenosing Crohn's disease; IPO'd on Nasdaq in February 2026.
+company_name: AgomAb Therapeutics NV
+aliases:
+- AgomAb
+- AgomAb Therapeutics
+- Agomab
+brands: []
+products:
+- ontunisertib
+- AGMB-129
+- AGMB-447
+indications:
+- fibrostenosing Crohn's disease
+- idiopathic pulmonary fibrosis
+- fibrosis
+- inflammatory bowel disease
+catalysts: []

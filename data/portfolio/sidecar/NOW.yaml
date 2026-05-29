@@ -1,0 +1,25 @@
+ticker: NOW
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  ServiceNow is an enterprise software company providing a cloud-based platform for
+  digital workflow automation across IT, customer service, HR, security, and AI-enabled
+  enterprise operations.
+company_name: ServiceNow, Inc.
+aliases:
+- ServiceNow
+brands:
+- ServiceNow AI Platform
+- Now Assist
+- Now Platform
+- IT Service Management
+- Workflow Data Fabric
+products:
+- IT Service Management
+- IT Operations Management
+- Security Operations
+- Customer Service Management
+- HR Service Delivery
+- Now Assist AI
+indications: []
+catalysts: []

@@ -1,0 +1,23 @@
+ticker: SPRB
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Spruce Biosciences is a clinical-stage rare-disease biopharma whose lead program
+  is tralesinidase alfa enzyme replacement therapy for Sanfilippo syndrome type B
+  (MPS IIIB).
+company_name: Spruce Biosciences, Inc.
+aliases:
+- Spruce Biosciences
+- Spruce
+brands: []
+products:
+- tralesinidase alfa
+- TA-ERT
+- tildacerfont
+indications:
+- Sanfilippo syndrome type B
+- MPS IIIB
+- mucopolysaccharidosis
+- lysosomal storage disease
+- congenital adrenal hyperplasia
+catalysts: []

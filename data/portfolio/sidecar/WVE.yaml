@@ -1,0 +1,23 @@
+ticker: WVE
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage RNA-medicines company with a platform spanning RNA editing, exon
+  skipping and siRNA, led by WVE-006 for AATD and WVE-N531 (exon-53 skipping) for
+  Duchenne muscular dystrophy.
+company_name: Wave Life Sciences Ltd.
+aliases:
+- Wave
+- Wave Life Sciences
+brands: []
+products:
+- WVE-006
+- WVE-N531
+- WVE-007
+- WVE-003
+indications:
+- alpha-1 antitrypsin deficiency
+- Duchenne muscular dystrophy
+- obesity
+- Huntington's disease
+catalysts: []

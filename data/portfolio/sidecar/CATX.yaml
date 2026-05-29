@@ -1,0 +1,22 @@
+ticker: CATX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Perspective Therapeutics develops a lead-212 alpha-emitting radiopharmaceutical
+  platform with clinical programs led by VMT-alpha-NET for SSTR2-positive neuroendocrine
+  tumors.
+company_name: Perspective Therapeutics, Inc.
+aliases:
+- Perspective Therapeutics
+- Perspective
+brands: []
+products:
+- VMT-alpha-NET
+- VMT01
+- PSV359
+indications:
+- neuroendocrine tumors
+- melanoma
+- FAP-positive solid tumors
+- oncology
+catalysts: []

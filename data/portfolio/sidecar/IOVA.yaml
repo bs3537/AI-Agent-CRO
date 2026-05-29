@@ -1,0 +1,23 @@
+ticker: IOVA
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Cell-therapy company whose tumor-infiltrating lymphocyte product Amtagvi (lifileucel)
+  is the first FDA-approved one-time TIL therapy for advanced melanoma, with label-expansion
+  programs underway.
+company_name: Iovance Biotherapeutics, Inc.
+aliases:
+- Iovance
+- Iovance Biotherapeutics
+brands:
+- Amtagvi
+- Proleukin
+products:
+- lifileucel
+- IOV-4001
+indications:
+- metastatic melanoma
+- non-small cell lung cancer
+- solid tumors
+- cervical cancer
+catalysts: []

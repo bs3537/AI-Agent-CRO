@@ -1,0 +1,24 @@
+ticker: XNCR
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage biopharma using its XmAb antibody-engineering platform to develop
+  bispecific and Fc-engineered antibodies for cancer and autoimmune disease, also
+  earning royalties from partnered programs.
+company_name: Xencor, Inc.
+aliases:
+- Xencor
+brands: []
+products:
+- plamotamab
+- vudalimab
+- XmAb819
+- XmAb541
+- XmAb657
+indications:
+- rheumatoid arthritis
+- renal cell carcinoma
+- gynecologic tumors
+- autoimmune diseases
+- oncology
+catalysts: []

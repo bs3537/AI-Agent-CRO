@@ -1,0 +1,18 @@
+ticker: CLSK
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Bitcoin mining company operating large-scale data centers anchored by contracted
+  utility-grade power, increasingly expanding into AI/high-performance computing infrastructure.
+company_name: CleanSpark, Inc.
+aliases:
+- CleanSpark
+brands:
+- CleanSpark Bitcoin mining
+- CleanSpark data center / HPC
+products:
+- Bitcoin mining operations
+- AI and high-performance computing infrastructure
+- utility-grade power capacity
+indications: []
+catalysts: []

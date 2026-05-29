@@ -1,0 +1,24 @@
+ticker: KURA
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Oncology company whose menin inhibitor Komzifti (ziftomenib), partnered with Kyowa
+  Kirin, received FDA approval in late 2025 for relapsed/refractory NPM1-mutated AML,
+  with frontline and additional programs advancing.
+company_name: Kura Oncology, Inc.
+aliases:
+- Kura
+- Kura Oncology
+brands:
+- Komzifti
+products:
+- ziftomenib
+- KO-2806
+- tipifarnib
+indications:
+- acute myeloid leukemia
+- NPM1-mutated AML
+- KMT2A-rearranged leukemia
+- solid tumors
+- head and neck squamous cell carcinoma
+catalysts: []

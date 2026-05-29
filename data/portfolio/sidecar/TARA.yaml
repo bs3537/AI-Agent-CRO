@@ -1,0 +1,19 @@
+ticker: TARA
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Protara Therapeutics is a clinical-stage company whose lead asset TARA-002, a TLR2/NOD2-agonist
+  immunopotentiator, is in Phase 2 for non-muscle invasive bladder cancer.
+company_name: Protara Therapeutics, Inc.
+aliases:
+- Protara
+- Protara Therapeutics
+brands: []
+products:
+- TARA-002
+- IV Choline Chloride
+indications:
+- non-muscle invasive bladder cancer
+- lymphatic malformations
+- rare diseases
+catalysts: []

@@ -1,0 +1,24 @@
+ticker: PTHS
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Commercial-stage dermatology company marketing Zelsuvmi (berdazimer), the first
+  at-home prescription treatment for molluscum contagiosum, formed via the 2025 merger
+  of Channel Therapeutics and Ligand's LNHC.
+company_name: Pelthos Therapeutics Inc.
+aliases:
+- Pelthos
+- Pelthos Therapeutics
+- Channel Therapeutics
+brands:
+- Zelsuvmi
+- Xepi
+products:
+- berdazimer topical gel
+- ozenoxacin cream
+indications:
+- molluscum contagiosum
+- impetigo
+- dermatology
+- skin infections
+catalysts: []

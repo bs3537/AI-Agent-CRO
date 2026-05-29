@@ -1,0 +1,24 @@
+ticker: OTLK
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Outlook Therapeutics is an ophthalmic biopharma developing and commercializing ONS-5010/Lytenava
+  (bevacizumab-vikg), an eye-specific bevacizumab, for wet AMD, approved and launched
+  in Europe and the UK while pursuing US approval.
+company_name: Outlook Therapeutics, Inc.
+aliases:
+- Outlook Therapeutics
+- Outlook
+brands:
+- Lytenava
+products:
+- ONS-5010
+- bevacizumab-vikg
+- bevacizumab gamma
+indications:
+- wet age-related macular degeneration
+- neovascular AMD
+- diabetic macular edema
+- branch retinal vein occlusion
+- retinal disease
+catalysts: []

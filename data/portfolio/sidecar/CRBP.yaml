@@ -1,0 +1,22 @@
+ticker: CRBP
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Corbus Pharmaceuticals is a clinical-stage biopharma developing oncology and obesity
+  candidates, led by the Nectin-4 antibody-drug conjugate CRB-701.
+company_name: Corbus Pharmaceuticals Holdings, Inc.
+aliases:
+- Corbus Pharmaceuticals
+- Corbus
+brands: []
+products:
+- CRB-701
+- CRB-601
+- CRB-913
+indications:
+- oncology
+- head and neck squamous cell carcinoma
+- cervical cancer
+- Nectin-4 expressing tumors
+- obesity
+catalysts: []

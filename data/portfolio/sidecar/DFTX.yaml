@@ -1,0 +1,25 @@
+ticker: DFTX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Definium Therapeutics (formerly MindMed) is a clinical-stage biopharma developing
+  CNS therapies, led by DT120 in Phase 3 for generalized anxiety disorder.
+company_name: Definium Therapeutics, Inc.
+aliases:
+- Definium Therapeutics
+- Definium
+- MindMed
+- Mind Medicine
+brands: []
+products:
+- DT120
+- DT402
+- MM-120
+- DT110
+indications:
+- generalized anxiety disorder
+- major depressive disorder
+- autism spectrum disorder
+- brain health disorders
+- central nervous system disorders
+catalysts: []

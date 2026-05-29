@@ -1,0 +1,20 @@
+ticker: AKTS
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Aktis Oncology is a clinical-stage company developing targeted alpha-emitting radiopharmaceuticals
+  built on a proprietary engineered-miniprotein platform for solid tumors, which IPO'd
+  on Nasdaq in January 2026 under the AKTS ticker.
+company_name: Aktis Oncology, Inc.
+aliases:
+- Aktis Oncology
+- Aktis
+brands: []
+products:
+- AKY-1189
+- miniprotein radiopharmaceutical platform
+indications:
+- solid tumors
+- oncology
+- targeted radiotherapy
+catalysts: []

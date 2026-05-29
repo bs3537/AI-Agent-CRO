@@ -1,0 +1,21 @@
+ticker: ORKA
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage biotech developing half-life-extended monoclonal antibodies (lead
+  ORKA-001 targeting IL-23p19) aimed at infrequent, potentially once-yearly dosing
+  for chronic skin diseases such as plaque psoriasis.
+company_name: Oruka Therapeutics, Inc.
+aliases:
+- Oruka
+- Oruka Therapeutics
+brands: []
+products:
+- ORKA-001
+- ORKA-002
+indications:
+- plaque psoriasis
+- chronic skin diseases
+- psoriatic arthritis
+- dermatology
+catalysts: []

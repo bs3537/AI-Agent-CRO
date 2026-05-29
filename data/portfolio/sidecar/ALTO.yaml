@@ -1,0 +1,23 @@
+ticker: ALTO
+conviction_tier: 3
+stage: commercial_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Alto Ingredients produces and distributes specialty alcohols, essential ingredients,
+  and renewable fuel ethanol from its Pekin and Western production campuses.
+company_name: Alto Ingredients, Inc.
+aliases:
+- Alto Ingredients
+- Alto
+- Pacific Ethanol
+brands:
+- specialty alcohols
+- grain neutral spirits
+- corn oil
+- renewable fuel ethanol
+products:
+- specialty alcohols
+- fuel-grade ethanol
+- essential ingredients
+- corn oil
+indications: []
+catalysts: []

@@ -1,0 +1,23 @@
+ticker: TENX
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Tenax Therapeutics is a clinical-stage biopharma developing oral levosimendan (TNX-103)
+  in Phase 3 for pulmonary hypertension associated with heart failure with preserved
+  ejection fraction (PH-HFpEF).
+company_name: Tenax Therapeutics, Inc.
+aliases:
+- Tenax Therapeutics
+- Tenax
+brands: []
+products:
+- TNX-103
+- oral levosimendan
+- TNX-102
+- TNX-101
+indications:
+- pulmonary hypertension
+- heart failure with preserved ejection fraction
+- PH-HFpEF
+- cardiovascular disease
+catalysts: []

@@ -1,0 +1,25 @@
+ticker: RCKT
+conviction_tier: 3
+stage: hybrid
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Gene therapy company with FDA-approved Kresladi for severe leukocyte adhesion deficiency-I
+  and a prioritized cardiovascular pipeline including RP-A501 for Danon disease.
+company_name: Rocket Pharmaceuticals, Inc.
+aliases:
+- Rocket Pharma
+- Rocket Pharmaceuticals
+brands:
+- Kresladi
+products:
+- marnetegragene autotemcel
+- RP-A501
+- RP-A601
+- RP-A801
+indications:
+- leukocyte adhesion deficiency-I
+- Danon disease
+- arrhythmogenic cardiomyopathy
+- dilated cardiomyopathy
+- rare genetic disease
+- gene therapy
+catalysts: []

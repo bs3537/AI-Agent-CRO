@@ -1,0 +1,24 @@
+ticker: BEAM
+conviction_tier: 3
+stage: clinical_stage
+thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
+  Clinical-stage genetic-medicine company developing base-editing therapies, with
+  lead programs risto-cel (BEAM-101) for sickle cell disease and BEAM-302 for alpha-1
+  antitrypsin deficiency.
+company_name: Beam Therapeutics Inc.
+aliases:
+- Beam
+- Beam Therapeutics
+- Beam Tx
+brands: []
+products:
+- BEAM-101
+- BEAM-302
+- ESCAPE
+- risto-cel
+indications:
+- sickle cell disease
+- alpha-1 antitrypsin deficiency
+- genetic diseases
+- hematologic disorders
+catalysts: []
