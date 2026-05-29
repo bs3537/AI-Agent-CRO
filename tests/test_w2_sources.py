@@ -106,12 +106,13 @@ def test_ctgov_parse_fixture():
 # FMP parse_metrics flattens the endpoint sections into friendly keys.
 def test_fmp_parse_metrics():
     body = {
-        "profile": [{"companyName": "Vertex", "mktCap": 1.2e11, "price": 465.0}],
-        "ratios": [{"currentRatioTTM": 2.7, "grossProfitMarginTTM": 0.88}],
-        "key_metrics": [{"cashPerShareTTM": 45.0}],
+        "profile": [{"companyName": "Vertex", "marketCap": 1.2e11, "price": 465.0}],
+        "ratios": [{"currentRatioTTM": 2.7, "grossProfitMarginTTM": 0.88, "cashPerShareTTM": 45.0}],
+        "key_metrics": [{"enterpriseValueTTM": 5.0e10}],
     }
     m = fmp_client.parse_metrics(body)
     assert m["company"] == "Vertex" and m["current_ratio"] == 2.7 and m["cash_per_share"] == 45.0
+    assert m["market_cap"] == 1.2e11 and m["enterprise_value"] == 5.0e10
 
 
 # Every adapter refuses to run live without a key + without a fixture, raising
@@ -151,14 +152,17 @@ def test_fmp_refresh_from_fixture():
     assert fmp_client.latest_fmp_metrics("VRTX")["company"].startswith("Vertex")
 
 
-# FMP historical-price body parses oldest→newest (FMP returns newest-first).
+# FMP /stable price history is a flat newest-first array; parse oldest→newest.
+# (Still tolerates the legacy {historical:[...]} shape.)
 def test_price_history_parse():
-    body = {"symbol": "X", "historical": [
+    body = [
         {"date": "2026-05-20", "close": 3.0},
         {"date": "2026-05-19", "close": 2.0},
         {"date": "2026-05-18", "close": 1.0},
-    ]}
+    ]
     assert fmp_client._parse_history(body) == [1.0, 2.0, 3.0]
+    legacy = {"symbol": "X", "historical": body}
+    assert fmp_client._parse_history(legacy) == [1.0, 2.0, 3.0]
 
 
 # Price-series store round-trips; latest_price_series returns the newest array.
@@ -178,6 +182,22 @@ def test_price_refresh_from_fixture():
     assert res["updated"] == 2 and res["source"] == "fixture"
     series = fmp_client.latest_price_series("VRTX")
     assert series and len(series) == 252 and all(isinstance(x, float) for x in series)
+
+
+# Hardening: a total live wipeout (every request errors, e.g. a retired endpoint
+# or revoked key) must RAISE — not silently cache nothing — so the collect cycle
+# trips fmp_failure instead of reporting a healthy 0-update run.
+def test_fmp_total_failure_raises(monkeypatch):
+    def boom(*args, **kwargs):
+        raise fmp_client.FmpError("403 Legacy Endpoint")
+
+    monkeypatch.setattr(fmp_client, "fetch_metrics", boom)
+    with pytest.raises(fmp_client.FmpError):
+        fmp_client.refresh_for_holdings(api_key="fake", tickers=["VRTX", "MRNA"])
+
+    monkeypatch.setattr(fmp_client, "fetch_price_history", boom)
+    with pytest.raises(fmp_client.FmpError):
+        fmp_client.refresh_prices_for_holdings(api_key="fake", tickers=["VRTX", "MRNA"])
 
 
 # A cached FMP snapshot flows into build_candidate.fmp_metrics for the decision.

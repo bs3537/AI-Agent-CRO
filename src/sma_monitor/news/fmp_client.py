@@ -22,18 +22,20 @@ import httpx
 from ..db import connection
 from ..identity import event_id
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE = "https://financialmodelingprep.com/stable"
 
-# Fields pulled from each FMP endpoint into the flat metrics dict, mapped to
-# friendly keys for the decision prompt + dashboard. Endpoint → {api_field: out_key}.
-_PROFILE_FIELDS = {"companyName": "company", "sector": "sector", "mktCap": "market_cap",
+# Fields pulled from each FMP /stable endpoint into the flat metrics dict, mapped
+# to friendly keys for the decision prompt + dashboard. Endpoint → {api_field: out_key}.
+# The stable API (legacy /api/v3 retired Aug 31 2025) renamed several fields
+# (mktCap→marketCap, peRatioTTM→priceToEarningsRatioTTM, debtEquityRatioTTM→
+# debtToEquityRatioTTM) and moved cash/FCF-per-share from key-metrics-ttm into ratios-ttm.
+_PROFILE_FIELDS = {"companyName": "company", "sector": "sector", "marketCap": "market_cap",
                    "price": "price", "beta": "beta"}
-_RATIOS_FIELDS = {"peRatioTTM": "pe_ttm", "currentRatioTTM": "current_ratio",
-                  "quickRatioTTM": "quick_ratio", "debtEquityRatioTTM": "debt_to_equity",
-                  "grossProfitMarginTTM": "gross_margin", "netProfitMarginTTM": "net_margin"}
-_KEYMETRICS_FIELDS = {"cashPerShareTTM": "cash_per_share",
-                      "freeCashFlowPerShareTTM": "fcf_per_share",
-                      "enterpriseValueTTM": "enterprise_value"}
+_RATIOS_FIELDS = {"priceToEarningsRatioTTM": "pe_ttm", "currentRatioTTM": "current_ratio",
+                  "quickRatioTTM": "quick_ratio", "debtToEquityRatioTTM": "debt_to_equity",
+                  "grossProfitMarginTTM": "gross_margin", "netProfitMarginTTM": "net_margin",
+                  "cashPerShareTTM": "cash_per_share", "freeCashFlowPerShareTTM": "fcf_per_share"}
+_KEYMETRICS_FIELDS = {"enterpriseValueTTM": "enterprise_value"}
 
 # DDL for the per-ticker financial snapshot cache + the daily EOD price series
 # that backs each position's sparkline. One row per (ticker, day) for each, so
@@ -83,19 +85,20 @@ def fetch_metrics(ticker: str, *, api_key: str, client: httpx.Client | None = No
     client = client or httpx.Client(timeout=30.0)
     metrics: dict[str, Any] = {}
     try:
-        metrics.update(_pull(client, f"{FMP_BASE}/profile/{ticker}", api_key, _PROFILE_FIELDS))
-        metrics.update(_pull(client, f"{FMP_BASE}/ratios-ttm/{ticker}", api_key, _RATIOS_FIELDS))
-        metrics.update(_pull(client, f"{FMP_BASE}/key-metrics-ttm/{ticker}", api_key, _KEYMETRICS_FIELDS))
+        metrics.update(_pull(client, f"{FMP_BASE}/profile", ticker, api_key, _PROFILE_FIELDS))
+        metrics.update(_pull(client, f"{FMP_BASE}/ratios-ttm", ticker, api_key, _RATIOS_FIELDS))
+        metrics.update(_pull(client, f"{FMP_BASE}/key-metrics-ttm", ticker, api_key, _KEYMETRICS_FIELDS))
     finally:
         if owns:
             client.close()
     return metrics
 
 
-# GET one FMP endpoint (which returns a single-element list) and project the
-# selected fields into the friendly-keyed output. Tolerant of an empty list.
-def _pull(client: httpx.Client, url: str, api_key: str, field_map: dict[str, str]) -> dict:
-    resp = client.get(url, params={"apikey": api_key})
+# GET one FMP /stable endpoint for a symbol (each returns a single-element list)
+# and project the selected fields into the friendly-keyed output. Tolerant of an
+# empty list.
+def _pull(client: httpx.Client, url: str, symbol: str, api_key: str, field_map: dict[str, str]) -> dict:
+    resp = client.get(url, params={"symbol": symbol, "apikey": api_key})
     if resp.status_code != 200:
         raise FmpError(f"FMP {url} failed: {resp.status_code} {resp.text[:200]}")
     body = resp.json()
@@ -194,21 +197,29 @@ def refresh_for_holdings(
         )
 
     updated = 0
+    errors = 0
     with httpx.Client(timeout=30.0) as client:
         for t in tickers:
             try:
                 metrics = fetch_metrics(t, api_key=api_key, client=client)
             except FmpError:
+                errors += 1
                 continue
             if metrics:
                 save_fmp_snapshot(t, metrics)
                 updated += 1
-    return {"tickers": len(tickers), "updated": updated, "source": "fmp"}
+    # A total wipeout (every request errored) is a systemic failure — a dead
+    # endpoint or revoked key — not "no new data". Raise so the caller flags it
+    # loudly rather than silently caching nothing (this is what hid the retired
+    # /api/v3 403s instead of tripping fmp_failure).
+    if tickers and errors == len(tickers):
+        raise FmpError(f"all {len(tickers)} FMP metrics requests failed (endpoint or key issue?)")
+    return {"tickers": len(tickers), "updated": updated, "errors": errors, "source": "fmp"}
 
 
 # Fetch ~1 year of daily EOD closes for one ticker (oldest→newest). Uses FMP's
-# line-series historical endpoint, which returns {historical:[{date, close}]}
-# newest-first; we reverse it. Returns [] on any failure.
+# /stable/historical-price-eod/full endpoint, which returns a newest-first array
+# of daily OHLC rows; we keep the closes and reverse them. Returns [] on any failure.
 def fetch_price_history(
     ticker: str, *, api_key: str, days: int = PRICE_HISTORY_DAYS, client: httpx.Client | None = None
 ) -> list[float]:
@@ -216,9 +227,9 @@ def fetch_price_history(
     client = client or httpx.Client(timeout=30.0)
     try:
         today = datetime.now(timezone.utc).date()
-        params = {"serietype": "line", "apikey": api_key,
+        params = {"symbol": ticker, "apikey": api_key,
                   "from": (today - timedelta(days=days)).isoformat(), "to": today.isoformat()}
-        resp = client.get(f"{FMP_BASE}/historical-price-full/{ticker}", params=params)
+        resp = client.get(f"{FMP_BASE}/historical-price-eod/full", params=params)
         if resp.status_code != 200:
             raise FmpError(f"FMP history {ticker} failed: {resp.status_code} {resp.text[:200]}")
         return _parse_history(resp.json())
@@ -227,10 +238,12 @@ def fetch_price_history(
             client.close()
 
 
-# Parse an FMP historical-price-full body into an oldest→newest list of closes.
-def _parse_history(body: dict[str, Any]) -> list[float]:
-    rows = body.get("historical") or []
-    closes = [r["close"] for r in rows if r.get("close") is not None]
+# Parse an FMP price-history body into an oldest→newest list of closes. The
+# /stable endpoint returns a flat array of daily rows; the legacy endpoint nested
+# them under "historical". Accept either; FMP returns newest-first so we reverse.
+def _parse_history(body: Any) -> list[float]:
+    rows = body if isinstance(body, list) else (body.get("historical") or [])
+    closes = [r["close"] for r in rows if isinstance(r, dict) and r.get("close") is not None]
     closes.reverse()  # FMP returns newest-first; sparkline wants oldest→newest
     return closes
 
@@ -315,13 +328,18 @@ def refresh_prices_for_holdings(
         )
 
     updated = 0
+    errors = 0
     with httpx.Client(timeout=30.0) as client:
         for t in tickers:
             try:
                 closes = fetch_price_history(t, api_key=api_key, days=days, client=client)
             except FmpError:
+                errors += 1
                 continue
             if closes:
                 save_price_series(t, closes)
                 updated += 1
-    return {"tickers": len(tickers), "updated": updated, "source": "fmp"}
+    # Total wipeout → systemic failure; raise so collect trips fmp_failure.
+    if tickers and errors == len(tickers):
+        raise FmpError(f"all {len(tickers)} FMP price-history requests failed (endpoint or key issue?)")
+    return {"tickers": len(tickers), "updated": updated, "errors": errors, "source": "fmp"}

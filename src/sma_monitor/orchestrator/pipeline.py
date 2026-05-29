@@ -243,8 +243,10 @@ def run_one_cycle(
             state["prices"] = refresh_prices_for_holdings(api_key=settings.fmp_api_key)
             clear_flag("fmp_failure")
         except RuntimeError as e:
+            # Covers both the no-key guard and a total fetch wipeout (FmpError is
+            # a RuntimeError); detail carries which one so the flag is accurate.
             log.warning("financials_refresh_skipped", extra={"err": str(e)})
-            set_flag("fmp_failure", metadata={"reason": "no_key", "detail": str(e)[:200]})
+            set_flag("fmp_failure", metadata={"reason": "error", "detail": str(e)[:200]})
             state["financials"] = {"status": "skipped", "reason": str(e)[:200]}
 
     # Thesis-drift decisions roll up the freshly-scored evidence per position;
