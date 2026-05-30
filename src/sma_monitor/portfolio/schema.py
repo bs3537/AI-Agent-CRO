@@ -72,6 +72,11 @@ class Sidecar(BaseModel):
     brands: list[str] = Field(default_factory=list)
     products: list[str] = Field(default_factory=list)
     indications: list[str] = Field(default_factory=list)
+    # Optional exact issuer-disclosure URLs. When present, the morning smart
+    # recompute checks these before relying on search-engine discovery.
+    ir_url: str | None = None
+    press_releases_url: str | None = None
+    press_release_rss_url: str | None = None
     catalysts: list[Catalyst] = Field(default_factory=list)
 
     # Match Position's ticker normalization so joins on ticker work.
@@ -104,6 +109,9 @@ class Holding(BaseModel):
     brands: list[str] = Field(default_factory=list)
     products: list[str] = Field(default_factory=list)
     indications: list[str] = Field(default_factory=list)
+    ir_url: str | None = None
+    press_releases_url: str | None = None
+    press_release_rss_url: str | None = None
     catalysts: list[Catalyst]
     # Derived — feeds Phase 3 catalyst_proximity_boost
     nearest_catalyst_days: int | None = None

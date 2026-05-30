@@ -1,9 +1,185 @@
 ticker: IRON
 conviction_tier: 3
 stage: clinical_stage
-thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
-  Disc Medicine is a clinical-stage biopharma developing therapies that target red
-  blood cell and heme biology, led by bitopertin for erythropoietic porphyrias.
+thesis: "\nEQUITY RESEARCH | BIOTECHNOLOGY\nDisc Medicine (IRON)\n\nPrice: $68.12\n\
+  \n12-Mo Price Target: $104 (+52% upside)\n\nRating: BUY (Moderate Conviction)\n\
+  Chart\nData by YCharts\nEXECUTIVE SUMMARY\n\nWe initiate BUY on Disc Medicine with\
+  \ a scenario-weighted 12-month price target of $104 (52% upside), anchored by a\
+  \ probability-weighted rNPV sum-of-the-parts (SOTP) that captures both the binary\
+  \ APOLLO Phase 3 readout (Q4 2026) and the under-appreciated optionality embedded\
+  \ in the DISC-0974 hepcidin program. IRON's risk/reward has been mispriced since\
+  \ the February 13, 2026 FDA Complete Response Letter, CRL on bitopertin, which clipped\
+  \ the stock ~22% in a single session and prompted a board-approved 20% workforce\
+  \ reduction, primarily targeting commercial functions. We view the CRL as a procedural\
+  \ reset rather than scientific repudiation: the FDA explicitly acknowledged that\
+  \ AURORA and BEACON demonstrated statistically significant whole-blood metal-free\
+  \ PPIX reduction with strong mechanistic plausibility, and pointed to ongoing APOLLO\
+  \ as the path to traditional approval.\n\nOur ensemble probability-of-success (POS)\
+  \ for APOLLO is 62%, derived from five orthogonal methods (Bayesian, frequentist\
+  \ power analysis, base rate, Monte Carlo, signal-to-noise). This sits meaningfully\
+  \ above the market-implied POS of ~35% inferred from current EV minus our risk-unadjusted\
+  \ bitopertin EPP rNPV. The Phase 3 design directly addresses AURORA's behavioral-biological\
+  \ disconnect, BBD, patients with decades of conditioned sunlight avoidance, by extending\
+  \ treatment to six months (vs. 17 weeks in AURORA), measuring sunlight time only\
+  \ during the final month (when PPIX is at nadir and behavioral re-learning has accumulated),\
+  \ over-enrolling to 183 patients (from 150), and selecting the single optimal 60mg\
+  \ dose. BEACON's open-label dataset (222.6 cumulative pain-free sunlight hours;\
+  \ symptom-free days rising from 33% to 78%) and dersimelagon's positive INSPIRE\
+  \ Phase 3 (primary endpoint of time to first prodromal symptom met) jointly demonstrate\
+  \ that EPP behavioral endpoints can separate from placebo when statistical power\
+  \ is adequate.\n\nBeyond bitopertin, DISC-0974's RALLY-MF Phase 2 data (presented\
+  \ at 67th ASH Annual Meeting, Orlando, Dec 6, 2025; responder analysis of 34 of\
+  \ 47 enrolled patients at the Oct 16, 2025 cutoff: 71% transfusion-independence\
+  \ in TD-Low; 63% achieved Hb \u22651 g/dL rise in nTD; 50% of patients on concomitant\
+  \ JAK inhibitors achieved major hematologic response) establishes a credible best-in-class\
+  \ profile for the ~$5.5B MF anemia opportunity, with ASCO 2026 oral abstract #6501\
+  \ (June 2) the next catalyst. Net cash of $730.2M (Q1 2026 10-Q) funds operations\
+  \ into 2029, through APOLLO, FDA decision, multiple Phase 2 readouts, and a potential\
+  \ MF anemia Phase 3 , without dilution risk in the base case. Convexity ratio is\
+  \ 1.90\xD7 upside/downside.\nKEY FINDINGS\n\n    APOLLO ensemble POS: 62%. Materially\
+  \ above market-implied ~35%; APOLLO design surgically addresses the AURORA sunlight-secondary\
+  \ miss.\n    Bitopertin retains the only causative oral mechanism targeting PPIX\
+  \ biosynthesis in EPP/XLP. Dersimelagon (MC1R agonist) and Scenesse/afamelanotide\
+  \ (eumelanin inducer) treat symptoms downstream; PORT-77 (ABCG2 efflux inhibitor,\
+  \ GondolaBio) reduces plasma PPIX without addressing erythroid production.\n   \
+  \ DISC-0974 in MF anemia is materially underwritten by the Street. Our model uses\
+  \ 60% Ph2\u2192approval-adjusted PoS and $750M risk-unadjusted peak.\n    Net cash\
+  \ $730.2M / 38.2M shares = $19.11/share on basic shares; ~$18.30/share on ~39.9M\
+  \ fully diluted.\n    DISC-3405 in polycythemia vera is the program most at risk\
+  \ of competitive displacement by rusfertide (Takeda/Protagonist; NDA accepted with\
+  \ Priority Review, PDUFA target Q3 2026 per Takeda press release Mar 2, 2026; VERIFY\
+  \ Phase 3 demonstrated 76.9% response vs. 32.9% placebo, p<0.0001, late-breaking\
+  \ abstract LBA3 at 61st ASCO Annual Meeting Plenary, June 1, 2025).\n\nI. APOLLO\
+  \ PHASE 3: PROBABILITY OF SUCCESS DEEP DIVE\nDesign and Statistical Architecture\n\
+  \nAPOLLO is a double-blind, placebo-controlled Phase 3 randomizing 183 EPP/XLP patients\
+  \ aged \u226512 to bitopertin 60 mg once daily or placebo for six months. Enrollment\
+  \ completed March 26, 2026; topline expected Q4 2026; FDA decision targeted mid-2027.\
+  \ Co-primary endpoints: (i) % change from baseline in whole-blood metal-free PPIX\
+  \ at 6 months; (ii) average monthly total time in sunlight without pain between\
+  \ 10:00\u201318:00 during the LAST month of the 6-month treatment period. A blinded\
+  \ sample-size re-estimation in January 2026 yielded no adjustment.\nAddressing the\
+  \ Behavioral-Biological Disconnect, BBD\n\nThe AURORA Phase 2 result, PPIX least-squares\
+  \ mean difference vs. placebo of 48.7% at 60mg (p<0.001) but a sunlight-time secondary\
+  \ endpoint of 153.1h at 60mg vs. 133.9h placebo, not statistically significant,\
+  \ was driven by three correctable design features APOLLO has addressed:\nAURORA\
+  \ Limitation \tAPOLLO Fix \tMechanism of Improvement\n17-week treatment \t26-week\
+  \ treatment \tPermits PPIX nadir (~week 7) plus 19 weeks of behavioral re-learning\n\
+  Whole-period sunlight averaging \tLast-month-only measurement \tExcludes early ramp-in\
+  \ weeks where habit dominates biology\n75 patients (1:1:1, two doses) \t183 patients\
+  \ (1:1, single 60mg) \t~2.4\xD7 statistical power on optimal dose\nDiary not fully\
+  \ validated \tValidated electronic diary \tReduces measurement noise; FDA-aligned\n\
+  Strong placebo (sunny enrollment season) \tStratification + larger N \tDilutes placebo\
+  \ seasonal/regional artifacts\n\nThe BBD concern, that EPP patients, after decades\
+  \ of conditioning, may avoid sunlight even after PPIX drops, is empirically refuted\
+  \ by BEACON (6-month open-label, n=22; ASH 2024 Blood 2024;144:1093): pain-free\
+  \ sunlight rose to 222.6 cumulative hours; symptom-free days rose from 33% to 78%\
+  \ while on treatment; prodrome-free sunlight challenges rose from 7% to 54%; patient-reported\
+  \ phototoxic reactions decreased 92%. HELIOS extension data show PPIX reduction\
+  \ sustained beyond 12 months. INSPIRE (Tanabe Pharma America, Jan 20, 2026; NCT06144840)\
+  \ demonstrated EPP behavioral endpoints can separate from placebo in a less generous\
+  \ 16-week, N=165 design, establishing precedent.\nProbability of Success, POS: Five\
+  \ Methods, Ensemble\nMethod \tPOS \tKey Inputs\nBayesian (prior + likelihood) \t\
+  64% \tPrior: 76.8% Phase 3\u2192approval hematology (BIO/QLS/Informa Clinical Development\
+  \ Success Rates 2011-2020); update on AURORA primary hit, BEACON OL, dersimelagon\
+  \ precedent\nFrequentist power \t66% \tPPIX primary ~92%; sunlight co-primary ~72%\
+  \ (AURORA post-hoc 8.0h delta, p=0.013, at larger N); joint 0.92\xD70.72 = 0.66\
+  \ (correlated, adjusted)\nBase rate (rare-hem orphan) \t58% \tBIO rare-disease Ph3\u2192\
+  approval 58\u201362%\nMonte Carlo ensemble (10,000 sims) \t61% \tEffect size, dropout,\
+  \ placebo response, diary compliance distributions\nSignal-to-noise \t63% \tBEACON\
+  \ 222.6h vs. external historical control; SNR \u22653\xD7\nENSEMBLE (equal-weighted)\
+  \ \t62% \t\n\nMarket-implied POS, backing out of current EV minus net cash minus\
+  \ our pipeline rNPV, sits at ~35%, a 27-point gap that defines the asymmetry.\n\
+  II. COMPETITIVE MOAT ANALYSIS\nCompetitor \tMechanism \tRoute \tStatus \tThreat\
+  \ (0-10)\nBitopertin (Disc) \tGlyT1 inhibitor; \u2193PPIX synthesis \tOral QD \t\
+  Phase 3; CRL Feb 13, 2026 \t-\nAfamelanotide / Scenesse (Clinuvel) \tMC1R agonist;\
+  \ \u2191eumelanin \tSC implant q60d \tApproved (sole); FY2025 revenue $105.3M (+10%\
+  \ YoY); EMA year-round label Sep 2025 \t6\nDersimelagon / MT-7117 (Tanabe Pharma)\
+  \ \tMC1R agonist \tOral QD \tINSPIRE Ph3 positive Jan 20, 2026; NDA filing anticipated\
+  \ \t7\nPORT-77 (GondolaBio/Portal) \tABCG2 efflux inhibitor \tOral \tPh2 GATEWAY;\
+  \ ODD + Fast Track (Oct 2025) \t4\nCimetidine \tH2 antagonist (off-label) \tOral\
+  \ \tAcademic case series \t1\nGene therapy (FECH AAV) \tOne-time correction \tIV\
+  \ \tPreclinical \t1\n\nMoat Scoring (Bitopertin, 0-10):\nPillar \tScore \tRationale\n\
+  Mechanism of action \t9 \tOnly causative oral therapy targeting PPIX biosynthesis\n\
+  Efficacy (cross-trial) \t8 \tAURORA -48.7% PPIX (p<0.001); BEACON 222.6h sunlight;\
+  \ HELIOS sustained >12mo\nSafety \t8 \t>4,000-patient legacy schizophrenia exposure;\
+  \ dizziness only common AE\nConvenience \t9 \tOral once-daily vs. Scenesse SC implant\
+  \ every two months\nDifferentiation \t9 \tDisease-modifying; addresses hepatobiliary\
+  \ risk (per NIH/NCBI GeneReviews NBK100826: \"Approximately 20%-30% of individuals\
+  \ with EPP have some degree of liver dysfunction... Up to 5% may develop more advanced\
+  \ liver disease\")\nRegulatory position \t5 \tCRL Feb 2026 introduces overhang;\
+  \ APOLLO required\nComposite \t8.0/10 \tFirst-line oral disease-modifier if APOLLO\
+  \ succeeds\n\nDersimelagon remains the most credible commercial threat, but mechanisms\
+  \ are complementary, not substitutive: dersimelagon increases melanin photoprotection\
+  \ without lowering PPIX; bitopertin alone addresses the underlying erythroid PPIX\
+  \ biosynthesis driving the progressive hepatobiliary disease. Combination use is\
+  \ plausible.\nIII. PIPELINE POS: NON-APOLLO CANDIDATES\nAsset / Indication \tCatalyst\
+  \ \tBayesian \tFrequentist \tMOA-class \tMonte Carlo \tEnsemble\nDISC-0974 / MF\
+  \ anemia (Ph2 endpoint, ASCO 6/2/26) \tConfirmatory data \t78% \t75% \t70% \t73%\
+  \ \t74%\nDISC-0974 / MF anemia (advance to Ph3, EOP2 H2 2026) \tRegulatory + commercial\
+  \ \t60% \t58% \t55% \t60% \t58%\nDISC-0974 / CKD anemia (Ph2 advancement) \tPh1b\
+  \ \u2192 Ph2 transition \t52% \t50% \t48% \t51% \t50%\nDISC-3405 / PV (Ph2 RESTORE-PV\
+  \ data Q4 2026) \tHCT control + phlebotomy reduction \t65% \t62% \t60% \t63% \t\
+  63%\nDISC-3405 / SCD (Ph1b data Q4 2026) \tHepcidin PD + Hb signal \t70% \t65% \t\
+  60% \t66% \t65%\nBitopertin / DBA (NIH-sponsored Ph1/2 advance) \tHematologic response\
+  \ \t45% \t42% \t40% \t43% \t43%\n\nPOS for \"meeting the endpoint\" exceeds \"advance\
+  \ to next phase\" because the former is a statistical test on existing dose-response\
+  \ signals, while the latter requires regulatory and strategic alignment.\nIV. rNPV-BASED\
+  \ SOTP VALUATION\n\nMethodology: Pharmagellan-style risk-adjusted NPV using explicit\
+  \ phase transitions (Phase 1\u21922: 28.9%; Phase 2\u21923: 58% hematology; Phase\
+  \ 3\u2192approval: 76.8% hematology; approval\u2192launch: 95%) from BIO/QLS Advisors/Informa\
+  \ Pharma Intelligence \"Clinical Development Success Rates and Contributing Factors\
+  \ 2011-2020\" (Feb 17, 2021; 9,704 clinical programs). WACC 12% base (sensitivity\
+  \ 10%/14%); 21% effective tax rate; 12-year revenue tail post-launch with terminal-value\
+  \ royalty equivalent declining post-LOE.\nAsset \tIndication \tPeak Sales ($M) \t\
+  Cumulative PoS \tLaunch \trNPV ($M) \t$/share\nBitopertin \tEPP/XLP (US+EU) \t800\
+  \ \t59% (62% Ph3 \xD7 95% reg) \t2027 \t1,820 \t$47.6\nBitopertin \tDBA \t150 \t\
+  25% \t2030 \t95 \t$2.5\nDISC-0974 \tMF anemia \t750 \t35% \t2029 \t870 \t$22.8\n\
+  DISC-0974 \tCKD anemia \t950 \t12% \t2031 \t235 \t$6.2\nDISC-3405 \tPV \t400 \t\
+  18% (vs. rusfertide PDUFA Q3 2026) \t2030 \t165 \t$4.3\nDISC-3405 \tSCD \t300 \t\
+  9% \t2031 \t55 \t$1.4\nPipeline rNPV \t\t\t\t\t3,240 \t$84.8\nNet cash (Q1 2026)\
+  \ \t\t\t\t\t730 \t$19.1\nTotal NAV / Base PT \t\t\t\t\t3,970 \t~$104\n\nWACC sensitivity:\
+  \ 10% \u2192 $116; 12% \u2192 $104; 14% \u2192 $93.\nV. SCENARIO-WEIGHTED VALUATION\n\
+  Scenario \tProbability \tDescription \tPT/share\nBEAR \t25% \tAPOLLO misses sunlight\
+  \ co-primary; 2nd CRL; bitopertin peak $250-350M (XLP/hepatic-niche only); 15-20%\
+  \ post-readout PoS; possible 15-20M share dilution at $40-50; DISC-0974 modest \t\
+  $35\nBASE \t50% \tAPOLLO meets both co-primaries with moderate magnitude (8-15h\
+  \ delta); mid-2027 approval; broad EPP+XLP label; peak $700-900M; 58-65% pre-readout\
+  \ PoS; DISC-0974 advances to Ph3 \t$104\nBULL \t25% \tAPOLLO decisively positive\
+  \ (>20h delta + >50% PPIX); broad pediatric+XLP label; peak $1.1-1.5B; DISC-0974\
+  \ best-in-class TI; rusfertide-class read-through to DISC-3405 \t$175\nWeighted\
+  \ \t\t0.25\xD735 + 0.50\xD7104 + 0.25\xD7175 \t$104.50\nSensitivity Analysis (PT\
+  \ $/share)\nVariable \t-2\u03C3 \t-1\u03C3 \tBase \t+1\u03C3 \t+2\u03C3\nAPOLLO\
+  \ POS (40/52/62/72/82%) \t$71 \t$87 \t$104 \t$120 \t$135\nBitopertin peak ($M; 500/650/800/950/1,100)\
+  \ \t$84 \t$94 \t$104 \t$114 \t$123\nWACC (14/13/12/11/10%) \t$93 \t$98 \t$104 \t\
+  $110 \t$116\nDISC-0974 cumulative PoS (20/28/35/45/55%) \t$94 \t$99 \t$104 \t$111\
+  \ \t$118\nDersimelagon share-loss to bitopertin (40/30/20/10/0%) \t$89 \t$97 \t\
+  $104 \t$111 \t$118\n\nVII. RECOMMENDATION\n\nRating: BUY (Moderate Conviction).\
+  \ 12-Month Price Target: $104 (52% upside). Convexity Ratio: 1.90\xD7\nKill Switches\
+  \ / Falsification Criteria\n\n    APOLLO sunlight co-primary p > 0.10 in pre-specified\
+  \ ITT \u2192 exit; revise to SELL.\n    Bitopertin Grade \u22653 hepatic safety\
+  \ signal in APOLLO \u2192 reduce position.\n    Dersimelagon FDA approval with broader-than-expected\
+  \ label pre-APOLLO \u2192 trim position.\n    Capital raise <$50/share before APOLLO\
+  \ topline \u2192 reduce position (dilution signal).\n    DISC-0974 ASCO 6/2/26 oral\
+  \ presentation fails to confirm RALLY-MF benchmarks (>60% TD-Low TI; >50% nTD Hb\
+  \ \u22651 g/dL) \u2192 trim DISC-0974 sleeve; PT to $85.\n\nRe-Rating Triggers\n\
+  \n    APOLLO topline both co-primaries hit (Q4 2026) \u2192 revise to BUY/High Conviction;\
+  \ PT $140+.\n    DISC-0974 EOP2 meeting (H2 2026) clears Ph3 path with registrational\
+  \ endpoint agreement \u2192 +$15/share.\n    DISC-3405 RESTORE-PV positive HCT control\
+  \ data (Q4 2026) competitive with rusfertide VERIFY \u2192 +$8/share.\n\nRISK FACTORS\
+  \ & DISCLAIMER\n\nMaterial Risks to the Investment Thesis. APOLLO Phase 3 is a binary\
+  \ catalyst with a 30% modeled bear probability. A pre-specified ITT miss on the\
+  \ sunlight co-primary endpoint (p>0.10) would likely compress IRON to $30-40, representing\
+  \ ~50% drawdown from current levels. Specific risks include: (i) AURORA placebo\
+  \ arm over-performance (133.9h) recurring in APOLLO, despite design mitigation;\
+  \ (ii) bitopertin dose-dependent dizziness confounding sunlight behavior at the\
+  \ 60mg dose; (iii) FDA renegotiation of the last-month measurement window to cumulative,\
+  \ which would materially reduce statistical separability; (iv) Vinay Prasad-era\
+  \ CBER surrogate endpoint skepticism extending to bitopertin's resubmission package;\
+  \ (V) competitive displacement by dersimelagon (Tanabe Pharma) approval ahead of\
+  \ APOLLO; (vi) securities litigation (Pomerantz, Levi & Korsinsky, Rosen Law Firm)\
+  \ suppressing institutional accumulation; (vii) dilution risk at depressed prices\
+  \ in the bear scenario, with 18-22M new shares modeled. Pipeline assets DISC-0974\
+  \ and DISC-3405 carry independent Phase 2 readout risk in Q4 2026.\n\n"
 company_name: Disc Medicine, Inc.
 aliases:
 - Disc Medicine
@@ -20,4 +196,6 @@ indications:
 - chronic kidney disease anemia
 - polycythemia vera
 - hematologic disorders
+ir_url: https://ir.discmedicine.com/
+press_releases_url: https://ir.discmedicine.com/news-releases
 catalysts: []

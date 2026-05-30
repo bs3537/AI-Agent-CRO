@@ -14,6 +14,7 @@ is safe and only acts on rows that lack a stage's output.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -32,7 +33,7 @@ from ..red_team.pipeline import run_red_team
 from ..scorer.multipliers import T
 from ..scorer.pipeline import score_unscored
 from .cost import DegradeState, current_degrade_state
-from .flags import clear_flag, set_flag
+from .flags import clear_flag, get_active_flags, set_flag
 
 log = logging.getLogger("sma_monitor.orchestrator.pipeline")
 
@@ -43,6 +44,11 @@ ET = ZoneInfo("America/New_York")
 # Refresh threshold for the positions snapshot. Anything older than this
 # triggers a Flex pull at the start of a collect cycle.
 POSITION_STALE_HOURS = 12
+THESIS_RECOMPUTE_RUNNING_FLAG = "thesis_recompute_running"
+THESIS_RECOMPUTE_INCOMPLETE_FLAG = "thesis_recompute_incomplete"
+THESIS_EMAIL_DEFERRED_FLAG = "thesis_email_deferred"
+THESIS_EMAIL_WAIT_TIMEOUT_MINUTES = 360
+THESIS_EMAIL_WAIT_POLL_SECONDS = 60
 
 
 # Refresh the positions snapshot if it's older than POSITION_STALE_HOURS
@@ -78,9 +84,11 @@ def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None)
         positions, nav = parse_positions(raw.xml, pulled_at=raw.pulled_at)
         save_pull(positions, nav=nav, pulled_at=raw.pulled_at,
                   source="ibkr_flex", raw_xml=raw.xml)
+        ir_state = _populate_ir_urls_after_position_refresh(positions)
         clear_flag("stale_positions")
         return {"refreshed": True, "reason": "ok",
-                "pulled_at": raw.pulled_at.isoformat()}
+                "pulled_at": raw.pulled_at.isoformat(),
+                "ir_urls": ir_state}
     except (FlexError, Exception) as e:
         set_flag("stale_positions",
                  metadata={"reason": "flex_pull_failed", "err": str(e)[:200],
@@ -111,18 +119,144 @@ def run_collect_cycle(*, offline: bool = False) -> dict:
     )
 
 
-# Morning 9 AM ET thesis cycle — recompute any decisions whose thesis or
-# evidence changed since they were last computed (force=False skips unchanged
-# holdings), then assemble + send the thesis-drift email. Runs alongside the
-# evening digest, not in place of it.
-def run_morning_thesis_cycle(*, offline: bool = False) -> dict:
-    """Daily 9 AM ET step: recompute stale decisions, then send the email."""
-    state: dict = {"started_at": datetime.now(UTC).isoformat()}
-    state["decisions"] = run_decisions(offline=offline)
+# Morning thesis recompute — the scheduled path does a full-book signal refresh
+# first, then forces LLM recompute only for holdings with fresh news/SEC filings,
+# open loss >= 10%, or price below EMA20. The email step waits if this is still
+# running, so a heavy trigger day does not send stale ratings.
+def run_morning_thesis_recompute_cycle(*, offline: bool = False, force: bool = True) -> dict:
+    """Daily pre-email step: smart thesis recompute, no email delivery."""
+    from .smart_recompute import run_smart_morning_recompute
+
+    started_at = datetime.now(UTC)
+    state: dict = {"started_at": started_at.isoformat(), "force": force}
+    set_flag(
+        THESIS_RECOMPUTE_RUNNING_FLAG,
+        metadata={
+            "started_at": started_at.isoformat(),
+            "force": force,
+            "offline": offline,
+            "purpose": "pre_email_smart_refresh",
+        },
+    )
+    try:
+        if force:
+            state.update(run_smart_morning_recompute(
+                offline=offline,
+                refresh_positions_fn=maybe_refresh_positions,
+            ))
+        else:
+            state["decisions"] = run_decisions(
+                offline=offline,
+                force=force,
+                compute_source="scheduler_morning",
+            )
+        if state["decisions"].get("errors", 0):
+            set_flag(THESIS_RECOMPUTE_INCOMPLETE_FLAG, metadata=state["decisions"])
+        else:
+            clear_flag(THESIS_RECOMPUTE_INCOMPLETE_FLAG)
+        return state
+    except Exception as e:
+        set_flag(
+            THESIS_RECOMPUTE_INCOMPLETE_FLAG,
+            metadata={"reason": "exception", "detail": str(e)[:200]},
+        )
+        raise
+    finally:
+        clear_flag(THESIS_RECOMPUTE_RUNNING_FLAG)
+        state["finished_at"] = datetime.now(UTC).isoformat()
+        log.info("morning_thesis_recompute_done", extra={"summary": state})
+
+
+# Morning thesis email delivery — sends after the scheduled recompute lead
+# time. If the recompute is still running, wait up to the configured timeout;
+# after that, defer rather than knowingly mailing stale ratings.
+def run_morning_thesis_delivery_cycle(
+    *,
+    offline: bool = False,
+    wait_for_recompute: bool = True,
+    wait_timeout_minutes: int = THESIS_EMAIL_WAIT_TIMEOUT_MINUTES,
+    poll_seconds: int = THESIS_EMAIL_WAIT_POLL_SECONDS,
+) -> dict:
+    """Daily email step: wait for recompute completion, then send the report."""
+    state: dict = {
+        "started_at": datetime.now(UTC).isoformat(),
+        "wait_for_recompute": wait_for_recompute,
+    }
+    if wait_for_recompute:
+        wait_state = _wait_for_thesis_recompute(
+            timeout_minutes=wait_timeout_minutes,
+            poll_seconds=poll_seconds,
+        )
+        state["recompute_wait"] = wait_state
+        if wait_state["status"] == "timeout":
+            set_flag(THESIS_EMAIL_DEFERRED_FLAG, metadata=wait_state)
+            state["email"] = {
+                "status": "deferred",
+                "reason": THESIS_RECOMPUTE_RUNNING_FLAG,
+            }
+            state["finished_at"] = datetime.now(UTC).isoformat()
+            log.warning("morning_thesis_email_deferred", extra={"summary": state})
+            return state
+
+    clear_flag(THESIS_EMAIL_DEFERRED_FLAG)
     state["email"] = assemble_thesis_email()
+    state["finished_at"] = datetime.now(UTC).isoformat()
+    log.info("morning_thesis_email_done", extra={"summary": state})
+    return state
+
+
+# Compatibility helper for ad-hoc/manual callers that still want the old
+# single command behavior. The scheduler no longer uses this path.
+def run_morning_thesis_cycle(*, offline: bool = False) -> dict:
+    """Ad-hoc combined step: recompute first, then send the email."""
+    state: dict = {"started_at": datetime.now(UTC).isoformat()}
+    state["recompute"] = run_morning_thesis_recompute_cycle(offline=offline, force=True)
+    state["delivery"] = run_morning_thesis_delivery_cycle(
+        offline=offline,
+        wait_for_recompute=False,
+    )
     state["finished_at"] = datetime.now(UTC).isoformat()
     log.info("morning_thesis_done", extra={"summary": state})
     return state
+
+
+def _wait_for_thesis_recompute(*, timeout_minutes: int, poll_seconds: int) -> dict:
+    deadline = time.monotonic() + max(0, timeout_minutes) * 60
+    waited_seconds = 0
+    running = _active_flag(THESIS_RECOMPUTE_RUNNING_FLAG)
+    while running is not None and time.monotonic() < deadline:
+        sleep_for = min(max(1, poll_seconds), max(1, int(deadline - time.monotonic())))
+        time.sleep(sleep_for)
+        waited_seconds += sleep_for
+        running = _active_flag(THESIS_RECOMPUTE_RUNNING_FLAG)
+    if running is not None:
+        return {
+            "status": "timeout",
+            "waited_seconds": waited_seconds,
+            "running_flag": running,
+        }
+    return {"status": "ready", "waited_seconds": waited_seconds}
+
+
+def _active_flag(name: str) -> dict | None:
+    for flag in get_active_flags():
+        if flag.get("flag_name") == name:
+            return flag
+    return None
+
+
+def _populate_ir_urls_after_position_refresh(positions: list) -> dict:
+    """Create/populate sidecar IR URLs for any newly-seen broker holdings."""
+    try:
+        from ..portfolio.ir_urls import populate_ir_urls_for_tickers
+
+        return populate_ir_urls_for_tickers(
+            [p.ticker for p in positions],
+            create_missing=True,
+        )
+    except Exception as e:  # noqa: BLE001 - a URL lookup must not make positions stale.
+        log.warning("ir_url_population_failed", extra={"err": str(e)[:240]})
+        return {"status": "failed", "reason": str(e)[:200]}
 
 
 # Daily 9 PM ET dispatch — assemble the digest with the Opus narrative and

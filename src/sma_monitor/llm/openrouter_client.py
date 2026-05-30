@@ -54,9 +54,16 @@ def file_model() -> str:
 class OpenRouterProvider:
     """OpenAI-compatible chat-completions provider through OpenRouter."""
 
-    def __init__(self, *, model: str | None = None, api_key: str | None = None):
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        api_key: str | None = None,
+        cost_kind: str = "llm",
+    ):
         self.model = model or primary_model()
         self._api_key = api_key
+        self.cost_kind = cost_kind
 
     @property
     def model_label(self) -> str:
@@ -94,7 +101,7 @@ class OpenRouterProvider:
                 f"{system.strip()}\n\nReturn a single valid JSON object only."
             )
         try:
-            data = _post_chat(body, api_key=self._api_key)
+            data = _post_chat(body, api_key=self._api_key, cost_kind=self.cost_kind)
         except LLMError:
             if schema is None:
                 raise
@@ -106,7 +113,7 @@ class OpenRouterProvider:
                 f"{system.strip()}\n\nReturn a single JSON object matching this schema:\n"
                 f"{json.dumps(schema)[:6000]}"
             )
-            data = _post_chat(body, api_key=self._api_key)
+            data = _post_chat(body, api_key=self._api_key, cost_kind=self.cost_kind)
         return _extract_json_object(_message_text(data))
 
     def complete_text(
@@ -127,6 +134,7 @@ class OpenRouterProvider:
                 "max_tokens": max_tokens,
             },
             api_key=self._api_key,
+            cost_kind=self.cost_kind,
         )
         return _message_text(data).strip()
 
@@ -147,11 +155,16 @@ def complete_multimodal_text(
     }
     if plugins:
         body["plugins"] = plugins
-    data = _post_chat(body)
+    data = _post_chat(body, cost_kind="chat_file_parse")
     return _message_text(data).strip()
 
 
-def _post_chat(body: dict[str, Any], *, api_key: str | None = None) -> dict[str, Any]:
+def _post_chat(
+    body: dict[str, Any],
+    *,
+    api_key: str | None = None,
+    cost_kind: str = "llm",
+) -> dict[str, Any]:
     key = api_key or openrouter_api_key()
     if not key:
         raise LLMError("OPENROUTER_API_KEY is not set")
@@ -179,9 +192,11 @@ def _post_chat(body: dict[str, Any], *, api_key: str | None = None) -> dict[str,
 
         if resp.status_code < 400:
             try:
-                return resp.json()
+                data = resp.json()
             except json.JSONDecodeError as e:
                 raise LLMError(f"openrouter returned invalid JSON: {resp.text[:300]}") from e
+            _record_openrouter_cost(data, requested_model=str(body.get("model") or ""), kind=cost_kind)
+            return data
 
         if resp.status_code in {408, 409, 425, 429, 500, 502, 503, 504} and attempt < max_retries:
             log.warning(
@@ -192,6 +207,17 @@ def _post_chat(body: dict[str, Any], *, api_key: str | None = None) -> dict[str,
             attempt += 1
             continue
         raise LLMError(f"openrouter failed ({resp.status_code}): {resp.text[:400]}")
+
+
+def _record_openrouter_cost(data: dict[str, Any], *, requested_model: str, kind: str) -> None:
+    try:
+        from ..orchestrator.cost import record_openrouter_usage
+
+        model = str(data.get("model") or requested_model).strip() or requested_model
+        label = model if model.startswith("openrouter:") else f"openrouter:{model}"
+        record_openrouter_usage(kind=kind, model=label, usage=data.get("usage"))
+    except Exception:
+        pass
 
 
 def _message_text(data: dict[str, Any]) -> str:

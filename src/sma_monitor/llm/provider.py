@@ -167,9 +167,10 @@ def get_provider(
 
     openrouter_chain: list[LLMProvider] = []
     if openrouter_available():
+        cost_kind = _stage_cost_kind(stage)
         openrouter_chain = [
-            OpenRouterProvider(model=primary_model()),
-            *[OpenRouterProvider(model=m) for m in fallback_models()],
+            OpenRouterProvider(model=primary_model(), cost_kind=cost_kind),
+            *[OpenRouterProvider(model=m, cost_kind=cost_kind) for m in fallback_models()],
         ]
 
     if codex is not None and openrouter_chain:
@@ -194,3 +195,13 @@ def get_provider(
         )
 
     return None
+
+
+def _stage_cost_kind(stage: str | None) -> str:
+    return {
+        "scorer": "score",
+        "red_team": "red_team",
+        "decision": "decision",
+        "digest": "digest_narrative",
+        "chat": "chat",
+    }.get(stage or "", "llm")

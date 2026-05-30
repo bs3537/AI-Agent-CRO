@@ -1,6 +1,6 @@
-"""Daily scheduler — thesis email at 9 AM ET, collect at 6 PM ET, dispatch at 9 PM ET.
+"""Daily scheduler.
 
-Three timed firings per calendar day, no continuous polling. Eastern time is
+Four timed firings per calendar day, no continuous polling. Eastern time is
 DST-aware via zoneinfo (stdlib 3.9+). PLAN §0 runtime host remains either
 systemd's long-running loop or cron — same logic underneath.
 """
@@ -15,14 +15,15 @@ from zoneinfo import ZoneInfo
 log = logging.getLogger("sma_monitor.orchestrator.schedule")
 
 # Eastern timezone — zoneinfo handles EST/EDT transitions automatically so
-# 6 PM ET stays 6 PM through DST shifts. UTC kept around for log fields.
+# scheduled local times stay fixed through DST shifts. UTC kept around for log fields.
 ET = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")
 
-# Three daily firing times. Morning sends the thesis-drift email; collect runs
-# the data-gathering pipeline (and recomputes decisions); dispatch assembles +
-# sends the digest three hours later so scoring/red-team have a generous budget.
-MORNING_TIME_ET = dtime(9, 0)       # 9:00 AM ET — recompute stale decisions + thesis email
+# Four daily firing times. The morning thesis path first smart-refreshes the
+# whole book at 6 AM ET, then the email job waits if triggered LLM work is still
+# running.
+MORNING_RECOMPUTE_TIME_ET = dtime(6, 0)  # 6:00 AM ET — smart news/SEC/EMA/P&L gate
+MORNING_EMAIL_TIME_ET = dtime(9, 15)     # 9:15 AM ET — wait if recompute still runs
 COLLECT_TIME_ET = dtime(18, 0)      # 6:00 PM ET — positions + news + score + red-team + decide
 DISPATCH_TIME_ET = dtime(21, 0)     # 9:00 PM ET — digest assembly + delivery
 
@@ -60,14 +61,19 @@ def next_firing_at(target_et: dtime, *, now_utc: datetime | None = None) -> date
 def crontab_lines() -> list[str]:
     """Emit a crontab snippet for the cron-host deployment."""
     return [
-        "# AI CRO — daily firings: 9 AM ET (thesis email), 6 PM ET (collect), 9 PM ET (dispatch).",
+        "# AI CRO — daily firings: 6 AM smart thesis recompute, 9:15 AM thesis email,",
+        "# 6 PM collect, 9 PM dispatch.",
         "# TZ pin lets cron handle EST/EDT transitions automatically.",
         "TZ=America/New_York",
         "WORKDIR=/opt/sma-monitor",
         "VENV=$WORKDIR/.venv",
         "",
-        "# 9 AM ET — recompute stale thesis-drift decisions + send the morning email.",
-        "0 9 * * *     cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "# 6 AM ET — refresh news/SEC/EMA/P&L and recompute triggered holdings.",
+        "0 6 * * *     cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "thesis-recompute >> data/logs/cron.log 2>&1",
+        "",
+        "# 9:15 AM ET — send the morning email, waiting if recompute is still active.",
+        "15 9 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "thesis-email >> data/logs/cron.log 2>&1",
         "",
         "# 6 PM ET — refresh positions, poll news, score, red team, recompute decisions.",
@@ -81,7 +87,7 @@ def crontab_lines() -> list[str]:
 
 
 # Long-running scheduler loop for the systemd deployment. Sleeps until the
-# next of the three daily firings (morning thesis / collect / dispatch), runs the
+# next of the four daily firings, runs the
 # matching cycle, then loops back to compute the next firing.
 def run_loop(
     *,
@@ -89,17 +95,31 @@ def run_loop(
     one_iteration: bool = False,
 ) -> None:
     """Long-running scheduler. Wakes at next firing, runs its cycle, sleeps."""
-    from .pipeline import run_collect_cycle, run_dispatch_cycle, run_morning_thesis_cycle
+    from .pipeline import (
+        run_collect_cycle,
+        run_dispatch_cycle,
+        run_morning_thesis_delivery_cycle,
+        run_morning_thesis_recompute_cycle,
+    )
 
     firings = [
-        (MORNING_TIME_ET, "morning_thesis", run_morning_thesis_cycle),
+        (
+            MORNING_RECOMPUTE_TIME_ET,
+            "morning_thesis_recompute",
+            run_morning_thesis_recompute_cycle,
+        ),
+        (
+            MORNING_EMAIL_TIME_ET,
+            "morning_thesis_email",
+            run_morning_thesis_delivery_cycle,
+        ),
         (COLLECT_TIME_ET, "collect", run_collect_cycle),
         (DISPATCH_TIME_ET, "dispatch", run_dispatch_cycle),
     ]
 
     while True:
         now_utc = datetime.now(tz=UTC)
-        # Pick the soonest upcoming firing across all three.
+        # Pick the soonest upcoming firing across all four.
         target, cycle_name, cycle_fn = min(
             ((next_firing_at(t, now_utc=now_utc), name, fn) for t, name, fn in firings),
             key=lambda x: x[0],

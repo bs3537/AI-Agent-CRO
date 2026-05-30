@@ -59,12 +59,64 @@ def write_sidecar(sc: Sidecar) -> Path:
     p = sidecar_path(sc.ticker)
     with p.open("w") as f:
         yaml.safe_dump(
-            sc.model_dump(mode="json"),
+            sc.model_dump(mode="json", exclude_none=True),
             f,
             sort_keys=False,
             default_flow_style=False,
         )
     return p
+
+
+def ensure_sidecar(
+    ticker: str,
+    *,
+    company_name: str | None = None,
+    thesis: str | None = None,
+) -> Sidecar:
+    """Load or create a minimal sidecar for a held ticker."""
+    sc = load_sidecar(ticker)
+    if sc is not None:
+        if company_name and not sc.company_name:
+            sc.company_name = company_name
+            write_sidecar(sc)
+        return sc
+    thesis = thesis or (
+        "STUB - auto-scaffolded; replace with the actual long-term buying thesis."
+    )
+    sc = Sidecar(
+        ticker=ticker,
+        conviction_tier=3,
+        stage="hybrid",
+        thesis=thesis,
+        company_name=company_name,
+    )
+    write_sidecar(sc)
+    return sc
+
+
+def set_ir_urls(
+    ticker: str,
+    *,
+    ir_url: str | None = None,
+    press_releases_url: str | None = None,
+    press_release_rss_url: str | None = None,
+    company_name: str | None = None,
+    create: bool = False,
+) -> Sidecar | None:
+    """Persist discovered IR URLs without changing thesis/catalysts."""
+    sc = ensure_sidecar(ticker, company_name=company_name) if create else load_sidecar(ticker)
+    if sc is None:
+        return None
+    if company_name and not sc.company_name:
+        sc.company_name = company_name
+    if ir_url:
+        sc.ir_url = ir_url
+    if press_releases_url:
+        sc.press_releases_url = press_releases_url
+    if press_release_rss_url:
+        sc.press_release_rss_url = press_release_rss_url
+    write_sidecar(sc)
+    return sc
 
 
 # Edit one ticker's thesis (W4 — the dashboard's thesis box). Loads the

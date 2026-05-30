@@ -15,6 +15,7 @@ from sma_monitor.news import (
     brave_client,
     clinicaltrials_client,
     fmp_client,
+    ir_client,
     pubmed_client,
     scite_client,
     sec_client,
@@ -41,6 +42,55 @@ def test_brave_freshness_range():
     )
     assert f == "2026-05-20to2026-05-27"
     assert brave_client._freshness(None, None) is None
+
+
+def test_ir_client_parses_rss_and_html_links():
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, text):
+            self.text = text
+
+    class _Client:
+        def __init__(self, pages):
+            self.pages = pages
+
+        def get(self, url, headers):
+            return _Resp(self.pages[url])
+
+    rss_url = "https://ir.example.com/rss.xml"
+    page_url = "https://ir.example.com/news"
+    client = _Client({
+        rss_url: """<?xml version="1.0"?>
+          <rss><channel><item>
+            <title>Example announces Phase 3 data</title>
+            <link>https://ir.example.com/news/2026-05-30-phase-3-data</link>
+            <pubDate>Sat, 30 May 2026 12:00:00 GMT</pubDate>
+            <description>Official company release.</description>
+          </item></channel></rss>""",
+        page_url: """<html><body>
+          <a href="/news/2026/05/30/corporate-update">Corporate update press release</a>
+          <a href="/careers">Careers</a>
+        </body></html>""",
+    })
+
+    feed = ir_client._fetch_feed(
+        rss_url,
+        client=client,
+        user_agent="test-agent",
+        num_results=5,
+    )
+    html = ir_client._fetch_html_links(
+        page_url,
+        client=client,
+        user_agent="test-agent",
+        num_results=5,
+    )
+
+    assert feed[0].title == "Example announces Phase 3 data"
+    assert feed[0].published_at is not None
+    assert html[0].url == "https://ir.example.com/news/2026/05/30/corporate-update"
+    assert len(html) == 1
 
 
 # Scite fixture parses into ExaResults with canonical doi.org URLs (→ tier 3).
@@ -224,3 +274,52 @@ def test_poll_sec_stores_filings_offline():
     assert res["holdings"] == 1 and res["queries"] == 1
     rows = recent_articles(ticker="VRTX", bucket_id=7, limit=10)
     assert any(r["source_tier"] == 1 for r in rows)
+
+
+def test_poll_company_news_uses_exact_ir_source(monkeypatch):
+    from datetime import UTC, datetime
+    from sma_monitor.news.exa_client import ExaResult
+    from sma_monitor.news.pipeline import poll_company_news
+    from sma_monitor.news.store import recent_articles
+    from sma_monitor.portfolio.schema import Holding
+
+    holding = Holding(
+        ticker="IRTX",
+        qty=1.0,
+        market_value=100.0,
+        pct_nav=0.01,
+        cost_basis=100.0,
+        pulled_at=datetime(2026, 5, 30, tzinfo=UTC),
+        nav=10_000.0,
+        conviction_tier=3,
+        stage="clinical_stage",
+        thesis="IR exact source test",
+        company_name="IR Test Therapeutics",
+        press_release_rss_url="https://ir.example.com/rss.xml",
+        catalysts=[],
+    )
+    monkeypatch.setattr(
+        "sma_monitor.news.pipeline.latest_joined",
+        lambda: ([holding], [], holding.pulled_at),
+    )
+    monkeypatch.setattr(
+        ir_client,
+        "search",
+        lambda h, num_results: [
+            ExaResult(
+                title="IR Test announces FDA update",
+                url="https://ir.example.com/news/2026-05-30-fda-update",
+                published_at=datetime(2026, 5, 30, tzinfo=UTC),
+                excerpt="Official company release.",
+                score=None,
+                raw={},
+            )
+        ],
+    )
+
+    res = poll_company_news(api_key=None, num_results=2)
+
+    assert res["by_ticker"]["IRTX"]["new"] == 1
+    assert res["by_ticker"]["IRTX"]["exact_ir_configured"] == 1
+    rows = recent_articles(ticker="IRTX", bucket_id=9, limit=5)
+    assert rows and rows[0]["source_tier"] == 1

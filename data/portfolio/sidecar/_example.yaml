@@ -29,6 +29,12 @@ indications:
   - "non-small cell lung cancer"
   - "second-line NSCLC"
 
+# Optional exact issuer-disclosure URLs for the 6 AM smart recompute. Fill these
+# when known; the app checks them before falling back to Brave/Yahoo discovery.
+ir_url: "https://ir.example.com"
+press_releases_url: "https://ir.example.com/news-events/press-releases"
+press_release_rss_url: "https://ir.example.com/rss/news-releases.xml"
+
 catalysts:
   - date: 2026-07-15
     type: clinical          # clinical | regulatory | commercial | corporate | other

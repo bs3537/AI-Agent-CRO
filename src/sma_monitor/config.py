@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # Runtime
     data_root: str = "./data"
     log_level: str = "INFO"
+    # Cloud SQLite / Turso. When both values are set, db.connection() uses
+    # Turso/libSQL; otherwise it falls back to local DATA_ROOT/sma.db.
+    turso_database_url: str | None = None
+    turso_auth_token: str | None = None
 
     # Return the list of secrets required by `phase` that aren't set. Treats
     # both unset (None) and present-but-empty ("") as missing, so a blank

@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO / "src"))
 _SANDBOX = Path(tempfile.mkdtemp(prefix="sma_test_data_")) / "data"
 shutil.copytree(REPO / "data", _SANDBOX)
 os.environ["DATA_ROOT"] = str(_SANDBOX)
+os.environ["SMA_DB_BACKEND"] = "sqlite"
 
 # Seed a deterministic positions pull (VRTX/MRNA — the tickers with committed
 # sidecars) into the sandbox so DB-backed tests (the API suite) don't depend on

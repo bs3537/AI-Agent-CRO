@@ -9,7 +9,8 @@ FileChannel.
 
 This is additive to the evening digest, not a replacement — the digest still
 runs at the 9 PM dispatch. Ratings come from the W3 position_ratings store; the
-morning orchestrator cycle recomputes any stale ones before calling this.
+scheduler starts a full-book thesis recompute before the delivery job so this
+email does not race ahead of the LLM refresh.
 """
 from __future__ import annotations
 

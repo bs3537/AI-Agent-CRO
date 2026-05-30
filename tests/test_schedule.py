@@ -4,8 +4,11 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from sma_monitor.orchestrator.pipeline import THESIS_EMAIL_WAIT_TIMEOUT_MINUTES
 from sma_monitor.orchestrator.schedule import (
     COLLECT_TIME_ET,
+    MORNING_EMAIL_TIME_ET,
+    MORNING_RECOMPUTE_TIME_ET,
     crontab_lines,
     is_in_firing_window,
     next_firing_at,
@@ -30,4 +33,28 @@ def test_next_firing_does_not_skip_weekend():
 def test_crontab_collect_is_daily():
     lines = "\n".join(crontab_lines())
     assert "0 18 * * *" in lines
-    assert "0 9 * * *" in lines
+    assert "0 6 * * *" in lines
+    assert "15 9 * * *" in lines
+
+
+def test_morning_smart_recompute_runs_at_6am_et():
+    assert MORNING_RECOMPUTE_TIME_ET.hour == 6
+    assert MORNING_RECOMPUTE_TIME_ET.minute == 0
+
+
+def test_morning_email_still_follows_smart_recompute():
+    recompute = datetime.combine(
+        datetime(2026, 5, 30).date(),
+        MORNING_RECOMPUTE_TIME_ET,
+        tzinfo=ET,
+    )
+    email = datetime.combine(
+        datetime(2026, 5, 30).date(),
+        MORNING_EMAIL_TIME_ET,
+        tzinfo=ET,
+    )
+    assert (email - recompute).total_seconds() > 0
+
+
+def test_morning_email_can_wait_six_hours_for_triggered_recompute():
+    assert THESIS_EMAIL_WAIT_TIMEOUT_MINUTES >= 6 * 60

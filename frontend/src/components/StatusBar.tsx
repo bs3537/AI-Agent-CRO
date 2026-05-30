@@ -8,6 +8,10 @@ function flagLabel(name: string): string {
   return name.replace(/_/g, ' ')
 }
 
+function spendLabel(value: number): string {
+  return value > 0 && value < 1 ? value.toFixed(4) : value.toFixed(2)
+}
+
 // Compact operational readout for the app bar: positions count, today's spend
 // vs budget, any active operational flags (stale data, budget degraded, dead
 // letters), and the pull timestamp. Renders nothing until status loads.
@@ -27,7 +31,7 @@ export default function StatusBar({ status }: { status: Status | null }) {
       <Chip
         size="small"
         variant="outlined"
-        label={`$${spent_usd.toFixed(2)} / $${budget_usd.toFixed(0)} today`}
+        label={`Paid LLM $${spendLabel(spent_usd)} / $${budget_usd.toFixed(0)} today`}
       />
       {flags.map((f) => {
         const name = String(f.flag_name ?? 'flag')

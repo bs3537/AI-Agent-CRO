@@ -89,8 +89,9 @@ def test_openrouter_provider_parses_json(monkeypatch):
 
     captured = {}
 
-    def fake_post(body, *, api_key=None):
+    def fake_post(body, *, api_key=None, cost_kind="llm"):
         captured["body"] = body
+        captured["cost_kind"] = cost_kind
         return {"choices": [{"message": {"content": '{"ok": true, "score": 7}'}}]}
 
     monkeypatch.setattr("sma_monitor.llm.openrouter_client._post_chat", fake_post)
@@ -101,6 +102,7 @@ def test_openrouter_provider_parses_json(monkeypatch):
     )
     assert data == {"ok": True, "score": 7}
     assert captured["body"]["model"] == "test/model"
+    assert captured["cost_kind"] == "llm"
     assert captured["body"]["response_format"]["type"] == "json_schema"
 
 

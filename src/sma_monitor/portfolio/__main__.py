@@ -8,10 +8,12 @@
   python -m sma_monitor.portfolio set-thesis --ticker T --thesis "..." | --from-file f
   python -m sma_monitor.portfolio add-file --ticker T --file path/to/doc.pdf
   python -m sma_monitor.portfolio list-files [--ticker T]
+  python -m sma_monitor.portfolio populate-ir-urls [--ticker T] [--force]
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime, timezone
@@ -27,6 +29,7 @@ from .flex import (
     parse_positions,
 )
 from .joined import latest_joined
+from .ir_urls import populate_ir_urls_for_current_positions, populate_ir_urls_for_tickers
 from .sidecar import load_all_sidecars, set_thesis
 from .store import init_portfolio_schema, latest_positions, save_pull
 from .uploads import UploadError, list_files, save_upload_from_path
@@ -69,9 +72,18 @@ def cmd_pull(args: argparse.Namespace, log: logging.Logger) -> int:
         source=source,
         raw_xml=None if args.no_raw else raw.xml,
     )
+    ir_state = populate_ir_urls_for_tickers(
+        [p.ticker for p in positions],
+        create_missing=True,
+    )
     log.info(
         "flex_pull_ok",
-        extra={"pull_id": pull_id, "nav": nav, "positions": len(positions)},
+        extra={
+            "pull_id": pull_id,
+            "nav": nav,
+            "positions": len(positions),
+            "ir_urls": ir_state,
+        },
     )
     return 0
 
@@ -201,6 +213,24 @@ def cmd_list_files(args: argparse.Namespace, log: logging.Logger) -> int:
     return 0
 
 
+# CLI: discover and persist official issuer IR/news URLs in sidecar YAMLs.
+def cmd_populate_ir_urls(args: argparse.Namespace, log: logging.Logger) -> int:
+    if args.ticker:
+        state = populate_ir_urls_for_tickers(
+            args.ticker,
+            create_missing=not args.no_create_missing,
+            force=args.force,
+        )
+    else:
+        state = populate_ir_urls_for_current_positions(
+            create_missing=not args.no_create_missing,
+            force=args.force,
+        )
+    log.info("populate_ir_urls_done", extra={"summary": state})
+    print(json.dumps(state, indent=2, sort_keys=True))
+    return 0
+
+
 # Phase 1 CLI entry point. Wires the subcommands to their handlers.
 def main(argv: list[str] | None = None) -> int:
     ensure_dirs()
@@ -231,6 +261,22 @@ def main(argv: list[str] | None = None) -> int:
     p_lf = sub.add_parser("list-files", help="List uploaded thesis documents")
     p_lf.add_argument("--ticker")
 
+    p_ir = sub.add_parser(
+        "populate-ir-urls",
+        help="Discover and persist issuer IR/news URLs for held positions",
+    )
+    p_ir.add_argument(
+        "--ticker",
+        action="append",
+        help="Ticker to populate; repeat for multiple. Defaults to all latest positions.",
+    )
+    p_ir.add_argument("--force", action="store_true", help="Refresh even if URLs already exist")
+    p_ir.add_argument(
+        "--no-create-missing",
+        action="store_true",
+        help="Do not create minimal sidecars for positions without one",
+    )
+
     args = parser.parse_args(argv)
     handlers = {
         "pull": cmd_pull,
@@ -240,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         "set-thesis": cmd_set_thesis,
         "add-file": cmd_add_file,
         "list-files": cmd_list_files,
+        "populate-ir-urls": cmd_populate_ir_urls,
     }
     return handlers[args.cmd](args, log)
 

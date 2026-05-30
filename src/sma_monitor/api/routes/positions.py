@@ -12,9 +12,11 @@ Wraps the existing pipeline functions — no new business logic:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
+from ...db import connection
 from ...decision.schema import GRADE_VERDICT, VERDICT_COLOR
 from ...decision.store import latest_decision, latest_rating
 from ...decision.technicals import technical_state
@@ -24,6 +26,7 @@ from ...orchestrator.manual_recompute import (
     recompute_one_with_refresh,
 )
 from ...portfolio.delete import delete_holding_data
+from ...portfolio.ir_urls import populate_ir_urls_for_tickers
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
 from ...portfolio.sidecar import set_thesis
@@ -152,6 +155,10 @@ def _rating_out(row) -> RatingOut | None:
 
 def _spark_out(ticker: str) -> SparklineOut | None:
     closes = latest_price_series(ticker)
+    return _spark_from_closes(closes)
+
+
+def _spark_from_closes(closes: list[float] | None) -> SparklineOut | None:
     if not closes:
         return None
     tech = technical_state(closes)
@@ -165,16 +172,82 @@ def _spark_out(ticker: str) -> SparklineOut | None:
     )
 
 
+def _dashboard_cache(tickers: list[str]) -> dict[str, dict[str, Any]]:
+    cache: dict[str, dict[str, Any]] = {
+        "decisions": {},
+        "ratings": {},
+        "file_counts": {},
+        "severity": {},
+        "prices": {},
+    }
+    if not tickers:
+        return cache
+
+    placeholders = ",".join("?" for _ in tickers)
+    with connection() as conn:
+        for row in conn.execute(
+            f"SELECT * FROM position_decisions WHERE ticker IN ({placeholders}) "
+            "ORDER BY ticker, decided_at DESC",
+            tickers,
+        ).fetchall():
+            cache["decisions"].setdefault(row["ticker"], row)
+
+        for row in conn.execute(
+            f"SELECT * FROM position_ratings WHERE ticker IN ({placeholders}) "
+            "ORDER BY ticker, decided_at DESC",
+            tickers,
+        ).fetchall():
+            cache["ratings"].setdefault(row["ticker"], row)
+
+        for row in conn.execute(
+            f"SELECT ticker, COUNT(*) AS n FROM position_files "
+            f"WHERE ticker IN ({placeholders}) GROUP BY ticker",
+            tickers,
+        ).fetchall():
+            cache["file_counts"][row["ticker"]] = int(row["n"] or 0)
+
+        for row in conn.execute(
+            f"SELECT ticker, MAX(COALESCE(severity_of_concern, 0)) AS severity "
+            f"FROM red_team_passes WHERE ticker IN ({placeholders}) GROUP BY ticker",
+            tickers,
+        ).fetchall():
+            cache["severity"][row["ticker"]] = int(row["severity"] or 0)
+
+        for row in conn.execute(
+            f"SELECT ticker, closes FROM price_series WHERE ticker IN ({placeholders}) "
+            "ORDER BY ticker, fetched_at DESC",
+            tickers,
+        ).fetchall():
+            ticker = row["ticker"]
+            if ticker in cache["prices"]:
+                continue
+            try:
+                cache["prices"][ticker] = json.loads(row["closes"] or "[]")
+            except (TypeError, json.JSONDecodeError):
+                cache["prices"][ticker] = None
+    return cache
+
+
 # Build the grid-row summary for one holding: economics + nearest catalyst +
 # latest decision + uploaded-file count.
-def _summary(h: Holding) -> PositionSummary:
+def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> PositionSummary:
     open_pnl = pnl_pct = None
     if h.cost_basis is not None:
         open_pnl = h.market_value - h.cost_basis
         if h.cost_basis:
             pnl_pct = open_pnl / h.cost_basis
-    dec_row = latest_decision(h.ticker)
-    rating = _rating_out(latest_rating(h.ticker))
+    if cache is None:
+        dec_row = latest_decision(h.ticker)
+        rating = _rating_out(latest_rating(h.ticker))
+        n_files = len(list_files(h.ticker))
+        spark = _spark_out(h.ticker)
+        severity = _max_severity(h.ticker) if dec_row else 0
+    else:
+        dec_row = cache["decisions"].get(h.ticker)
+        rating = _rating_out(cache["ratings"].get(h.ticker))
+        n_files = int(cache["file_counts"].get(h.ticker, 0))
+        spark = _spark_from_closes(cache["prices"].get(h.ticker))
+        severity = int(cache["severity"].get(h.ticker, 0)) if dec_row else 0
     return PositionSummary(
         ticker=h.ticker, company_name=h.company_name, stage=h.stage,
         conviction_tier=int(h.conviction_tier), qty=h.qty,
@@ -182,10 +255,10 @@ def _summary(h: Holding) -> PositionSummary:
         open_pnl=open_pnl, pnl_pct=pnl_pct,
         nearest_catalyst_days=h.nearest_catalyst_days,
         has_overdue_catalyst=h.has_overdue_catalyst,
-        thesis=h.thesis, n_files=len(list_files(h.ticker)),
-        spark=_spark_out(h.ticker),  # W6/V2: 1yr close sparkline + EMA20 overlay
+        thesis=h.thesis, n_files=n_files,
+        spark=spark,  # W6/V2: 1yr close sparkline + EMA20 overlay
         rating=rating,
-        decision=_decision_out(dec_row, _max_severity(h.ticker) if dec_row else 0, rating),
+        decision=_decision_out(dec_row, severity, rating),
     )
 
 
@@ -210,9 +283,10 @@ def _position_tickers() -> set[str]:
 @router.get("", response_model=PositionsResponse)
 def list_positions() -> PositionsResponse:
     holdings, missing, pulled_at = latest_joined()
+    cache = _dashboard_cache([h.ticker for h in holdings])
     return PositionsResponse(
         pulled_at=pulled_at.isoformat() if pulled_at else None,
-        positions=[_summary(h) for h in holdings],
+        positions=[_summary(h, cache) for h in holdings],
         missing_sidecars=missing,
     )
 
@@ -227,15 +301,27 @@ def add_manual_position(
     want = body.ticker.strip().upper()
     save_manual_position(want, pct_nav=body.portfolio_weight_pct / 100.0)
     set_thesis(want, body.thesis)
+    ir_state = _populate_ir_urls_best_effort(want, offline=offline)
     state = recompute_one_with_refresh(
         want,
         offline=offline,
         compute_source="manual_single",
     )
+    if ir_state is not None:
+        state["ir_urls"] = ir_state
     return ManualPositionResponse(
         position=_summary(_holding_or_404(want)),
         refresh=state,
     )
+
+
+def _populate_ir_urls_best_effort(ticker: str, *, offline: bool = False) -> dict | None:
+    if offline:
+        return {"status": "skipped", "reason": "offline"}
+    try:
+        return populate_ir_urls_for_tickers([ticker], create_missing=False)
+    except Exception as e:  # noqa: BLE001 - position creation must not fail on IR discovery.
+        return {"status": "failed", "reason": str(e)[:200]}
 
 
 # GET /api/positions/{ticker} — detail with the full evidence trail.

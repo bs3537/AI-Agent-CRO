@@ -2,6 +2,8 @@
 
   python -m sma_monitor.orchestrator collect [--offline]     daily 6 PM ET step
   python -m sma_monitor.orchestrator dispatch [--offline]    daily 9 PM ET step
+  python -m sma_monitor.orchestrator thesis-recompute [--offline]  daily 6 AM ET step
+  python -m sma_monitor.orchestrator thesis-email      daily 9:15 AM ET delivery step
   python -m sma_monitor.orchestrator tick [--offline] [--with-digest]   ad-hoc all-in-one
   python -m sma_monitor.orchestrator run [--offline]         long-running scheduler
   python -m sma_monitor.orchestrator status
@@ -31,7 +33,8 @@ from .flags import clear_flag, get_active_flags
 from .pipeline import (
     run_collect_cycle,
     run_dispatch_cycle,
-    run_morning_thesis_cycle,
+    run_morning_thesis_delivery_cycle,
+    run_morning_thesis_recompute_cycle,
     run_one_cycle,
 )
 from .schedule import crontab_lines, run_loop
@@ -60,10 +63,26 @@ def cmd_dispatch(args, log):
     return 0
 
 
-# CLI: run the daily 9 AM ET thesis-drift step — recompute stale decisions,
-# then assemble + send the morning email (in addition to the evening digest).
+# CLI: run the daily 6 AM ET smart thesis-drift recompute step. It refreshes
+# all daily signals, then recomputes only triggered holdings. It intentionally
+# does not send email; the delivery command waits if this is still active.
+def cmd_thesis_recompute(args, log):
+    state = run_morning_thesis_recompute_cycle(
+        offline=args.offline,
+        force=not args.no_force,
+    )
+    log.info("thesis_recompute_done", extra={"keys": list(state.keys())})
+    print(json.dumps(state, indent=2, default=str))
+    return 0
+
+
+# CLI: run the daily 9:15 AM ET thesis-drift email delivery step. It waits for
+# the recompute flag to clear before sending.
 def cmd_thesis_email(args, log):
-    state = run_morning_thesis_cycle(offline=args.offline)
+    state = run_morning_thesis_delivery_cycle(
+        wait_for_recompute=not args.no_wait,
+        wait_timeout_minutes=args.wait_minutes,
+    )
     log.info("thesis_email_done", extra={"keys": list(state.keys())})
     print(json.dumps(state, indent=2, default=str))
     return 0
@@ -216,10 +235,24 @@ def main(argv=None):
     p_dispatch.add_argument("--offline", action="store_true",
                             help="Skip the Opus narrative call")
 
-    p_thesis = sub.add_parser("thesis-email",
-                              help="Daily 9 AM ET — recompute stale decisions + send thesis email")
-    p_thesis.add_argument("--offline", action="store_true",
-                          help="Use the heuristic decision verdict (no model call)")
+    p_thesis_recompute = sub.add_parser(
+        "thesis-recompute",
+        help="Daily 6 AM ET — smart thesis recompute before email",
+    )
+    p_thesis_recompute.add_argument("--offline", action="store_true",
+                                    help="Use the heuristic decision verdict (no model call)")
+    p_thesis_recompute.add_argument("--no-force", action="store_true",
+                                    help="Only recompute holdings with changed inputs")
+
+    p_thesis = sub.add_parser(
+        "thesis-email",
+        help="Daily 9:15 AM ET — send morning email after the LLM recompute window",
+    )
+    p_thesis.add_argument("--offline", action="store_true", help=argparse.SUPPRESS)
+    p_thesis.add_argument("--no-wait", action="store_true",
+                          help="Do not wait for a running thesis recompute flag")
+    p_thesis.add_argument("--wait-minutes", type=int, default=360,
+                          help="Max minutes to wait for thesis recompute to finish")
 
     p_tick = sub.add_parser("tick", help="Ad-hoc all-in-one cycle (manual testing)")
     p_tick.add_argument("--offline", action="store_true",
@@ -248,6 +281,7 @@ def main(argv=None):
     handlers = {
         "collect": cmd_collect,
         "dispatch": cmd_dispatch,
+        "thesis-recompute": cmd_thesis_recompute,
         "thesis-email": cmd_thesis_email,
         "tick": cmd_tick,
         "run": cmd_run,

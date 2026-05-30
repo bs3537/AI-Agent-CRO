@@ -30,6 +30,12 @@ log = logging.getLogger("sma_monitor.news.pipeline")
 # them without knowing which source is in use.
 Provider = Callable[[str, int, "datetime | None"], list[ExaResult]]
 
+# Targeted morning news queries are meant to answer "did anything fresh happen?"
+# rather than exhaustively classify the company. If the title/excerpt does not
+# match any factor bucket terms, keep it scorable under strategic/corporate
+# news with low confidence instead of dropping the article from the LLM path.
+COMPANY_NEWS_FALLBACK_BUCKET_ID = 9
+
 
 # Run one full poll cycle across (holdings × per_holding buckets) + sector
 # buckets. skip_bucket_ids is the Phase 6 cost-cascade hook — pass the
@@ -106,6 +112,236 @@ def poll(
         "articles_new": articles_new,
         "skipped_bucket_ids": sorted(skip_bucket_ids or []),
     }
+
+
+def poll_company_news(
+    *,
+    api_key: str | None,
+    from_file: Path | None = None,
+    filter_ticker: str | None = None,
+    num_results: int = 5,
+    lookback_hours: int = 30,
+) -> dict:
+    """Target fresh company/Yahoo news for the morning smart-recompute gate.
+
+    This is deliberately narrower than the full factor-bucket poll. It runs two
+    high-signal queries per holding: one aimed at issuer/IR press releases and
+    one at Yahoo Finance news. Newly stored rows still flow through the normal
+    article_tickers/article_buckets/scorer path.
+    """
+    init_news_schema()
+    holdings, missing, _ = latest_joined()
+    if filter_ticker:
+        ft = filter_ticker.upper()
+        holdings = [h for h in holdings if h.ticker == ft]
+    if not holdings:
+        log.warning("no_holdings_to_poll_company_news")
+        return {
+            "holdings": 0,
+            "queries": 0,
+            "articles_new": 0,
+            "by_ticker": {},
+        }
+
+    all_buckets = load_buckets()
+    holdings_entities = {h.ticker: entity_terms(h) for h in holdings}
+    try:
+        provider = _make_provider(api_key, from_file)
+        provider_error = None
+    except RuntimeError as e:
+        provider = None
+        provider_error = e
+    since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+
+    queries = 0
+    articles_new = 0
+    by_ticker: dict[str, dict[str, int]] = {}
+    for h in holdings:
+        ticker_new = 0
+        ticker_results = 0
+        ticker_errors = 0
+        exact = _run_exact_ir_sources(
+            holding=h,
+            num_results=num_results,
+            holdings_entities=holdings_entities,
+            all_buckets=all_buckets,
+        )
+        queries += exact["queries"]
+        ticker_new += exact["new"]
+        ticker_results += exact["results"]
+        ticker_errors += exact["errors"]
+
+        for source_hint, query in _company_news_queries(
+            h,
+            skip_company_ir=exact["configured"] and exact["errors"] == 0 and exact["results"] > 0,
+        ):
+            queries += 1
+            started_at = datetime.now(timezone.utc)
+            query_text = f"{source_hint}: {query}"
+            if provider is None:
+                ticker_errors += 1
+                save_poll_record(
+                    ticker=h.ticker,
+                    bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+                    query_text=query_text,
+                    started_at=started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    n_results=0,
+                    n_new=0,
+                    status="error",
+                )
+                continue
+            try:
+                results = provider(query, num_results, since)
+            except (ExaError, RuntimeError) as e:
+                ticker_errors += 1
+                log.error("company_news_query_failed",
+                          extra={"ticker": h.ticker, "source_hint": source_hint,
+                                 "err": str(e)})
+                save_poll_record(
+                    ticker=h.ticker,
+                    bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+                    query_text=query_text,
+                    started_at=started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    n_results=0,
+                    n_new=0,
+                    status="error",
+                )
+                continue
+
+            fetched_at = datetime.now(timezone.utc)
+            n_new = 0
+            for res in results:
+                if _store_one(
+                    res,
+                    fetched_at=fetched_at,
+                    holdings_entities=holdings_entities,
+                    all_buckets=all_buckets,
+                    query_ticker=h.ticker,
+                    query_bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+                ):
+                    n_new += 1
+            save_poll_record(
+                ticker=h.ticker,
+                bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+                query_text=query_text,
+                started_at=started_at,
+                ended_at=fetched_at,
+                n_results=len(results),
+                n_new=n_new,
+                status="ok",
+            )
+            ticker_new += n_new
+            ticker_results += len(results)
+            log.info("company_news_query_ok",
+                     extra={"ticker": h.ticker, "source_hint": source_hint,
+                            "n_results": len(results), "n_new": n_new})
+        by_ticker[h.ticker] = {
+            "results": ticker_results,
+            "new": ticker_new,
+            "errors": ticker_errors,
+            "exact_ir_configured": int(exact["configured"]),
+        }
+        articles_new += ticker_new
+
+    summary = {
+        "holdings": len(holdings),
+        "missing_sidecars": missing,
+        "queries": queries,
+        "articles_new": articles_new,
+        "by_ticker": by_ticker,
+        "lookback_hours": lookback_hours,
+    }
+    if provider_error is not None:
+        summary["search_provider_status"] = "unavailable"
+        summary["search_provider_reason"] = str(provider_error)[:240]
+    return summary
+
+
+def _run_exact_ir_sources(
+    *,
+    holding: Holding,
+    num_results: int,
+    holdings_entities: dict[str, list[str]],
+    all_buckets: dict[int, Bucket],
+) -> dict[str, int | bool]:
+    from . import ir_client
+
+    if not ir_client.configured(holding):
+        return {"configured": False, "queries": 0, "results": 0, "new": 0, "errors": 0}
+
+    query_text = "official_ir:" + ",".join(
+        u for u in (holding.press_release_rss_url, holding.press_releases_url, holding.ir_url) if u
+    )
+    started_at = datetime.now(timezone.utc)
+    try:
+        results = ir_client.search(holding, num_results=num_results)
+    except Exception as e:
+        log.warning("company_ir_exact_failed",
+                    extra={"ticker": holding.ticker, "err": str(e)[:240]})
+        save_poll_record(
+            ticker=holding.ticker,
+            bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+            query_text=query_text,
+            started_at=started_at,
+            ended_at=datetime.now(timezone.utc),
+            n_results=0,
+            n_new=0,
+            status="error",
+        )
+        return {"configured": True, "queries": 1, "results": 0, "new": 0, "errors": 1}
+
+    fetched_at = datetime.now(timezone.utc)
+    n_new = 0
+    for res in results:
+        if _store_one(
+            res,
+            fetched_at=fetched_at,
+            holdings_entities=holdings_entities,
+            all_buckets=all_buckets,
+            query_ticker=holding.ticker,
+            query_bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+            source_tier_override=1,
+        ):
+            n_new += 1
+    save_poll_record(
+        ticker=holding.ticker,
+        bucket_id=COMPANY_NEWS_FALLBACK_BUCKET_ID,
+        query_text=query_text,
+        started_at=started_at,
+        ended_at=fetched_at,
+        n_results=len(results),
+        n_new=n_new,
+        status="ok",
+    )
+    log.info("company_ir_exact_ok",
+             extra={"ticker": holding.ticker, "n_results": len(results), "n_new": n_new})
+    return {
+        "configured": True,
+        "queries": 1,
+        "results": len(results),
+        "new": n_new,
+        "errors": 0,
+    }
+
+
+def _company_news_queries(holding: Holding, *, skip_company_ir: bool = False) -> list[tuple[str, str]]:
+    company = holding.company_name or holding.ticker
+    entity = f'"{company}" {holding.ticker}' if company != holding.ticker else holding.ticker
+    queries = []
+    if not skip_company_ir:
+        queries.append((
+            "company_ir",
+            f"{entity} investor relations press release news release",
+        ))
+    queries.append(
+        (
+            "yahoo_finance",
+            f"site:finance.yahoo.com {entity} stock news",
+        ),
+    )
+    return queries
 
 
 # Pick the right search provider, in priority order:
@@ -210,6 +446,7 @@ def _store_one(
     query_ticker: str | None,
     query_bucket_id: int | None,
     force_bucket_id: int | None = None,
+    source_tier_override: int | None = None,
 ) -> bool:
     if not res.url or not res.title:
         return False
@@ -237,7 +474,7 @@ def _store_one(
         title=res.title,
         excerpt=_lede(res.excerpt, 800),  # keep more text than the lede for downstream
         source=source_label(res.url),
-        source_tier=source_tier(res.url),
+        source_tier=source_tier_override if source_tier_override is not None else source_tier(res.url),
         published_at=res.published_at,
         fetched_at=fetched_at,
         tickers=matched,

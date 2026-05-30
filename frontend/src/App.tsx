@@ -99,8 +99,14 @@ export default function App() {
   // Refresh latest ticker evidence, then recompute one position synchronously.
   const onRecompute = useCallback(
     async (ticker: string) => {
-      await api.recompute(ticker, true)
-      await refresh()
+      try {
+        await api.recompute(ticker, true)
+        await refresh()
+        setNotice(`${ticker} analysis recomputed.`)
+      } catch (e) {
+        setError(`${ticker} recompute failed: ${String(e)}`)
+        await refresh().catch(() => undefined)
+      }
     },
     [refresh],
   )

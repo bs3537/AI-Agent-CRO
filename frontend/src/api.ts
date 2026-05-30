@@ -26,6 +26,30 @@ async function json<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>
 }
 
+function withTimeout(ms: number): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController()
+  const id = window.setTimeout(() => controller.abort(), ms)
+  return { signal: controller.signal, cleanup: () => window.clearTimeout(id) }
+}
+
+async function fetchJsonWithTimeout<T>(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<T> {
+  const timeout = withTimeout(timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: timeout.signal }).then(json<T>)
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 60000)} minutes`)
+    }
+    throw e
+  } finally {
+    timeout.cleanup()
+  }
+}
+
 // The API surface used by the dashboard.
 export const api = {
   // Grid of positions with P&L + latest decision.
@@ -76,8 +100,10 @@ export const api = {
       wait: String(wait),
       compute_source: computeSource,
     })
-    return fetch(`/api/positions/${ticker}/recompute?${params}`, { method: 'POST' }).then(
-      json<RecomputeResponse>,
+    return fetchJsonWithTimeout<RecomputeResponse>(
+      `/api/positions/${ticker}/recompute?${params}`,
+      { method: 'POST' },
+      10 * 60 * 1000,
     )
   },
 
