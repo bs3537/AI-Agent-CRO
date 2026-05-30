@@ -1,10 +1,58 @@
 ticker: AQST
 conviction_tier: 3
 stage: hybrid
-thesis: STUB - auto-scaffolded 2026-05-29; replace with the actual long-term thesis.
-  Specialty pharma using oral/sublingual film drug-delivery technology, with lead
-  pipeline asset Anaphylm (dibutepinephrine) sublingual film for anaphylaxis awaiting
-  FDA resubmission after a January 2026 CRL.
+thesis: "AQST \u2014 Original Buying Thesis (Feb 2, 2026)\n\nRating: STRONG BUY \xB7\
+  \ PT: ~$7 \xB7 Price: $4.24 \xB7 Upside: +65% \xB7 High/Speculative\n\nThe central\
+  \ insight was that the market misread the January 30, 2026 Complete Response Letter\
+  \ for Anaphylm (dibutepinephrine sublingual epinephrine film). The FDA's deficiencies\
+  \ were confined to human-factors engineering \u2014 pouch-opening difficulty and\
+  \ incorrect film placement \u2014 plus labeling, with a single bridging PK study\
+  \ requested to confirm the packaging fixes. Efficacy, safety, and CMC were not questioned.\
+  \ The thesis framed this as converting a binary biological risk (\"does the drug\
+  \ work?\") into a bounded execution risk (\"can they fix the bag?\"). The >40% same-day\
+  \ surge was read not as exuberance but as recognition of de-risking.\n\nProduct\
+  \ differentiation anchored the commercial case: Anaphylm is non-invasive and exceptionally\
+  \ thermostable (>95% potency at 70\xB0C, surviving freeze-thaw), addressing the\
+  \ human-factor failures of autoinjectors (\u224883% of patients fail to carry them,\
+  \ needle anxiety, narrow storage range) and avoiding the nasal-pathology warnings\
+  \ on Neffy. The report projected the non-invasive segment capturing 30\u201340%\
+  \ of market volume by 2030.\n\nA 1,000-iteration Monte Carlo simulation modeled\
+  \ the remediation timeline as bounded: 99.2% probability of resubmission within\
+  \ 12 months, 84.5% by Q3 2026, mean remediation of 6.8 months, and a 95% approval\
+  \ window of January\u2013May 2027. Variance was driven by the FDA review clock,\
+  \ not the company's ability to generate data \u2014 justifying only a minimal time-value\
+  \ discount.\n\nValuation used a sum-of-the-parts at 11.5% WACC: Anaphylm rNPV of\
+  \ $687.6M ($5.09/share, 63% of value) at a 90% PoS, 18% peak share of a $5B market,\
+  \ and $650M peak sales by 2033; Libervant $196.4M ($1.45) at 95% PoS, with U.S.\
+  \ launch unlocking once Valtoco's orphan exclusivity expires in January 2027; legacy\
+  \ royalties (Suboxone, Sympazan, Azstarys) $0.85; net cash and corporate adjustments\
+  \ \u2212$0.49. Total fair value $6.91, rounded to a $7 target. The bear case (13%\
+  \ WACC, 30% lower peak sales) still yielded $4.45 \u2014 above the trading price\
+  \ \u2014 providing a margin of safety.\n\nFinancially, the company was positioned\
+  \ to avoid a dilution death-spiral: ~$129M cash (Q3 2025), ~$15M quarterly burn,\
+  \ ~8 quarters of runway into 2027, HF/PK study costs under $5M, and access to a\
+  \ $75M RTW strategic tranche contingent on approval.\n\nThe acknowledged core vulnerability:\
+  \ 63% of the target derived from Anaphylm alone \u2014 any material hit to its probability\
+  \ of success would break the thesis.\n\nKill thesis \u2014 monitor for downgrade\
+  \ to SELL:\n\nSecond CRL or any new biology/CMC/efficacy concern. The thesis rests\
+  \ entirely on the deficiency being mechanical; a resubmission CRL citing PK comparability,\
+  \ CMC, or efficacy breaks it outright.\nBridging PK study misses comparability (August\
+  \ gate). If the redesigned pouch/IFU shifts PK/PD versus the prior profile, clinical\
+  \ risk is reintroduced and the ~90% PoS collapses.\nHF re-validation fails again.\
+  \ Repeat pouch-opening or film-placement use errors would signal the redesign did\
+  \ not fix the root cause the FDA flagged.\nTimeline breaks the \"bounded\" assumption.\
+  \ Resubmission slips past Q4 2026, or the FDA treats it as a Major Amendment rather\
+  \ than a Class 2 / six-month review \u2014 pushing approval beyond 1H 2027 and stressing\
+  \ the runway.\nCapital-structure stress. A dilutive equity raise before approval,\
+  \ the RTW approval-contingent tranche unavailable when needed, or an Oaktree covenant\
+  \ breach (liquidity/net-sales) \u2014 given the all-asset lien, any of these turns\
+  \ \"bounded\" into \"distressed.\"\nCitizen Petition gains traction. The petition\
+  \ filed with the FDA on October 1, 2025 regarding Anaphylm \u2014 if the agency\
+  \ substantively entertains its issues, review could be delayed or complicated. sec\n\
+  Commercial impairment of the core asset. Evidence Neffy or a new non-invasive entrant\
+  \ is taking share faster than modeled, threatening the 18% peak-share / $650M peak-sales\
+  \ assumptions behind 63% of the PT.\nLibervant path blocked. Valtoco ODE fails to\
+  \ clear as expected (litigation/extension), removing the ~$1.45/share segment."
 company_name: Aquestive Therapeutics, Inc.
 aliases:
 - Aquestive

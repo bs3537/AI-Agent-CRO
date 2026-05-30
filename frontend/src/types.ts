@@ -161,6 +161,41 @@ export interface DeleteHoldingResponse {
   deleted: Record<string, number>
 }
 
+export interface ManualPositionPayload {
+  ticker: string
+  portfolio_weight_pct: number
+  thesis: string
+}
+
+export interface ManualPositionResponse {
+  position: PositionSummary
+  refresh?: Record<string, unknown> | null
+}
+
+export type ChatRole = 'user' | 'assistant'
+
+export interface ChatHistoryMessage {
+  role: ChatRole
+  content: string
+}
+
+export interface ChatAttachmentMeta {
+  filename: string
+  content_type: string
+  byte_size: number
+  n_chars: number
+  parser: string
+}
+
+export interface ChatResponse {
+  answer: string
+  model_used: string
+  used_tickers: string[]
+  cited_context: Array<Record<string, unknown>>
+  data_freshness: Record<string, unknown>
+  attachments: ChatAttachmentMeta[]
+}
+
 // GET /api/status snapshot.
 export interface Status {
   spend: { spent_usd: number; budget_usd: number; fraction_spent: number }

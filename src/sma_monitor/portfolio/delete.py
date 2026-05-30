@@ -44,6 +44,11 @@ def delete_holding_data(ticker: str) -> dict:
         poll_ids = _ids(conn, "SELECT poll_id FROM news_polls WHERE ticker = ?", ticker)
         dead_ids = _ids(conn, "SELECT event_id FROM dead_letters WHERE ticker = ?", ticker)
         position_ids = _ids(conn, "SELECT event_id FROM positions WHERE ticker = ?", ticker)
+        manual_ids = _ids(
+            conn,
+            "SELECT event_id FROM manual_positions WHERE ticker = ?",
+            ticker,
+        )
 
         counts["red_team_passes"] = _delete_by_ids(conn, "red_team_passes", "event_id", red_ids)
         counts["scores"] = _delete_by_ids(conn, "scores", "event_id", score_ids)
@@ -64,6 +69,12 @@ def delete_holding_data(ticker: str) -> dict:
         counts["price_series"] = _delete_by_ids(conn, "price_series", "event_id", price_ids)
         counts["news_polls"] = _delete_by_ids(conn, "news_polls", "poll_id", poll_ids)
         counts["positions"] = _delete_by_ids(conn, "positions", "event_id", position_ids)
+        counts["manual_positions"] = _delete_by_ids(
+            conn,
+            "manual_positions",
+            "event_id",
+            manual_ids,
+        )
 
         counts["article_tickers"] = conn.execute(
             "DELETE FROM article_tickers WHERE ticker = ?",
@@ -89,6 +100,7 @@ def delete_holding_data(ticker: str) -> dict:
             + price_ids
             + poll_ids
             + position_ids
+            + manual_ids
             + orphan_articles
         )
         counts["events"] = _delete_by_ids(conn, "events", "event_id", event_ids)

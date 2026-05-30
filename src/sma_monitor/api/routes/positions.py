@@ -27,7 +27,7 @@ from ...portfolio.delete import delete_holding_data
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
 from ...portfolio.sidecar import set_thesis
-from ...portfolio.store import latest_positions
+from ...portfolio.store import latest_positions, save_manual_position
 from ...portfolio.uploads import (
     UploadError,
     delete_file,
@@ -41,6 +41,8 @@ from ..schemas import (
     DecisionOut,
     DeleteHoldingResponse,
     FileOut,
+    ManualPositionCreate,
+    ManualPositionResponse,
     PositionDetail,
     PositionsResponse,
     PositionSummary,
@@ -212,6 +214,27 @@ def list_positions() -> PositionsResponse:
         pulled_at=pulled_at.isoformat() if pulled_at else None,
         positions=[_summary(h) for h in holdings],
         missing_sidecars=missing,
+    )
+
+
+# POST /api/positions — manually add a position by ticker + portfolio weight,
+# then immediately run the same fresh-evidence + LLM recompute path as the tile.
+@router.post("", response_model=ManualPositionResponse, status_code=201)
+def add_manual_position(
+    body: ManualPositionCreate,
+    offline: bool = False,
+) -> ManualPositionResponse:
+    want = body.ticker.strip().upper()
+    save_manual_position(want, pct_nav=body.portfolio_weight_pct / 100.0)
+    set_thesis(want, body.thesis)
+    state = recompute_one_with_refresh(
+        want,
+        offline=offline,
+        compute_source="manual_single",
+    )
+    return ManualPositionResponse(
+        position=_summary(_holding_or_404(want)),
+        refresh=state,
     )
 
 

@@ -22,7 +22,7 @@ from typing import Any
 
 # The stages that resolve their own model/effort. Names match the `stage=`
 # argument each pipeline passes to get_provider().
-STAGES = ("scorer", "red_team", "decision", "digest")
+STAGES = ("scorer", "red_team", "decision", "digest", "chat")
 
 # Default reasoning effort per stage when no env override is set. Triage stages
 # run "medium" (faster/cheaper, high call volume); synthesis stages run "high"
@@ -33,6 +33,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "red_team": "medium",
     "decision": "high",
     "digest": "high",
+    "chat": "high",
 }
 
 # Fallback concurrency when SMA_LLM_CONCURRENCY is unset/invalid, and the hard

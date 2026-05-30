@@ -72,6 +72,64 @@ def test_unavailable_without_binary(monkeypatch):
     assert codex_available() is False
 
 
+def test_get_provider_uses_openrouter_when_codex_unavailable(monkeypatch):
+    import sma_monitor.llm.provider as provider_mod
+
+    monkeypatch.setattr("sma_monitor.llm.codex_client.codex_available", lambda: False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "xiaomi/mimo-v2.5-pro")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "minimax/minimax-m2.7")
+    p = provider_mod.get_provider(stage="decision")
+    assert p is not None
+    assert p.model_label == "openrouter:xiaomi/mimo-v2.5-pro"
+
+
+def test_openrouter_provider_parses_json(monkeypatch):
+    from sma_monitor.llm.openrouter_client import OpenRouterProvider
+
+    captured = {}
+
+    def fake_post(body, *, api_key=None):
+        captured["body"] = body
+        return {"choices": [{"message": {"content": '{"ok": true, "score": 7}'}}]}
+
+    monkeypatch.setattr("sma_monitor.llm.openrouter_client._post_chat", fake_post)
+    data = OpenRouterProvider(model="test/model", api_key="key").complete_json(
+        system="sys",
+        user="usr",
+        schema={"title": "X", "type": "object", "properties": {"ok": {"type": "boolean"}}},
+    )
+    assert data == {"ok": True, "score": 7}
+    assert captured["body"]["model"] == "test/model"
+    assert captured["body"]["response_format"]["type"] == "json_schema"
+
+
+def test_fallback_provider_uses_fallback_after_primary_error():
+    from sma_monitor.llm.provider import FallbackProvider, LLMError
+
+    class BadProvider:
+        model_label = "codex-cli"
+
+        def complete_json(self, **kwargs):
+            raise LLMError("codex broken")
+
+        def complete_text(self, **kwargs):
+            raise LLMError("codex broken")
+
+    class GoodProvider:
+        model_label = "openrouter:xiaomi/mimo-v2.5-pro"
+
+        def complete_json(self, **kwargs):
+            return {"ok": True}
+
+        def complete_text(self, **kwargs):
+            return "ok"
+
+    p = FallbackProvider(primary=BadProvider(), fallbacks=[GoodProvider()])
+    assert p.complete_json(system="s", user="u") == {"ok": True}
+    assert p.model_label == "openrouter:xiaomi/mimo-v2.5-pro"
+
+
 # An in-process fake provider returning fixed JSON — used to test the scorer
 # and red-team adapters without a subprocess.
 class _FakeProvider:

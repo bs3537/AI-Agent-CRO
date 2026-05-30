@@ -7,6 +7,10 @@ import type {
   PositionsResponse,
   PositionSummary,
   DeleteHoldingResponse,
+  ChatHistoryMessage,
+  ChatResponse,
+  ManualPositionPayload,
+  ManualPositionResponse,
   RecomputeAllResponse,
   RecomputeResponse,
   Status,
@@ -30,6 +34,14 @@ export const api = {
   // Full detail (scores, red-team, files, catalysts) for one ticker.
   detail: (ticker: string) =>
     fetch(`/api/positions/${ticker}`).then(json<PositionDetail>),
+
+  // Manually add a dashboard position and run a fresh analysis.
+  addManualPosition: (payload: ManualPositionPayload) =>
+    fetch('/api/positions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(json<ManualPositionResponse>),
 
   // Replace a ticker's thesis; returns the refreshed summary.
   setThesis: (ticker: string, thesis: string) =>
@@ -79,4 +91,28 @@ export const api = {
 
   // Operational snapshot for the status bar.
   status: () => fetch('/api/status').then(json<Status>),
+
+  // Portfolio chatbot. Uses multipart even with no files so uploads share the
+  // same endpoint.
+  chat: ({
+    message,
+    history,
+    files = [],
+    ticker,
+    includePortfolio = true,
+  }: {
+    message: string
+    history: ChatHistoryMessage[]
+    files?: File[]
+    ticker?: string | null
+    includePortfolio?: boolean
+  }) => {
+    const fd = new FormData()
+    fd.append('message', message)
+    fd.append('history', JSON.stringify(history))
+    fd.append('include_portfolio', String(includePortfolio))
+    if (ticker) fd.append('ticker', ticker)
+    for (const file of files) fd.append('files', file)
+    return fetch('/api/chat', { method: 'POST', body: fd }).then(json<ChatResponse>)
+  },
 }

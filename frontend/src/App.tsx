@@ -4,13 +4,19 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
+import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
 import Toolbar from '@mui/material/Toolbar'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import AddIcon from '@mui/icons-material/Add'
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
-import type { PositionsResponse, Status } from './types'
+import type { ManualPositionPayload, PositionsResponse, Status } from './types'
+import AddPositionDrawer from './components/AddPositionDrawer'
 import BrandLogo from './components/BrandLogo'
+import ChatPanel from './components/ChatPanel'
 import PositionCard from './components/PositionCard'
 import DetailDrawer from './components/DetailDrawer'
 import ThesisDrawer, { type ThesisPackage } from './components/ThesisDrawer'
@@ -28,6 +34,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [detailTicker, setDetailTicker] = useState<string | null>(null)
   const [thesisTicker, setThesisTicker] = useState<string | null>(null)
+  const [addPositionOpen, setAddPositionOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatWidth, setChatWidth] = useState(480)
   const [recomputingAll, setRecomputingAll] = useState(false)
   const [recomputeQueue, setRecomputeQueue] = useState<{
     ticker: string
@@ -69,6 +78,7 @@ export default function App() {
       }
       await api.recompute(ticker, true)
       await refresh()
+      setThesisTicker(null)
       setNotice(`${ticker} thesis package saved and analysis recomputed.`)
     },
     [refresh],
@@ -105,6 +115,15 @@ export default function App() {
       setNotice(`${ticker} deleted from the dashboard (${deletedRows} stored row${deletedRows === 1 ? '' : 's'} removed).`)
     },
     [refresh, detailTicker, thesisTicker],
+  )
+
+  const onAddManualPosition = useCallback(
+    async (payload: ManualPositionPayload) => {
+      const res = await api.addManualPosition(payload)
+      await refresh()
+      setNotice(`${res.position.ticker} added and analyzed.`)
+    },
+    [refresh],
   )
 
   // Recompute the portfolio one ticker at a time, largest %NAV first. This
@@ -148,6 +167,27 @@ export default function App() {
           <Box sx={{ flexGrow: 1 }} />
           <StatusBar status={status} />
           <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            startIcon={<AddIcon />}
+            disabled={recomputingAll}
+            onClick={() => setAddPositionOpen(true)}
+            sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            Add position
+          </Button>
+          <Tooltip title="Open AI CRO chat">
+            <IconButton
+              color={chatOpen ? 'primary' : 'default'}
+              size="small"
+              onClick={() => setChatOpen((v) => !v)}
+              sx={{ flexShrink: 0 }}
+            >
+              <ChatBubbleOutlineIcon />
+            </IconButton>
+          </Tooltip>
+          <Button
             variant="contained"
             color="primary"
             size="small"
@@ -164,7 +204,9 @@ export default function App() {
         {!data && !error && <LinearProgress color="primary" />}
       </AppBar>
 
-      <Container maxWidth="lg" sx={{ mt: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+        <Box sx={{ flexGrow: 1, minWidth: 0, pb: 6 }}>
+          <Container maxWidth={chatOpen ? false : 'lg'} sx={{ mt: 3 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
@@ -188,7 +230,7 @@ export default function App() {
           sx={{
             display: 'grid',
             gap: 2,
-            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))',
           }}
         >
           {data?.positions.map((pos) => (
@@ -210,7 +252,16 @@ export default function App() {
             No held positions with a sidecar yet.
           </Typography>
         )}
-      </Container>
+          </Container>
+        </Box>
+        {chatOpen && (
+          <ChatPanel
+            width={chatWidth}
+            onWidthChange={setChatWidth}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
+      </Box>
 
       <DetailDrawer
         ticker={detailTicker}
@@ -224,6 +275,12 @@ export default function App() {
         onClose={() => setThesisTicker(null)}
         onSavePackage={onSaveThesisPackage}
         onChanged={() => void refresh()}
+      />
+
+      <AddPositionDrawer
+        open={addPositionOpen}
+        onClose={() => setAddPositionOpen(false)}
+        onAdd={onAddManualPosition}
       />
     </Box>
   )

@@ -119,6 +119,73 @@ def test_recompute_wait(client):
     assert body["decision"]["compute_source"] == "manual_single"
 
 
+def test_add_manual_position_runs_analysis(client):
+    r = client.post(
+        "/api/positions",
+        params={"offline": True},
+        json={
+            "ticker": "MANU",
+            "portfolio_weight_pct": 1.25,
+            "thesis": "Manual position thesis for API test.",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["position"]["ticker"] == "MANU"
+    assert body["position"]["pct_nav"] == pytest.approx(0.0125)
+    assert body["position"]["rating"]["grade"] in {"A", "B", "C", "D"}
+    assert body["position"]["rating"]["compute_source"] == "manual_single"
+
+    tickers = {p["ticker"] for p in client.get("/api/positions").json()["positions"]}
+    assert "MANU" in tickers
+
+
+def test_chat_portfolio_context(client, monkeypatch):
+    captured = {}
+
+    class FakeChatProvider:
+        model_label = "fake-chat"
+
+        def complete_text(self, *, system, user, max_tokens=600):
+            captured["user"] = user
+            return "VRTX is present in the saved dashboard context."
+
+        def complete_json(self, **kwargs):
+            return {}
+
+    monkeypatch.setattr("sma_monitor.api.routes.chat.get_provider", lambda **kw: FakeChatProvider())
+    r = client.post("/api/chat", data={"message": "What is the latest CRO view on VRTX?", "history": "[]"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["answer"].startswith("VRTX")
+    assert body["model_used"] == "fake-chat"
+    assert "VRTX" in body["used_tickers"]
+    assert "CURRENT DASHBOARD PORTFOLIO SNAPSHOT" in captured["user"]
+
+
+def test_chat_upload_text_file(client, monkeypatch):
+    captured = {}
+
+    class FakeChatProvider:
+        model_label = "fake-chat"
+
+        def complete_text(self, *, system, user, max_tokens=600):
+            captured["user"] = user
+            return "I read the uploaded file."
+
+        def complete_json(self, **kwargs):
+            return {}
+
+    monkeypatch.setattr("sma_monitor.api.routes.chat.get_provider", lambda **kw: FakeChatProvider())
+    files = {"files": ("note.md", b"# Note\nAQST thesis update.", "text/markdown")}
+    r = client.post("/api/chat", data={"message": "Read this note", "history": "[]"}, files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["attachments"][0]["filename"] == "note.md"
+    assert body["attachments"][0]["parser"] == "local_text"
+    assert "AQST thesis update" in captured["user"]
+
+
 def test_thesis_word_limit(client):
     too_long = "word " * 2001
     r = client.put(f"/api/positions/{HELD}/thesis", json={"thesis": too_long})

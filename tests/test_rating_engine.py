@@ -66,6 +66,15 @@ def test_below_ema20_alone_caps_a_at_b_not_d():
     assert r.technical_state == "extended_below_ema20"
 
 
+def test_ten_percent_unrealized_loss_is_warning_not_auto_sell():
+    r = _rate(_candidate(open_pnl=-22_500.0, pnl_pct=-0.1125))
+
+    assert r.grade == "B"
+    assert r.action == "hold"
+    assert r.risk_components["unrealized_loss"] == 10.0
+    assert "open P/L -11.2% warning" in r.drivers
+
+
 def test_severity_five_forces_sell_d():
     r = _rate(_candidate(max_severity=5))
 

@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..db import init_db
 from ..paths import ensure_dirs
-from .routes import positions, status
+from .routes import chat, positions, status
 
 # Default dev origins (Vite). Override with SMA_API_CORS_ORIGINS (comma-sep).
 _DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(positions.router)
+    app.include_router(chat.router)
     app.include_router(status.router)
 
     # Serve the built SPA at the root when it exists (production). html=True

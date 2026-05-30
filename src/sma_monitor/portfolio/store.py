@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ..db import connection
 from ..identity import event_id
@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS positions (
 CREATE INDEX IF NOT EXISTS idx_positions_pull_id   ON positions(pull_id);
 CREATE INDEX IF NOT EXISTS idx_positions_ticker    ON positions(ticker);
 CREATE INDEX IF NOT EXISTS idx_positions_pulled_at ON positions(pulled_at);
+
+CREATE TABLE IF NOT EXISTS manual_positions (
+    event_id      TEXT PRIMARY KEY,
+    ticker        TEXT NOT NULL UNIQUE,
+    pct_nav       REAL NOT NULL,
+    added_at      TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_manual_positions_ticker ON manual_positions(ticker);
 """
 
 
@@ -61,6 +71,10 @@ def pull_event_id(pulled_at: datetime, nav: float) -> str:
 # Stable id for one position row within a pull. Keyed on (pull_id, ticker).
 def position_event_id(pull_id: str, ticker: str) -> str:
     return event_id({"kind": "position", "pull_id": pull_id, "ticker": ticker})
+
+
+def manual_position_event_id(ticker: str) -> str:
+    return event_id({"kind": "manual_position", "ticker": ticker.upper()})
 
 
 # Persist a Flex pull and all its position rows in a single transaction.
@@ -107,8 +121,9 @@ def save_pull(
                 ),
             )
             conn.execute(
-                "INSERT OR IGNORE INTO positions"
-                "(event_id, pull_id, ticker, qty, market_value, pct_nav, cost_basis, pulled_at, nav) "
+                "INSERT OR REPLACE INTO positions"
+                "(event_id, pull_id, ticker, qty, market_value, pct_nav, cost_basis, "
+                "pulled_at, nav) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     eid,
@@ -125,20 +140,75 @@ def save_pull(
     return pid
 
 
+def save_manual_position(
+    ticker: str,
+    *,
+    pct_nav: float,
+    updated_at: datetime | None = None,
+) -> str:
+    """Persist a manually-added dashboard position by portfolio weight."""
+    init_portfolio_schema()
+    ticker = ticker.strip().upper()
+    updated_at = updated_at or datetime.now(UTC)
+    eid = manual_position_event_id(ticker)
+    with connection() as conn:
+        existing = conn.execute(
+            "SELECT added_at FROM manual_positions WHERE ticker = ?",
+            (ticker,),
+        ).fetchone()
+        added_at = existing["added_at"] if existing else updated_at.isoformat()
+        conn.execute(
+            "INSERT OR REPLACE INTO events(event_id, kind, ticker, first_seen, payload) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                eid,
+                "manual_position",
+                ticker,
+                added_at,
+                json.dumps({"pct_nav": pct_nav}),
+            ),
+        )
+        conn.execute(
+            """INSERT OR REPLACE INTO manual_positions
+               (event_id, ticker, pct_nav, added_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (eid, ticker, pct_nav, added_at, updated_at.isoformat()),
+        )
+    return eid
+
+
+def latest_pull_at() -> datetime | None:
+    """Timestamp of the latest broker/Flex position pull, excluding manual rows."""
+    init_portfolio_schema()
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT pulled_at FROM position_pulls ORDER BY pulled_at DESC LIMIT 1"
+        ).fetchone()
+    return datetime.fromisoformat(row["pulled_at"]) if row else None
+
+
 # Read the most-recent pull's positions sorted by %NAV desc. Every
 # downstream phase calls this (directly or via joined.latest_joined).
 def latest_positions() -> tuple[list[Position], datetime | None]:
-    """Read the most-recent pull's positions, sorted by %NAV desc."""
+    """Read latest broker positions plus manually-added dashboard positions."""
     init_portfolio_schema()
     with connection() as conn:
         head = conn.execute(
             "SELECT pull_id, pulled_at FROM position_pulls ORDER BY pulled_at DESC LIMIT 1"
         ).fetchone()
-        if head is None:
-            return [], None
-        rows = conn.execute(
-            "SELECT * FROM positions WHERE pull_id = ? ORDER BY pct_nav DESC",
-            (head["pull_id"],),
+        rows = []
+        pulled_at = None
+        nav = 1.0
+        if head is not None:
+            pulled_at = datetime.fromisoformat(head["pulled_at"])
+            rows = conn.execute(
+                "SELECT * FROM positions WHERE pull_id = ? ORDER BY pct_nav DESC",
+                (head["pull_id"],),
+            ).fetchall()
+            if rows:
+                nav = float(rows[0]["nav"] or 1.0)
+        manual_rows = conn.execute(
+            "SELECT * FROM manual_positions ORDER BY pct_nav DESC, ticker"
         ).fetchall()
     positions = [
         Position(
@@ -152,4 +222,25 @@ def latest_positions() -> tuple[list[Position], datetime | None]:
         )
         for r in rows
     ]
-    return positions, datetime.fromisoformat(head["pulled_at"])
+    broker_tickers = {p.ticker for p in positions}
+    for r in manual_rows:
+        ticker = r["ticker"]
+        if ticker in broker_tickers:
+            continue
+        updated_at = datetime.fromisoformat(r["updated_at"])
+        pct_nav = float(r["pct_nav"])
+        positions.append(
+            Position(
+                ticker=ticker,
+                qty=0.0,
+                market_value=pct_nav * nav,
+                pct_nav=pct_nav,
+                cost_basis=None,
+                pulled_at=updated_at,
+                nav=nav,
+            )
+        )
+        if pulled_at is None or updated_at > pulled_at:
+            pulled_at = updated_at
+    positions.sort(key=lambda p: p.pct_nav, reverse=True)
+    return positions, pulled_at

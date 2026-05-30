@@ -3,8 +3,8 @@ import Typography from '@mui/material/Typography'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import TrendingDownIcon from '@mui/icons-material/TrendingDown'
 
-// Open P&L with a green/red arrow and percentage. Renders an em-dash when cost
-// basis is unknown.
+// Open P&L with a green/red arrow and percentage. Renders a placeholder when
+// cost basis is unknown.
 export default function PnL({
   openPnl,
   pnlPct,
@@ -21,13 +21,12 @@ export default function PnL({
   }
   const up = openPnl >= 0
   const color = up ? 'success.main' : 'error.main'
-  const usd = openPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })
   const pct = pnlPct === null ? 'pct n/a' : `${pnlPct >= 0 ? '+' : ''}${(pnlPct * 100).toFixed(1)}%`
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color }}>
       {up ? <TrendingUpIcon fontSize="small" /> : <TrendingDownIcon fontSize="small" />}
       <Typography variant="body1" sx={{ fontWeight: 700 }}>
-        Open P/L {up ? '+' : ''}{usd} · {pct}
+        Open P/L {pct}
       </Typography>
     </Box>
   )

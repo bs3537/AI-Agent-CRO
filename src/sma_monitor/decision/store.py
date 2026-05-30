@@ -233,6 +233,16 @@ def latest_rating(ticker: str):
         ).fetchone()
 
 
+def recent_ratings(ticker: str, *, limit: int = 2):
+    init_decision_schema()
+    with connection() as conn:
+        return conn.execute(
+            "SELECT * FROM position_ratings WHERE ticker = ? "
+            "ORDER BY decided_at DESC LIMIT ?",
+            (ticker.upper(), limit),
+        ).fetchall()
+
+
 # Latest decision per ticker — the dashboard/email feed. Ordered most-severe
 # first (sell → watch → hold) then by ticker so the riskiest names lead.
 def latest_decisions():

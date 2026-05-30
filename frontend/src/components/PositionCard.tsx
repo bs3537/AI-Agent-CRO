@@ -4,16 +4,21 @@ import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
+import Collapse from '@mui/material/Collapse'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import EditNoteIcon from '@mui/icons-material/EditNote'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { PositionSummary } from '../types'
 import { GRADE_HEX, VERDICT_HEX } from '../theme'
 import DecisionChip from './DecisionChip'
@@ -44,6 +49,7 @@ export default function PositionCard({
   const [recomputing, setRecomputing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const signal = pos.rating ?? pos.decision
   const note = signal?.note
   const drivers = signal?.drivers ?? []
@@ -112,65 +118,77 @@ export default function PositionCard({
               label={`catalyst ${pos.nearest_catalyst_days}d`}
             />
           )}
+          <Box sx={{ flexGrow: 1 }} />
+          <Tooltip title={expanded ? 'Collapse holding details' : 'Expand holding details'}>
+            <IconButton
+              size="small"
+              onClick={() => setExpanded((v) => !v)}
+              sx={{ ml: 'auto', flexShrink: 0 }}
+            >
+              {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
         </Stack>
 
-        {signal && (
-          <Box sx={{ mt: 1.5 }}>
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
-              {note}
-            </Typography>
-            {drivers.length > 0 && (
-              <Box sx={{ mt: 1 }}>
-                {drivers.map((d, i) => (
-                  <Chip key={i} size="small" variant="outlined" label={d} sx={{ mr: 0.5, mb: 0.5 }} />
-                ))}
-              </Box>
-            )}
-            <Typography variant="caption" sx={{ opacity: 0.5 }}>
-              {modelUsed} · {sourceLabel(computeSource)} · conf{' '}
-              {confidence !== undefined ? (confidence * 100).toFixed(0) : '—'}% ·{' '}
-              {decidedAt ? new Date(decidedAt).toLocaleString() : '—'}
-            </Typography>
-          </Box>
-        )}
+        <Collapse in={expanded} timeout="auto" unmountOnExit>
+          {signal && (
+            <Box sx={{ mt: 1.5 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+                {note}
+              </Typography>
+              {drivers.length > 0 && (
+                <Box sx={{ mt: 1 }}>
+                  {drivers.map((d, i) => (
+                    <Chip key={i} size="small" variant="outlined" label={d} sx={{ mr: 0.5, mb: 0.5 }} />
+                  ))}
+                </Box>
+              )}
+              <Typography variant="caption" sx={{ opacity: 0.5 }}>
+                {modelUsed} · {sourceLabel(computeSource)} · conf{' '}
+                {confidence !== undefined ? (confidence * 100).toFixed(0) : '—'}% ·{' '}
+                {decidedAt ? new Date(decidedAt).toLocaleString() : '—'}
+              </Typography>
+            </Box>
+          )}
 
-        <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} alignItems="center" flexWrap="wrap">
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<EditNoteIcon />}
-            onClick={() => onOpenThesis(pos.ticker)}
-          >
-            Thesis
-          </Button>
-          <FileUpload onUpload={(file) => onUpload(pos.ticker, file)} />
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<RefreshIcon />}
-            disabled={recomputing}
-            onClick={() => void recompute()}
-          >
-            {recomputing ? 'Recomputing…' : 'Recompute'}
-          </Button>
-          <Button
-            size="small"
-            startIcon={<InfoOutlinedIcon />}
-            onClick={() => onOpenDetail(pos.ticker)}
-          >
-            Details{pos.n_files > 0 ? ` (${pos.n_files} files)` : ''}
-          </Button>
-          <Button
-            size="small"
-            color="error"
-            variant="outlined"
-            startIcon={<DeleteOutlineIcon />}
-            disabled={deleting || recomputing}
-            onClick={() => setConfirmDeleteOpen(true)}
-          >
-            Delete
-          </Button>
-        </Stack>
+          <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} alignItems="center" flexWrap="wrap">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<EditNoteIcon />}
+              onClick={() => onOpenThesis(pos.ticker)}
+            >
+              Thesis
+            </Button>
+            <FileUpload onUpload={(file) => onUpload(pos.ticker, file)} />
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<RefreshIcon />}
+              disabled={recomputing}
+              onClick={() => void recompute()}
+            >
+              {recomputing ? 'Recomputing…' : 'Recompute'}
+            </Button>
+            <Button
+              size="small"
+              startIcon={<InfoOutlinedIcon />}
+              onClick={() => onOpenDetail(pos.ticker)}
+            >
+              Details{pos.n_files > 0 ? ` (${pos.n_files} files)` : ''}
+            </Button>
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              startIcon={<DeleteOutlineIcon />}
+              disabled={deleting || recomputing}
+              onClick={() => setConfirmDeleteOpen(true)}
+            >
+              Delete
+            </Button>
+          </Stack>
+        </Collapse>
       </CardContent>
 
       <Dialog open={confirmDeleteOpen} onClose={() => !deleting && setConfirmDeleteOpen(false)}>

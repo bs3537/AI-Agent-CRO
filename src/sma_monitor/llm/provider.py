@@ -8,7 +8,11 @@ heuristic path.
 """
 from __future__ import annotations
 
+import logging
+import threading
 from typing import Protocol, runtime_checkable
+
+log = logging.getLogger("sma_monitor.llm.provider")
 
 
 # Raised for any provider-side failure (process error, parse error, timeout).
@@ -46,6 +50,97 @@ class LLMProvider(Protocol):
     ) -> str: ...
 
 
+class FallbackProvider:
+    """Try providers in order; expose the provider that answered this thread."""
+
+    def __init__(
+        self,
+        *,
+        primary: LLMProvider,
+        fallbacks: list[LLMProvider],
+        stage: str | None = None,
+        alert_on_primary_failure: bool = False,
+    ):
+        self.primary = primary
+        self.fallbacks = fallbacks
+        self.stage = stage
+        self.alert_on_primary_failure = alert_on_primary_failure
+        self._local = threading.local()
+        self.model = getattr(primary, "model", None)
+        self.effort = getattr(primary, "effort", None)
+
+    @property
+    def model_label(self) -> str:
+        return getattr(self._local, "model_label", self.primary.model_label)
+
+    def complete_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: dict | None = None,
+        max_tokens: int = 512,
+    ) -> dict:
+        return self._complete(
+            "complete_json",
+            system=system,
+            user=user,
+            schema=schema,
+            max_tokens=max_tokens,
+        )
+
+    def complete_text(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 600,
+    ) -> str:
+        return self._complete(
+            "complete_text",
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+        )
+
+    def _complete(self, method: str, **kwargs):
+        errors: list[str] = []
+        providers = [self.primary, *self.fallbacks]
+        for idx, provider in enumerate(providers):
+            try:
+                out = getattr(provider, method)(**kwargs)
+                self._local.model_label = provider.model_label
+                if idx > 0 and self.alert_on_primary_failure:
+                    from .alerts import alert_codex_failure
+
+                    alert_codex_failure(
+                        stage=self.stage,
+                        method=method,
+                        error=errors[0],
+                        fallback_label=provider.model_label,
+                        fallback_succeeded=True,
+                    )
+                return out
+            except LLMError as e:
+                errors.append(f"{provider.model_label}: {e}")
+                log.warning(
+                    "llm_provider_failed",
+                    extra={"stage": self.stage, "method": method, "model": provider.model_label},
+                )
+                continue
+        if self.alert_on_primary_failure and errors:
+            from .alerts import alert_codex_failure
+
+            alert_codex_failure(
+                stage=self.stage,
+                method=method,
+                error=errors[0],
+                fallback_label=self.fallbacks[-1].model_label if self.fallbacks else None,
+                fallback_succeeded=False,
+            )
+        raise LLMError("all LLM providers failed: " + " | ".join(errors))
+
+
 # Return the active provider, or None when no backend is available (the
 # signal for callers to use their heuristic fallback). `prefer_offline`
 # forces None so `--offline` flags and tests bypass the model entirely.
@@ -56,14 +151,46 @@ def get_provider(
 ) -> LLMProvider | None:
     if prefer_offline:
         return None
-    # Codex is the only backend today; import lazily so a missing CLI never
-    # breaks import of modules that merely *might* use an LLM.
+    # Import backends lazily so missing CLIs/SDKs never break modules that only
+    # might use an LLM.
     from .codex_client import CodexProvider, codex_available
+    from .openrouter_client import OpenRouterProvider, fallback_models, openrouter_available, primary_model
 
-    if not codex_available():
-        return None
-    if stage is None:
-        return CodexProvider()
-    from .throughput import stage_effort, stage_model
+    codex: LLMProvider | None = None
+    if codex_available():
+        if stage is None:
+            codex = CodexProvider()
+        else:
+            from .throughput import stage_effort, stage_model
 
-    return CodexProvider(model=stage_model(stage), effort=stage_effort(stage))
+            codex = CodexProvider(model=stage_model(stage), effort=stage_effort(stage))
+
+    openrouter_chain: list[LLMProvider] = []
+    if openrouter_available():
+        openrouter_chain = [
+            OpenRouterProvider(model=primary_model()),
+            *[OpenRouterProvider(model=m) for m in fallback_models()],
+        ]
+
+    if codex is not None and openrouter_chain:
+        return FallbackProvider(
+            primary=codex,
+            fallbacks=openrouter_chain,
+            stage=stage,
+            alert_on_primary_failure=True,
+        )
+    if codex is not None:
+        return codex
+    if openrouter_chain:
+        from .alerts import alert_codex_unavailable
+
+        alert_codex_unavailable(stage=stage, fallback_label=openrouter_chain[0].model_label)
+        if len(openrouter_chain) == 1:
+            return openrouter_chain[0]
+        return FallbackProvider(
+            primary=openrouter_chain[0],
+            fallbacks=openrouter_chain[1:],
+            stage=stage,
+        )
+
+    return None

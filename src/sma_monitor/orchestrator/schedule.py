@@ -1,6 +1,6 @@
 """Daily scheduler — thesis email at 9 AM ET, collect at 6 PM ET, dispatch at 9 PM ET.
 
-Three timed firings per weekday, no continuous polling. Eastern time is
+Three timed firings per calendar day, no continuous polling. Eastern time is
 DST-aware via zoneinfo (stdlib 3.9+). PLAN §0 runtime host remains either
 systemd's long-running loop or cron — same logic underneath.
 """
@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, timedelta
+from datetime import time as dtime
 from zoneinfo import ZoneInfo
 
 log = logging.getLogger("sma_monitor.orchestrator.schedule")
@@ -36,8 +37,6 @@ FIRING_SLACK_MINUTES = 30
 def is_in_firing_window(target_et: dtime, *, now_utc: datetime | None = None) -> bool:
     now_utc = now_utc or datetime.now(tz=UTC)
     now_et = now_utc.astimezone(ET)
-    if now_et.weekday() >= 5:
-        return False
     target_dt = now_et.replace(hour=target_et.hour, minute=target_et.minute,
                                 second=0, microsecond=0)
     delta_seconds = (now_et - target_dt).total_seconds()
@@ -45,15 +44,12 @@ def is_in_firing_window(target_et: dtime, *, now_utc: datetime | None = None) ->
 
 
 # Compute the next absolute UTC datetime at which `target_et` will fire.
-# Skips weekends so the result always lands Mon-Fri.
 def next_firing_at(target_et: dtime, *, now_utc: datetime | None = None) -> datetime:
     now_utc = now_utc or datetime.now(tz=UTC)
     now_et = now_utc.astimezone(ET)
     candidate = now_et.replace(hour=target_et.hour, minute=target_et.minute,
                                 second=0, microsecond=0)
     if candidate <= now_et:
-        candidate = candidate + timedelta(days=1)
-    while candidate.weekday() >= 5:
         candidate = candidate + timedelta(days=1)
     return candidate.astimezone(UTC)
 
@@ -64,25 +60,28 @@ def next_firing_at(target_et: dtime, *, now_utc: datetime | None = None) -> date
 def crontab_lines() -> list[str]:
     """Emit a crontab snippet for the cron-host deployment."""
     return [
-        "# SMA monitor — daily firings: 9 AM ET (thesis email), 6 PM ET (collect), 9 PM ET (dispatch).",
+        "# AI CRO — daily firings: 9 AM ET (thesis email), 6 PM ET (collect), 9 PM ET (dispatch).",
         "# TZ pin lets cron handle EST/EDT transitions automatically.",
         "TZ=America/New_York",
         "WORKDIR=/opt/sma-monitor",
         "VENV=$WORKDIR/.venv",
         "",
         "# 9 AM ET — recompute stale thesis-drift decisions + send the morning email.",
-        "0 9 * * 1-5   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator thesis-email >> data/logs/cron.log 2>&1",
+        "0 9 * * *     cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "thesis-email >> data/logs/cron.log 2>&1",
         "",
         "# 6 PM ET — refresh positions, poll news, score, red team, recompute decisions.",
-        "0 18 * * 1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator collect >> data/logs/cron.log 2>&1",
+        "0 18 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "collect >> data/logs/cron.log 2>&1",
         "",
         "# 9 PM ET — assemble and dispatch the digest.",
-        "0 21 * * 1-5  cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator dispatch >> data/logs/cron.log 2>&1",
+        "0 21 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "dispatch >> data/logs/cron.log 2>&1",
     ]
 
 
 # Long-running scheduler loop for the systemd deployment. Sleeps until the
-# next of the three firings (morning thesis / collect / dispatch), runs the
+# next of the three daily firings (morning thesis / collect / dispatch), runs the
 # matching cycle, then loops back to compute the next firing.
 def run_loop(
     *,

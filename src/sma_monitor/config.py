@@ -38,6 +38,13 @@ class Settings(BaseSettings):
 
     # Scoring & red team — Phase 3-4
     anthropic_api_key: str | None = None
+    # OpenRouter fallback LLMs. Codex remains primary; these models are used
+    # only when Codex is unavailable or a Codex call fails.
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "xiaomi/mimo-v2.5-pro"
+    openrouter_fallback_models: str = "minimax/minimax-m2.7"
+    openrouter_file_model: str = "google/gemini-3.1-flash-lite"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Alerts — Phase 5
     alert_email_from: str | None = None

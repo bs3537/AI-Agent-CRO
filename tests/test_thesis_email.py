@@ -55,37 +55,59 @@ class _Capture(Channel):
 def test_render_basic():
     rows = [_row("VRTX", "D", 0.24)]
     md = render_thesis_email_markdown(rows, date_iso="2026-05-27")
-    assert "# SMA Thesis-Drift — 2026-05-27" in md
-    assert "1 SELL D · 0 HOLD C · 0 HOLD B · 0 HOLD A" in md
+    assert "# AI CRO Morning Review — 2026-05-27" in md
+    assert "Review items: 1 · grade changes: 0 · SELL D: 1 · HOLD C: 0" in md
     assert "VRTX — SELL D" in md
+    assert "PM action: Sell/close review required" in md
     assert "above ema20" in md
     assert "note line one." in md
     assert "Drivers: driver a" in md
 
 
-# Rows are presented D → C → B → A, then by %NAV descending within a grade
-# (caller pre-sorts; this asserts the contract the assembler relies on).
-def test_render_ordering_is_caller_sorted():
-    # Two C rows out of NAV order + an A + a D; emulate the sort the
-    # assembler applies before calling render.
+def test_render_review_items_only_and_ordered():
     rows = [
-        _row("BIG", "C", 0.20),
         _row("SMALL", "C", 0.05),
+        _row("BIG", "C", 0.20),
         _row("HOLDER", "A", 0.30),
         _row("SELLER", "D", 0.02),
     ]
-    rank = {"D": 0, "C": 1, "B": 2, "A": 3}
-    rows.sort(key=lambda r: (rank[r["grade"]], -r["pct_nav"]))
     md = render_thesis_email_markdown(rows, date_iso="2026-05-27")
-    order = [md.index(t) for t in ("SELLER", "BIG", "SMALL", "HOLDER")]
-    assert order == sorted(order)  # SELLER first, then BIG (0.20) before SMALL (0.05), HOLDER last
+    order = [md.index(t) for t in ("SELLER", "BIG", "SMALL")]
+    assert order == sorted(order)
+    assert "HOLDER —" not in md
+    assert "Unchanged A/B holdings omitted: 1." in md
 
 
 # Unknown cost basis renders an em-dash P&L rather than crashing.
 def test_render_missing_pnl():
-    md = render_thesis_email_markdown([_row("X", "A", 0.1, open_pnl=None, pnl_pct=None)],
+    md = render_thesis_email_markdown([_row("X", "C", 0.1, open_pnl=None, pnl_pct=None)],
                                       date_iso="2026-05-27")
     assert "P&L —" in md
+
+
+def test_render_grade_change_callout():
+    row = _row(
+        "WATCH",
+        "C",
+        0.12,
+        previous_grade="B",
+        previous_action="hold",
+        previous_decided_at="2026-05-26T09:00:00+00:00",
+        grade_changed=True,
+    )
+    md = render_thesis_email_markdown([row], date_iso="2026-05-27")
+    assert "Grade change: HOLD B -> HOLD C" in md
+
+
+def test_render_no_review_items_is_short():
+    md = render_thesis_email_markdown(
+        [_row("AOK", "A", 0.10), _row("BOK", "B", 0.06)],
+        date_iso="2026-05-27",
+    )
+    assert "No grade changes and no current C/D ratings" in md
+    assert "AOK —" not in md
+    assert "BOK —" not in md
+    assert "Unchanged A/B holdings omitted: 2." in md
 
 
 # End-to-end against the sandbox: seed ratings offline, then assemble through
@@ -103,9 +125,8 @@ def test_assemble_seeds_and_sends():
     assert res["positions"] == len(holdings)
     assert len(cap.sent) == 1
     _date, subject, md = cap.sent[0]
-    assert subject.startswith("SMA thesis ratings")
-    # Every held ticker is present in the rendered body.
-    for h in holdings:
-        assert h.ticker in md
+    assert subject.startswith("AI CRO morning review")
+    assert res["review_positions"] <= res["positions"]
+    assert "Review items:" in md
     # Grade counts in the result sum to the position count.
     assert sum(res["by_grade"].values()) == len(holdings)

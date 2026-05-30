@@ -56,6 +56,10 @@ load-bearing thesis clause.
 - Use the 20-day EMA as a risk-management/attention input. A close below EMA20 \
 can support a downgrade when fundamentals also weaken, but a technical break \
 alone should not justify D.
+- Use unrealized P&L as a risk-management/attention input. A loss of 10% or \
+more is a warning sign because the market may be rejecting the thesis; it can \
+support a downgrade when paired with fundamental, catalyst, technical, or \
+evidence weakness, but it does not automatically mean sell.
 - The note is 4–5 lines of plain English: restate what the thesis rests on, \
 state what the ingested evidence does to that thesis, and end with the one \
 observation that would change your grade. Neutral and specific — no \
@@ -142,6 +146,7 @@ def build_user_message(c: DecisionCandidate) -> str:
     fmp = _fmt_fmp(c.fmp_metrics)
     fmp_check = _fmt_fmp_corroboration(c.fmp_corroboration)
     technical = _fmt_technical(c)
+    pnl_warning = _fmt_pnl_warning(c.pnl_pct)
     thesis_source, thesis_authority = _thesis_authority(c.thesis)
 
     return f"""\
@@ -151,6 +156,7 @@ POSITION
   Conviction tier:  {c.conviction_tier}
   % NAV:            {c.pct_nav * 100:.2f}%
   Open P&L:         {pnl}
+  P&L warning:      {pnl_warning}
   Nearest catalyst: {nearest}
 
 THESIS AUTHORITY
@@ -189,6 +195,14 @@ def _fmt_pnl(open_pnl: float | None, pnl_pct: float | None) -> str:
         return "— (cost basis unknown)"
     pct = f"{pnl_pct * 100:+.1f}%" if pnl_pct is not None else "—"
     return f"{open_pnl:+,.0f} ({pct})"
+
+
+def _fmt_pnl_warning(pnl_pct: float | None) -> str:
+    if pnl_pct is None:
+        return "not available"
+    if pnl_pct <= -0.10:
+        return f"WARNING — unrealized loss {pnl_pct * 100:.1f}% is at/above the 10% loss threshold"
+    return "none — unrealized loss is better than -10%"
 
 
 # Render the scored-article evidence block (or a placeholder when empty).

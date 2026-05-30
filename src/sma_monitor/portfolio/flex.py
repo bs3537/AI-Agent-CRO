@@ -124,8 +124,7 @@ def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Positio
             continue
         qty = _to_float(op.get("position")) or 0.0
         mv = _to_float(op.get("positionValue")) or 0.0
-        cb_raw = op.get("costBasisMoney") or op.get("costBasis")
-        cb = _to_float(cb_raw) if cb_raw else None
+        cb = _cost_basis(op, qty)
         positions.append(
             Position(
                 ticker=symbol,
@@ -194,6 +193,20 @@ def _to_float(v: str | None) -> float | None:
         return float(v)
     except ValueError:
         return None
+
+
+def _cost_basis(op: ET.Element, qty: float) -> float | None:
+    """Return total cost basis from Flex money fields or per-share cost."""
+    cb_raw = op.get("costBasisMoney") or op.get("costBasis")
+    cb = _to_float(cb_raw) if cb_raw else None
+    if cb is not None:
+        return cb
+    # Some Flex templates include only costBasisPrice. For stock positions this
+    # is the average cost per share, so total basis is price times share count.
+    price = _to_float(op.get("costBasisPrice"))
+    if price is None:
+        return None
+    return abs(qty) * price
 
 
 # Combine multiple OpenPosition rows that share a ticker (long+short legs,

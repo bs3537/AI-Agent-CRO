@@ -1,7 +1,8 @@
 """Run orchestration cycles.
 
 Daily-batch operating model (post-tuning):
-  - 6 PM ET  → run_collect_cycle:   positions + news + literature + SEC/FMP financials + score + red-team + decisions
+  - 6 PM ET  → run_collect_cycle:
+      positions + news + literature + SEC/FMP financials + score + red-team + decisions
   - 9 PM ET  → run_dispatch_cycle:  digest assembly + email delivery
   - Real-time alerts disabled — everything above T rolls into the digest.
 
@@ -13,7 +14,7 @@ is safe and only acts on rows that lack a stage's output.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ..config import settings
@@ -26,7 +27,7 @@ from ..outputs.alerts import run_alerts
 from ..outputs.digest import assemble_digest
 from ..outputs.thesis_email import assemble_thesis_email
 from ..portfolio.flex import FlexError, fetch_statement, parse_positions
-from ..portfolio.store import latest_positions, save_pull
+from ..portfolio.store import latest_pull_at, save_pull
 from ..red_team.pipeline import run_red_team
 from ..scorer.multipliers import T
 from ..scorer.pipeline import score_unscored
@@ -49,8 +50,8 @@ POSITION_STALE_HOURS = 12
 # crashing — downstream phases use the last known positions.
 def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None) -> dict:
     """Return {'refreshed': bool, 'reason': str, 'pulled_at': iso|None}."""
-    now = now or datetime.now(timezone.utc)
-    _, last_pulled_at = latest_positions()
+    now = now or datetime.now(UTC)
+    last_pulled_at = latest_pull_at()
     if last_pulled_at is not None and not force:
         age = now - last_pulled_at
         if age < timedelta(hours=POSITION_STALE_HOURS):
@@ -116,10 +117,10 @@ def run_collect_cycle(*, offline: bool = False) -> dict:
 # evening digest, not in place of it.
 def run_morning_thesis_cycle(*, offline: bool = False) -> dict:
     """Daily 9 AM ET step: recompute stale decisions, then send the email."""
-    state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    state: dict = {"started_at": datetime.now(UTC).isoformat()}
     state["decisions"] = run_decisions(offline=offline)
     state["email"] = assemble_thesis_email()
-    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["finished_at"] = datetime.now(UTC).isoformat()
     log.info("morning_thesis_done", extra={"summary": state})
     return state
 
@@ -131,7 +132,7 @@ def run_morning_thesis_cycle(*, offline: bool = False) -> dict:
 # step 2 (75%), the Opus call is skipped and the template fallback is used.
 def run_dispatch_cycle(*, offline: bool = False) -> dict:
     """Daily 9 PM ET dispatch step. Returns a state dict for logging."""
-    state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    state: dict = {"started_at": datetime.now(UTC).isoformat()}
     degrade = current_degrade_state()
     state["degrade"] = _degrade_dict(degrade)
     et_today = datetime.now(tz=ET).date().isoformat()
@@ -141,7 +142,7 @@ def run_dispatch_cycle(*, offline: bool = False) -> dict:
         skip_opus=degrade.skip_opus_narrative,  # cascade step 2: template fallback
         api_key=settings.anthropic_api_key,
     )
-    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["finished_at"] = datetime.now(UTC).isoformat()
     log.info("dispatch_done", extra={"summary": state})
     return state
 
@@ -167,7 +168,7 @@ def run_one_cycle(
     news_fixture: str | None = None,
 ) -> dict:
     """Execute one ordered pass through the agent."""
-    state: dict = {"started_at": datetime.now(timezone.utc).isoformat()}
+    state: dict = {"started_at": datetime.now(UTC).isoformat()}
     degrade = current_degrade_state()
     state["degrade"] = _degrade_dict(degrade)
 
@@ -263,7 +264,7 @@ def run_one_cycle(
             api_key=settings.anthropic_api_key,
         )
 
-    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["finished_at"] = datetime.now(UTC).isoformat()
     log.info("cycle_done", extra={"summary": state})
     return state
 

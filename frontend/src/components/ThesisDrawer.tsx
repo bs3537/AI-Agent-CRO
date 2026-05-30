@@ -101,9 +101,7 @@ export default function ThesisDrawer({
     try {
       await onSavePackage({ ticker, thesis, files, replaceFiles })
       setFiles([])
-      const fresh = await api.detail(ticker)
-      setDetail(fresh)
-      setThesis(fresh.thesis)
+      onClose()
     } catch (e) {
       setError(String(e))
     } finally {

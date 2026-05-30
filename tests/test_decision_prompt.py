@@ -63,6 +63,14 @@ def test_prompt_renders_ema20_snapshot():
     assert "consecutive closes below EMA20: 4" in msg
 
 
+def test_prompt_marks_ten_percent_pnl_loss_warning():
+    msg = build_user_message(
+        _candidate(open_pnl=-125.0, pnl_pct=-0.125, cost_basis=1000.0)
+    )
+    assert "P&L warning" in msg
+    assert "10% loss threshold" in msg
+
+
 def test_prompt_marks_auto_scaffold_as_fallback():
     msg = build_user_message(
         _candidate(thesis="STUB - auto-scaffolded 2026-05-29; replace with actual thesis.")

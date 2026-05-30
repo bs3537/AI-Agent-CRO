@@ -260,6 +260,7 @@ const RISK_LABELS: Record<string, string> = {
   top_article_composite: 'Top article composite',
   catalyst_timing: 'Catalyst timing',
   technical_trend: 'Technical trend',
+  unrealized_loss: 'Unrealized loss',
   data_quality: 'Data quality',
 }
 

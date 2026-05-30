@@ -85,6 +85,7 @@ def risk_components(candidate: DecisionCandidate) -> dict[str, float]:
         "top_article_composite": float(_composite_points(candidate.max_composite)),
         "catalyst_timing": float(_catalyst_points(candidate)),
         "technical_trend": float(technical_points),
+        "unrealized_loss": float(_unrealized_loss_points(candidate.pnl_pct)),
         "data_quality": data_quality,
     }
 
@@ -116,6 +117,17 @@ def _catalyst_points(candidate: DecisionCandidate) -> int:
     return 0
 
 
+def _unrealized_loss_points(pnl_pct: float | None) -> int:
+    if pnl_pct is None or pnl_pct > -0.10:
+        return 0
+    loss_pct = abs(pnl_pct)
+    if loss_pct >= 0.30:
+        return 20
+    if loss_pct >= 0.20:
+        return 15
+    return 10
+
+
 def _grade_from_score(score: float) -> Grade:
     if score >= 65:
         return "D"
@@ -141,8 +153,11 @@ def _apply_guardrails(grade: Grade, candidate: DecisionCandidate) -> Grade:
         "extended_below_ema20",
     ) and grade == "A":
         grade = "B"
+    if candidate.pnl_pct is not None and candidate.pnl_pct <= -0.10 and grade == "A":
+        grade = "B"
 
-    # Technicals alone cannot create a D. Require real nontechnical pressure.
+    # Market/technical weakness alone cannot create a D. Require real thesis or
+    # evidence pressure before producing a sell-review grade.
     components = risk_components(candidate)
     nontechnical = sum(
         components[k]
@@ -188,6 +203,8 @@ def _rating_drivers(candidate: DecisionCandidate, drivers: list[str]) -> list[st
         if tech.technical_state == "extended_below_ema20":
             label = f"below 20-EMA {tech.consecutive_below_ema20}d"
         out.append(label)
+    if candidate.pnl_pct is not None and candidate.pnl_pct <= -0.10:
+        out.append(f"open P/L {candidate.pnl_pct * 100:+.1f}% warning")
     return out[:6]
 
 

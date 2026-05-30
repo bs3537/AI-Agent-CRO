@@ -7,7 +7,7 @@ computed here (market_value − cost_basis) per the W5 spec.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -157,6 +157,33 @@ class ThesisUpdate(BaseModel):
         return value
 
 
+# POST /api/positions request body for manually adding a dashboard position.
+class ManualPositionCreate(BaseModel):
+    ticker: str
+    portfolio_weight_pct: float = Field(gt=0, le=100)
+    thesis: str
+
+    @field_validator("ticker")
+    @classmethod
+    def normalize_ticker(cls, value: str) -> str:
+        ticker = value.strip().upper()
+        if not ticker:
+            raise ValueError("ticker is required")
+        return ticker
+
+    @field_validator("thesis")
+    @classmethod
+    def manual_thesis_word_limit(cls, value: str) -> str:
+        if len(value.split()) > MAX_THESIS_WORDS:
+            raise ValueError(f"thesis must be {MAX_THESIS_WORDS} words or fewer")
+        return value
+
+
+class ManualPositionResponse(BaseModel):
+    position: PositionSummary
+    refresh: dict[str, Any] | None = None
+
+
 # POST /api/positions/{ticker}/recompute response.
 class RecomputeResponse(BaseModel):
     ticker: str
@@ -180,6 +207,28 @@ class RecomputeAllResponse(BaseModel):
 class DeleteHoldingResponse(BaseModel):
     ticker: str
     deleted: dict[str, int] = Field(default_factory=dict)
+
+
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatAttachmentOut(BaseModel):
+    filename: str
+    content_type: str
+    byte_size: int
+    n_chars: int
+    parser: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    model_used: str
+    used_tickers: list[str] = Field(default_factory=list)
+    cited_context: list[dict[str, Any]] = Field(default_factory=list)
+    data_freshness: dict[str, Any] = Field(default_factory=dict)
+    attachments: list[ChatAttachmentOut] = Field(default_factory=list)
 
 
 # GET /api/status: operational snapshot wrapped from the orchestrator helpers.
