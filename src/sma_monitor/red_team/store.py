@@ -11,7 +11,7 @@ from datetime import datetime
 
 from ..db import connection
 from ..identity import event_id
-from .schema import MatchedWarningSign, RedTeamResult
+from .schema import RedTeamResult
 
 # DDL for the red_team_passes table. UNIQUE on (score, catalog_version)
 # triggers a fresh pass when the catalog evolves while keeping prior
@@ -103,7 +103,12 @@ def save_red_team_pass(
 # Pick score rows with composite ≥ t2 that lack a red-team pass at the
 # current catalog_version. Joined with articles so the candidate builder
 # has all the text it needs in one query.
-def pick_candidates(t2: float, catalog_version: str, limit: int | None = None):
+def pick_candidates(
+    t2: float,
+    catalog_version: str,
+    limit: int | None = None,
+    ticker: str | None = None,
+):
     """Scores above T₂ that have no red-team pass at this catalog_version."""
     init_red_team_schema()
     sql = """
@@ -122,9 +127,12 @@ def pick_candidates(t2: float, catalog_version: str, limit: int | None = None):
               WHERE r.score_event_id = s.event_id
                 AND r.catalog_version = ?
           )
-        ORDER BY s.composite DESC
     """
     args: list = [t2, catalog_version]
+    if ticker:
+        sql += " AND s.ticker = ?"
+        args.append(ticker.upper())
+    sql += " ORDER BY s.composite DESC"
     if limit:
         sql += " LIMIT ?"
         args.append(limit)

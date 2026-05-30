@@ -5,7 +5,13 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 // Upload button wrapping a hidden file input. Accepts the document types the
 // backend extracts; calls onUpload with the chosen file and shows a spinner
 // label while in flight.
-export default function FileUpload({ onUpload }: { onUpload: (file: File) => Promise<void> }) {
+export default function FileUpload({
+  onUpload,
+  label = 'Upload docs',
+}: {
+  onUpload: (file: File) => Promise<void>
+  label?: string
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -39,7 +45,7 @@ export default function FileUpload({ onUpload }: { onUpload: (file: File) => Pro
         disabled={busy}
         onClick={() => inputRef.current?.click()}
       >
-        {busy ? 'Uploading…' : 'Upload doc'}
+        {busy ? 'Uploading…' : label}
       </Button>
     </>
   )

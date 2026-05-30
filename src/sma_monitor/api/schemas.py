@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from ..decision.schema import Color, Verdict
+from ..decision.schema import Action, AttentionState, Color, Grade, TechnicalState, Verdict
+
+MAX_THESIS_WORDS = 2000
 
 
 # Latest thesis-drift decision for a position, as served to the dashboard.
@@ -23,7 +25,42 @@ class DecisionOut(BaseModel):
     drivers: list[str] = Field(default_factory=list)
     confidence: float
     model_used: str
+    compute_source: str = "unknown"
     decided_at: str
+
+
+# Canonical V2 position rating. The frontend should prefer this over the legacy
+# decision field; decision remains during migration for old callers.
+class RatingOut(BaseModel):
+    action: Action
+    grade: Grade
+    attention_state: AttentionState
+    risk_score: float
+    risk_components: dict[str, Any] = Field(default_factory=dict)
+    latest_close: float | None = None
+    ema20: float | None = None
+    price_vs_ema20_pct: float | None = None
+    technical_state: TechnicalState
+    deterministic_grade: Grade
+    llm_grade: Grade | None = None
+    final_grade: Grade
+    note: str
+    drivers: list[str] = Field(default_factory=list)
+    confidence: float
+    model_used: str
+    compute_source: str = "unknown"
+    rating_version: str
+    decided_at: str
+
+
+# Sparkline payload: close line plus the 20-day EMA overlay, both oldest→newest.
+class SparklineOut(BaseModel):
+    closes: list[float]
+    ema20: list[float | None] = Field(default_factory=list)
+    latest_close: float | None = None
+    latest_ema20: float | None = None
+    price_vs_ema20_pct: float | None = None
+    technical_state: TechnicalState = "no_price_data"
 
 
 # One upcoming catalyst on a position.
@@ -87,7 +124,8 @@ class PositionSummary(BaseModel):
     has_overdue_catalyst: bool
     thesis: str
     n_files: int = 0
-    spark: list[float] | None = None   # ~1yr daily EOD closes for the row sparkline
+    spark: SparklineOut | None = None  # ~1yr daily EOD closes + EMA20 overlay
+    rating: RatingOut | None = None
     decision: DecisionOut | None = None
 
 
@@ -111,12 +149,21 @@ class PositionDetail(PositionSummary):
 class ThesisUpdate(BaseModel):
     thesis: str
 
+    @field_validator("thesis")
+    @classmethod
+    def thesis_word_limit(cls, value: str) -> str:
+        if len(value.split()) > MAX_THESIS_WORDS:
+            raise ValueError(f"thesis must be {MAX_THESIS_WORDS} words or fewer")
+        return value
+
 
 # POST /api/positions/{ticker}/recompute response.
 class RecomputeResponse(BaseModel):
     ticker: str
     scheduled: bool                    # True when run in the background
+    rating: RatingOut | None = None
     decision: DecisionOut | None = None  # populated only when ?wait=true
+    refresh: dict[str, Any] | None = None
 
 
 # POST /api/positions/recompute response — summary of a whole-portfolio run.
@@ -126,6 +173,13 @@ class RecomputeAllResponse(BaseModel):
     skipped: int = 0
     errors: int = 0
     holdings: int = 0
+    refresh: dict[str, Any] | None = None
+
+
+# DELETE /api/positions/{ticker} response.
+class DeleteHoldingResponse(BaseModel):
+    ticker: str
+    deleted: dict[str, int] = Field(default_factory=dict)
 
 
 # GET /api/status: operational snapshot wrapped from the orchestrator helpers.

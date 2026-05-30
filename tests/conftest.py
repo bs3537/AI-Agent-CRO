@@ -29,12 +29,13 @@ os.environ["DATA_ROOT"] = str(_SANDBOX)
 # whatever live IBKR pull happens to sit in the dev's data/sma.db. Stamped far
 # in the future so it always wins as the "latest" pull over any real pull copied
 # in above. Imported after DATA_ROOT is set so it targets the sandbox DB.
-from datetime import datetime, timezone  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 
+from sma_monitor.db import init_db  # noqa: E402
 from sma_monitor.portfolio.schema import Position  # noqa: E402
 from sma_monitor.portfolio.store import init_portfolio_schema, save_pull  # noqa: E402
 
-_SEED_AT = datetime(2035, 1, 1, tzinfo=timezone.utc)
+_SEED_AT = datetime(2035, 1, 1, tzinfo=UTC)
 _SEED_NAV = 1_000_000.0
 _SEED_POSITIONS = [
     Position(ticker="VRTX", qty=500, market_value=232_500.0,
@@ -44,6 +45,7 @@ _SEED_POSITIONS = [
              pct_nav=60_000.0 / _SEED_NAV, cost_basis=90_000.0,
              pulled_at=_SEED_AT, nav=_SEED_NAV),
 ]
+init_db()
 init_portfolio_schema()
 save_pull(_SEED_POSITIONS, nav=_SEED_NAV, pulled_at=_SEED_AT,
           source="test_seed", raw_xml=None)

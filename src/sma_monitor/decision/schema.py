@@ -9,7 +9,7 @@ ScoreEvidence / BearEvidence — compact summaries of the evidence fed in.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,10 +17,40 @@ from pydantic import BaseModel, Field
 # watch=thesis under pressure, sell=thesis materially broken.
 Verdict = Literal["hold", "watch", "sell"]
 Color = Literal["green", "yellow", "red"]
+Grade = Literal["A", "B", "C", "D"]
+Action = Literal["hold", "sell"]
+AttentionState = Literal["clean", "monitor", "watch", "broken"]
+TechnicalState = Literal["above_ema20", "below_ema20", "extended_below_ema20", "no_price_data"]
 
 # Canonical verdict→color map. The single source of truth for the chip color
 # so the engine, API, and email never disagree.
 VERDICT_COLOR: dict[str, Color] = {"hold": "green", "watch": "yellow", "sell": "red"}
+
+
+# Canonical V2 rating maps. Grade is the source of truth; action/verdict/color
+# derive from it so the dashboard cannot show contradictory signals.
+GRADE_ACTION: dict[str, Action] = {"A": "hold", "B": "hold", "C": "hold", "D": "sell"}
+GRADE_ATTENTION: dict[str, AttentionState] = {
+    "A": "clean",
+    "B": "monitor",
+    "C": "watch",
+    "D": "broken",
+}
+GRADE_VERDICT: dict[str, Verdict] = {"A": "hold", "B": "hold", "C": "watch", "D": "sell"}
+
+
+# Daily technical snapshot used by both the rating engine and dashboard. The EMA
+# series aligns 1:1 with closes; early values are None until the 20-day seed SMA.
+class TechnicalSnapshot(BaseModel):
+    closes: list[float] = Field(default_factory=list)
+    ema20: list[float | None] = Field(default_factory=list)
+    latest_close: float | None = None
+    latest_ema20: float | None = None
+    price_vs_ema20_pct: float | None = None
+    consecutive_below_ema20: int = 0
+    ema20_slope_5d: float | None = None
+    technical_state: TechnicalState = "no_price_data"
+    risk_points: int = 0
 
 
 # One scored-article summary fed into the decision. A compact projection of a
@@ -74,7 +104,8 @@ class DecisionCandidate(BaseModel):
     bears: list[BearEvidence] = Field(default_factory=list)
     fmp_metrics: dict | None = None    # W2: FMP fundamentals/ratios (#4/#7/#12)
     fmp_corroboration: dict | None = None  # Brave web cross-check of the FMP data (display-only)
-    # Pre-reduced extremes the heuristic and the guard rule key off
+    technical: TechnicalSnapshot | None = None  # Daily close vs 20-day EMA
+    # Pre-reduced extremes fed to the heuristic fallback and LLM prompt.
     max_severity: int = 1
     max_composite: float = 0.0
 
@@ -95,4 +126,32 @@ class PositionDecision(BaseModel):
     thesis_hash: str
     inputs_hash: str
     model_used: str
+    compute_source: str = "unknown"
+    decided_at: datetime
+
+
+# V2 canonical portfolio-facing rating. This is the dashboard/email source of
+# truth; legacy hold/watch/sell is derived from grade during migration.
+class PositionRating(BaseModel):
+    ticker: str
+    action: Action
+    grade: Grade
+    attention_state: AttentionState
+    risk_score: float = Field(ge=0, le=100)
+    risk_components: dict[str, Any] = Field(default_factory=dict)
+    latest_close: float | None = None
+    ema20: float | None = None
+    price_vs_ema20_pct: float | None = None
+    technical_state: TechnicalState = "no_price_data"
+    deterministic_grade: Grade
+    llm_grade: Grade | None = None
+    final_grade: Grade
+    note: str
+    drivers: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0, le=1)
+    thesis_hash: str
+    inputs_hash: str
+    model_used: str
+    compute_source: str = "unknown"
+    rating_version: str
     decided_at: datetime

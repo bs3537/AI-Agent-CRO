@@ -49,7 +49,30 @@ def _frontend_dist() -> Path | None:
 async def _lifespan(app: FastAPI):
     ensure_dirs()
     init_db()
+    _init_served_phase_schemas()
     yield
+
+
+def _init_served_phase_schemas() -> None:
+    # The API reads across phase tables even when a fresh environment has not
+    # run a full collect cycle yet. Initialize all served schemas at startup.
+    from ..decision.store import init_decision_schema
+    from ..news.fmp_client import init_fmp_schema
+    from ..news.store import init_news_schema
+    from ..orchestrator.store import init_orchestrator_schema
+    from ..portfolio.store import init_portfolio_schema
+    from ..portfolio.uploads import init_uploads_schema
+    from ..red_team.store import init_red_team_schema
+    from ..scorer.store import init_scores_schema
+
+    init_portfolio_schema()
+    init_uploads_schema()
+    init_news_schema()
+    init_fmp_schema()
+    init_scores_schema()
+    init_red_team_schema()
+    init_orchestrator_schema()
+    init_decision_schema()
 
 
 # Application factory. Wires CORS, the API routers, a health check, the

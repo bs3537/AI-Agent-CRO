@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..llm import get_provider
 from ..llm.throughput import llm_concurrency, map_concurrent
+from ..news.buckets import load_buckets
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
-from ..news.buckets import load_buckets
 from .claude_client import DEFAULT_MODEL, score_with_llm
-from .heuristic import MODEL_LABEL as HEURISTIC_MODEL, score_heuristically
+from .heuristic import MODEL_LABEL as HEURISTIC_MODEL
+from .heuristic import score_heuristically
 from .multipliers import (
     BUCKET_WEIGHTS,
     CONVICTION_MULT,
@@ -53,6 +54,7 @@ def score_unscored(
     offline: bool = False,
     model: str = DEFAULT_MODEL,
     limit: int | None = None,
+    ticker: str | None = None,
 ) -> dict:
     """Score every (article, ticker) pair lacking a score at MULTIPLIERS_VERSION."""
     init_scores_schema()
@@ -69,13 +71,17 @@ def score_unscored(
     # W9: high-volume triage runs on the "scorer" tier (model + reasoning effort).
     provider = get_provider(prefer_offline=offline, stage="scorer")
     if provider is None:
-        scorer: Scorer = lambda c: (score_heuristically(c), HEURISTIC_MODEL)
+        def scorer(c: ScoreCandidate) -> tuple[AxisScores, str]:
+            return score_heuristically(c), HEURISTIC_MODEL
+
         scorer_label = HEURISTIC_MODEL
     else:
-        scorer = lambda c: score_with_llm(c, provider=provider)
+        def scorer(c: ScoreCandidate) -> tuple[AxisScores, str]:
+            return score_with_llm(c, provider=provider)
+
         scorer_label = provider.model_label
 
-    rows = unscored_pairs(MULTIPLIERS_VERSION, limit=limit)
+    rows = unscored_pairs(MULTIPLIERS_VERSION, limit=limit, ticker=ticker)
 
     # Phase 1 (sequential reads): build a candidate per scorable pair; tally the
     # pairs we can't score (ticker no longer held, or missing/unknown bucket).
@@ -122,7 +128,7 @@ def score_unscored(
 
     # Phase 3 (sequential writes): persist successes, dead-letter failures.
     scored = errors = 0
-    for candidate, (res, err) in zip(candidates, results):
+    for candidate, (res, err) in zip(candidates, results, strict=False):
         if err is not None:
             _record_score_failure(candidate, err)
             errors += 1
@@ -145,7 +151,8 @@ def score_unscored(
 
     log.info("scoring_done",
              extra={"scored": scored, "errors": errors, "skipped": skipped,
-                    "model": scorer_label, "version": MULTIPLIERS_VERSION})
+                    "model": scorer_label, "version": MULTIPLIERS_VERSION,
+                    "ticker": ticker.upper() if ticker else None})
     return {"scored": scored, "errors": errors, "skipped": skipped}
 
 
@@ -238,7 +245,7 @@ def _to_row(
         model_used=model_used,
         multipliers_version=MULTIPLIERS_VERSION,
         inputs_hash=ih,
-        scored_at=datetime.now(timezone.utc),
+        scored_at=datetime.now(UTC),
     )
 
 

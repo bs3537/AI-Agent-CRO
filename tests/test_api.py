@@ -53,6 +53,10 @@ def test_list_positions(client):
     vrtx = next(p for p in body["positions"] if p["ticker"] == HELD)
     if vrtx["cost_basis"] is not None:
         assert vrtx["open_pnl"] == pytest.approx(vrtx["market_value"] - vrtx["cost_basis"])
+    if vrtx["rating"] is not None:
+        assert vrtx["rating"]["action"] == ("sell" if vrtx["rating"]["grade"] == "D" else "hold")
+    if vrtx["spark"] is not None:
+        assert set(vrtx["spark"]) >= {"closes", "ema20", "technical_state"}
 
 
 # Detail includes the evidence trail (scored articles from the seed data).
@@ -101,8 +105,24 @@ def test_recompute_wait(client):
     assert r.status_code == 200
     body = r.json()
     assert body["scheduled"] is False
+    assert body["rating"]["grade"] in {"A", "B", "C", "D"}
+    assert body["rating"]["compute_source"] == "manual_single"
+    assert body["rating"]["action"] == ("sell" if body["rating"]["grade"] == "D" else "hold")
+    assert body["rating"]["technical_state"] in {
+        "above_ema20",
+        "below_ema20",
+        "extended_below_ema20",
+        "no_price_data",
+    }
     assert body["decision"]["verdict"] in {"hold", "watch", "sell"}
     assert body["decision"]["color"] in {"green", "yellow", "red"}
+    assert body["decision"]["compute_source"] == "manual_single"
+
+
+def test_thesis_word_limit(client):
+    too_long = "word " * 2001
+    r = client.put(f"/api/positions/{HELD}/thesis", json={"thesis": too_long})
+    assert r.status_code == 422
 
 
 # Status returns the operational snapshot with a position count.
@@ -112,3 +132,20 @@ def test_status(client):
     body = r.json()
     assert "spend" in body and "degrade" in body
     assert body["positions"]["count"] >= 1
+
+
+def test_delete_holding_removes_tile_and_stored_data(client):
+    ticker = "MRNA"
+    before = client.get("/api/positions").json()["positions"]
+    if ticker not in {p["ticker"] for p in before}:
+        pytest.skip(f"{ticker} not present in seeded latest pull")
+
+    r = client.delete(f"/api/positions/{ticker}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ticker"] == ticker
+    assert body["deleted"]["positions"] >= 1
+
+    after = client.get("/api/positions").json()["positions"]
+    assert ticker not in {p["ticker"] for p in after}
+    assert client.get(f"/api/positions/{ticker}").status_code == 404

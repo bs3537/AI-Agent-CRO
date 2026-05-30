@@ -12,7 +12,6 @@ hash changes and the pipeline emits a fresh score row.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from ..db import connection
 from ..identity import event_id
@@ -143,7 +142,11 @@ def save_score(score: CompositeScore) -> str:
 # Find every (article, ticker) pair that lacks a score row at the given
 # multipliers_version. Joins articles × article_tickers and pre-computes
 # the primary bucket (highest-confidence tag) for the scorer.
-def unscored_pairs(multipliers_version: str, limit: int | None = None):
+def unscored_pairs(
+    multipliers_version: str,
+    limit: int | None = None,
+    ticker: str | None = None,
+):
     """Article × ticker pairs that lack a score row at the current multipliers_version.
 
     Returns rows with the primary bucket precomputed (highest-confidence tag).
@@ -171,9 +174,12 @@ def unscored_pairs(multipliers_version: str, limit: int | None = None):
           AND EXISTS (
             SELECT 1 FROM article_buckets ab WHERE ab.event_id = a.event_id
           )
-        ORDER BY COALESCE(a.published_at, a.fetched_at) DESC
     """
     args: list = [multipliers_version]
+    if ticker:
+        sql += " AND t.ticker = ?"
+        args.append(ticker.upper())
+    sql += " ORDER BY COALESCE(a.published_at, a.fetched_at) DESC"
     if limit:
         sql += " LIMIT ?"
         args.append(limit)

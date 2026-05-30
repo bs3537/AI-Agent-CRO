@@ -5,8 +5,9 @@ cases, catalysts, and open P&L (a DecisionCandidate), then produces one
 HOLD/WATCH/SELL verdict with a short note. Offline-first: a deterministic
 heuristic verdict (max red-team severity + composite band) runs whenever no
 LLM provider is available; otherwise the Codex provider (W1) is asked for the
-verdict under a strict output schema. A hard guard enforces the PLAN rule that
-a red-team severity ≥ 4 can never resolve to HOLD.
+final grade under a strict output schema. Deterministic scores, red-team passes,
+FMP metrics, and EMA20 state guide the prompt; when Codex returns a valid grade,
+that LLM grade is authoritative.
 
 Idempotency mirrors the scorer/red-team: inputs_hash captures the thesis plus
 the exact evidence set, so run_decisions skips holdings whose thesis and
@@ -16,36 +17,48 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..config import settings
+from ..db import init_db
 from ..identity import event_id
 from ..llm import get_provider
 from ..llm.throughput import llm_concurrency, map_concurrent
-from ..news.fmp_client import latest_fmp_metrics
+from ..news.fmp_client import latest_fmp_metrics, latest_price_series
 from ..news.source_tiers import source_tier
+from ..news.store import init_news_schema
 from ..news.verification import verify_fmp
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..portfolio.uploads import combined_text
-from ..red_team.store import recent_passes
-from ..scorer.multipliers import T, T2
-from ..scorer.store import recent_scores
+from ..red_team.store import init_red_team_schema, recent_passes
+from ..scorer.multipliers import T2, T
+from ..scorer.store import init_scores_schema, recent_scores
 from .prompt import build_system_prompt, build_user_message
+from .rating import RATING_VERSION, rate_candidate
 from .schema import (
+    GRADE_VERDICT,
+    VERDICT_COLOR,
     BearEvidence,
     DecisionCandidate,
     PositionDecision,
+    PositionRating,
     ScoreEvidence,
-    VERDICT_COLOR,
 )
-from .store import has_decision_for, init_decision_schema, save_decision
+from .store import (
+    has_decision_for,
+    has_rating_for,
+    init_decision_schema,
+    save_decision,
+    save_rating,
+)
+from .technicals import technical_state
 
 log = logging.getLogger("sma_monitor.decision.engine")
 
 # Version string the engine keys idempotency off. Bump when the prompt, the
 # heuristic, or the candidate shape changes so every holding re-computes.
-DECISION_VERSION = "v1.1-2026.05"
+DECISION_VERSION = "v1.2-2026.05"
 
 # Label written to position_decisions.model_used for the offline path.
 HEURISTIC_MODEL = "heuristic-v1"
@@ -62,12 +75,68 @@ DECISION_OUTPUT_SCHEMA: dict = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "verdict": {"type": "string", "enum": ["hold", "watch", "sell"]},
+        "llm_grade": {"type": "string", "enum": ["A", "B", "C", "D"]},
+        "thesis_clause_impacts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "clause_id": {"type": "string"},
+                    "impact": {
+                        "type": "string",
+                        "enum": ["none", "low", "medium", "high", "critical"],
+                    },
+                    "evidence": {"type": "string"},
+                },
+                "required": ["clause_id", "impact", "evidence"],
+            },
+        },
+        "hard_breaker": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "present": {"type": "boolean"},
+                "type": {"type": "string"},
+                "evidence": {"type": "string"},
+            },
+            "required": ["present", "type", "evidence"],
+        },
+        "technical_assessment": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "uses_ema20": {"type": "boolean"},
+                "interpretation": {"type": "string"},
+                "should_affect_grade": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "cap_A_at_B",
+                        "push_one_notch",
+                        "no_sell_without_fundamental_confirmation",
+                    ],
+                },
+            },
+            "required": ["uses_ema20", "interpretation", "should_affect_grade"],
+        },
         "note": {"type": "string"},
         "drivers": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
     },
-    "required": ["verdict", "note", "drivers", "confidence"],
+    # OpenAI structured output strict mode expects every declared property to
+    # be required when additionalProperties is false. The prompt already asks
+    # for all of these fields; keeping schema + prompt aligned avoids Codex
+    # rejecting the decision call before the model runs.
+    "required": [
+        "llm_grade",
+        "thesis_clause_impacts",
+        "hard_breaker",
+        "technical_assessment",
+        "note",
+        "drivers",
+        "confidence",
+    ],
 }
 
 
@@ -91,6 +160,7 @@ def decision_inputs_hash(
     pass_ids: list[str],
     doc_hash: str = "",
     fmp_hash: str = "",
+    technical_hash: str = "",
 ) -> str:
     return event_id({
         "kind": "decision_inputs",
@@ -98,6 +168,7 @@ def decision_inputs_hash(
         "thesis_hash": thesis_h,
         "doc_hash": doc_hash,
         "fmp_hash": fmp_hash,
+        "technical_hash": technical_hash,
         "pct_nav": round(pct_nav, 4),
         "nearest_catalyst_days": nearest_catalyst_days,
         "score_ids": sorted(score_ids),
@@ -109,8 +180,15 @@ def decision_inputs_hash(
 # Assemble a DecisionCandidate for one holding from the joined view plus the
 # top scored articles and red-team passes on that ticker.
 def build_candidate(holding: Holding) -> DecisionCandidate:
-    scores = [_to_score_evidence(r) for r in recent_scores(ticker=holding.ticker, limit=EVIDENCE_LIMIT)]
-    bears = [_to_bear_evidence(r) for r in recent_passes(ticker=holding.ticker, limit=EVIDENCE_LIMIT)]
+    _init_read_side_schemas()
+    scores = [
+        _to_score_evidence(r)
+        for r in recent_scores(ticker=holding.ticker, limit=EVIDENCE_LIMIT)
+    ]
+    bears = [
+        _to_bear_evidence(r)
+        for r in recent_passes(ticker=holding.ticker, limit=EVIDENCE_LIMIT)
+    ]
 
     open_pnl = pnl_pct = None
     if holding.cost_basis is not None:
@@ -124,6 +202,8 @@ def build_candidate(holding: Holding) -> DecisionCandidate:
     ]
     max_severity = max((b.severity_of_concern for b in bears), default=1)
     max_composite = max((s.composite for s in scores), default=0.0)
+
+    technical = technical_state(latest_price_series(holding.ticker))
 
     return DecisionCandidate(
         ticker=holding.ticker,
@@ -143,6 +223,7 @@ def build_candidate(holding: Holding) -> DecisionCandidate:
         scores=scores,
         bears=bears,
         fmp_metrics=latest_fmp_metrics(holding.ticker),  # W2: FMP financials (None offline)
+        technical=technical,
         max_severity=max_severity,
         max_composite=max_composite,
     )
@@ -177,27 +258,39 @@ def _to_bear_evidence(r) -> BearEvidence:
     )
 
 
-# Decide one holding. Uses the LLM provider when supplied, else the heuristic;
-# either way the sev≥4 guard and verdict→color mapping are applied last.
+# Decide one holding. Uses the LLM provider when supplied, else the heuristic.
+# A valid LLM grade is authoritative; verdict/color are only derived labels.
 def decide(
     candidate: DecisionCandidate,
     thesis_h: str,
     inputs_h: str,
     *,
     provider=None,
+    compute_source: str = "scheduler",
 ) -> PositionDecision:
+    decision, _llm_grade = decide_with_grade(
+        candidate,
+        thesis_h,
+        inputs_h,
+        provider=provider,
+        compute_source=compute_source,
+    )
+    return decision
+
+
+def decide_with_grade(
+    candidate: DecisionCandidate,
+    thesis_h: str,
+    inputs_h: str,
+    *,
+    provider=None,
+    compute_source: str = "scheduler",
+) -> tuple[PositionDecision, str | None]:
     if provider is None:
         verdict, note, drivers, confidence, model_used = _decide_heuristic(candidate)
+        llm_grade = None
     else:
-        verdict, note, drivers, confidence, model_used = _decide_llm(candidate, provider)
-
-    # PLAN guard: a red-team severity ≥ 4 can never resolve to HOLD.
-    if candidate.max_severity >= 4 and verdict == "hold":
-        verdict = "watch"
-        note = (note.rstrip() + " ").strip() + (
-            " (Auto-escalated to WATCH: an active red-team concern scores "
-            f"severity {candidate.max_severity}/5.)"
-        )
+        verdict, note, drivers, confidence, model_used, llm_grade = _decide_llm(candidate, provider)
 
     return PositionDecision(
         ticker=candidate.ticker,
@@ -209,8 +302,9 @@ def decide(
         thesis_hash=thesis_h,
         inputs_hash=inputs_h,
         model_used=model_used,
-        decided_at=datetime.now(timezone.utc),
-    )
+        compute_source=compute_source,
+        decided_at=datetime.now(UTC),
+    ), llm_grade
 
 
 # LLM path: ask the provider for a schema-constrained verdict and record a
@@ -228,13 +322,23 @@ def _decide_llm(candidate: DecisionCandidate, provider):
         record_llm_call(kind="decision", model=provider.model_label)
     except Exception:
         pass
-    verdict = data.get("verdict")
-    if verdict not in ("hold", "watch", "sell"):
-        verdict = "watch"  # unparseable verdict is treated as needing attention
+    llm_grade = _llm_grade_from_payload(data)
+    if llm_grade is None:
+        verdict, note, drivers, confidence, model_used = _decide_heuristic(candidate)
+        return verdict, note, drivers, confidence, model_used, None
+    verdict = GRADE_VERDICT[llm_grade]
     note = (data.get("note") or "").strip()
     drivers = [str(d).strip() for d in (data.get("drivers") or []) if str(d).strip()]
     confidence = float(data.get("confidence", 0.5))
-    return verdict, note, drivers, confidence, provider.model_label
+    return verdict, note, drivers, confidence, provider.model_label, llm_grade
+
+
+def _llm_grade_from_payload(data: dict) -> str | None:
+    grade = data.get("llm_grade")
+    if grade in ("A", "B", "C", "D"):
+        return grade
+    # Backward-compatible adapter for older fake providers or stale Codex output.
+    return {"hold": "A", "watch": "C", "sell": "D"}.get(data.get("verdict"))
 
 
 # Deterministic offline verdict from max red-team severity + composite band.
@@ -273,7 +377,9 @@ def _heuristic_drivers(c: DecisionCandidate) -> list[str]:
         drivers.append(f"red-team sev {b.severity_of_concern}/5 ({pats})")
     if c.scores:
         top = max(c.scores, key=lambda s: s.composite)
-        drivers.append(f"top score {top.composite:.1f} (#{top.primary_bucket_id}): {top.title[:60]}")
+        drivers.append(
+            f"top score {top.composite:.1f} (#{top.primary_bucket_id}): {top.title[:60]}"
+        )
     if c.has_overdue_catalyst:
         drivers.append("overdue catalyst on file")
     if c.pnl_pct is not None:
@@ -305,8 +411,11 @@ def _heuristic_note(c: DecisionCandidate, verdict: str) -> str:
     # Prefer the most-severe bear's invalidator; otherwise a generic watch line.
     if c.bears:
         top_bear = max(c.bears, key=lambda b: b.severity_of_concern)
-        change_line = f"Would change if: {top_bear.invalidator.strip()[:160]}" if top_bear.invalidator \
+        change_line = (
+            f"Would change if: {top_bear.invalidator.strip()[:160]}"
+            if top_bear.invalidator
             else "Would change on disclosure that contradicts the cited concerns."
+        )
     else:
         change_line = "No catalog pattern currently pressures the thesis; revisit on new evidence."
 
@@ -329,7 +438,9 @@ def run_decisions(
     limit: int | None = None,
     only_ticker: str | None = None,
     force: bool = False,
+    compute_source: str = "scheduler",
 ) -> dict:
+    _init_read_side_schemas()
     init_decision_schema()
     holdings, missing, _pulled_at = latest_joined()
     if only_ticker:
@@ -359,6 +470,11 @@ def run_decisions(
         # financial snapshot re-computes this holding's decision.
         dh = event_id({"doc_text": candidate.thesis_doc_text}) if candidate.thesis_doc_text else ""
         fh = event_id({"fmp": candidate.fmp_metrics}) if candidate.fmp_metrics else ""
+        tech_h = (
+            event_id({"technical": candidate.technical.model_dump()})
+            if candidate.technical
+            else ""
+        )
         ih = decision_inputs_hash(
             ticker=h.ticker,
             thesis_h=th,
@@ -368,8 +484,13 @@ def run_decisions(
             pass_ids=[b.pass_event_id for b in candidate.bears],
             doc_hash=dh,
             fmp_hash=fh,
+            technical_hash=tech_h,
         )
-        if not force and has_decision_for(h.ticker, ih, DECISION_VERSION):
+        if (
+            not force
+            and has_decision_for(h.ticker, ih, DECISION_VERSION)
+            and has_rating_for(h.ticker, ih, RATING_VERSION)
+        ):
             skipped += 1
             continue
         work.append((h, candidate, th, ih))
@@ -378,7 +499,9 @@ def run_decisions(
     # financials against the web (Brave) so Codex can weigh them per the source
     # policy — display-only, deliberately NOT in inputs_hash — then ask for the
     # verdict. Live Brave call is skipped offline / keyless.
-    def _compute(item: tuple[Holding, DecisionCandidate, str, str]) -> PositionDecision:
+    def _compute(
+        item: tuple[Holding, DecisionCandidate, str, str],
+    ) -> tuple[PositionDecision, PositionRating]:
         h, candidate, th, ih = item
         if not offline and candidate.fmp_metrics and settings.brave_search_api_key:
             try:
@@ -391,7 +514,25 @@ def run_decisions(
                 }
             except Exception as e:
                 log.warning("fmp_verification_skipped", extra={"ticker": h.ticker, "err": str(e)})
-        return decide(candidate, th, ih, provider=provider)
+        decision, llm_grade = decide_with_grade(
+            candidate,
+            th,
+            ih,
+            provider=provider,
+            compute_source=compute_source,
+        )
+        rating = rate_candidate(
+            candidate,
+            thesis_h=th,
+            inputs_h=ih,
+            note=decision.note,
+            drivers=decision.drivers,
+            confidence=decision.confidence,
+            model_used=decision.model_used,
+            compute_source=compute_source,
+            llm_grade=llm_grade,
+        )
+        return decision, rating
 
     # Phase 2 (bounded concurrency): compute verdicts. Sequential on the
     # heuristic path; ~SMA_LLM_CONCURRENCY codex processes when LLM-backed.
@@ -399,20 +540,24 @@ def run_decisions(
 
     # Phase 3 (sequential writes): persist decisions, count failures.
     decided = errors = 0
-    for (h, candidate, _th, _ih), (decision, err) in zip(work, results):
+    for (h, candidate, _th, _ih), (result, err) in zip(work, results, strict=False):
         if err is not None:
             log.error("decision_failed", extra={"ticker": h.ticker, "err": str(err)})
             errors += 1
             continue
+        decision, rating = result
         save_decision(decision, decision_version=DECISION_VERSION)
+        save_rating(rating)
         decided += 1
         log.info(
             "decision_done",
             extra={
                 "ticker": h.ticker,
                 "verdict": decision.verdict,
+                "grade": rating.grade,
                 "color": decision.color,
                 "confidence": decision.confidence,
+                "technical_state": rating.technical_state,
                 "max_severity": candidate.max_severity,
                 "max_composite": round(candidate.max_composite, 2),
             },
@@ -424,3 +569,10 @@ def run_decisions(
                "holdings": len(holdings), "model": model_label},
     )
     return {"decided": decided, "skipped": skipped, "errors": errors, "holdings": len(holdings)}
+
+
+def _init_read_side_schemas() -> None:
+    init_db()
+    init_news_schema()
+    init_scores_schema()
+    init_red_team_schema()

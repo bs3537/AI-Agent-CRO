@@ -10,8 +10,10 @@ import Typography from '@mui/material/Typography'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
 import type { PositionsResponse, Status } from './types'
+import BrandLogo from './components/BrandLogo'
 import PositionCard from './components/PositionCard'
 import DetailDrawer from './components/DetailDrawer'
+import ThesisDrawer, { type ThesisPackage } from './components/ThesisDrawer'
 import StatusBar from './components/StatusBar'
 
 // Poll cadence for the grid + status (decisions refresh after batch runs).
@@ -25,7 +27,13 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [detailTicker, setDetailTicker] = useState<string | null>(null)
+  const [thesisTicker, setThesisTicker] = useState<string | null>(null)
   const [recomputingAll, setRecomputingAll] = useState(false)
+  const [recomputeQueue, setRecomputeQueue] = useState<{
+    ticker: string
+    index: number
+    total: number
+  } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // Refetch the grid + status snapshot.
@@ -47,25 +55,38 @@ export default function App() {
     return () => clearInterval(id)
   }, [refresh])
 
-  // Save a thesis, then refresh so the editor + decision reflect it.
-  const onSaveThesis = useCallback(
-    async (ticker: string, thesis: string) => {
+  const onSaveThesisPackage = useCallback(
+    async ({ ticker, thesis, files, replaceFiles }: ThesisPackage) => {
       await api.setThesis(ticker, thesis)
+      if (replaceFiles) {
+        const detail = await api.detail(ticker)
+        for (const file of detail.files) {
+          await api.deleteFile(ticker, file.event_id)
+        }
+      }
+      for (const file of files) {
+        await api.uploadFile(ticker, file)
+      }
+      await api.recompute(ticker, true)
       await refresh()
+      setNotice(`${ticker} thesis package saved and analysis recomputed.`)
     },
     [refresh],
   )
 
-  // Upload a doc, then refresh (file count updates on the card).
+  // Upload a doc, then rerun the holding analysis because uploaded text feeds
+  // the next LLM decision candidate.
   const onUpload = useCallback(
     async (ticker: string, file: File) => {
       await api.uploadFile(ticker, file)
+      await api.recompute(ticker, true)
       await refresh()
+      setNotice(`${ticker} document uploaded and analysis recomputed.`)
     },
     [refresh],
   )
 
-  // Recompute one position synchronously, then refresh to show the verdict.
+  // Refresh latest ticker evidence, then recompute one position synchronously.
   const onRecompute = useCallback(
     async (ticker: string) => {
       await api.recompute(ticker, true)
@@ -74,21 +95,40 @@ export default function App() {
     [refresh],
   )
 
-  // Kick off a whole-portfolio recompute in the background, then refresh. The
-  // engine runs server-side across all holdings; decisions land over the next
-  // poll cycles, so we just confirm it started rather than blocking on it.
+  const onDeleteHolding = useCallback(
+    async (ticker: string) => {
+      const res = await api.deleteHolding(ticker)
+      if (detailTicker === ticker) setDetailTicker(null)
+      if (thesisTicker === ticker) setThesisTicker(null)
+      await refresh()
+      const deletedRows = Object.values(res.deleted).reduce((a, b) => a + b, 0)
+      setNotice(`${ticker} deleted from the dashboard (${deletedRows} stored row${deletedRows === 1 ? '' : 's'} removed).`)
+    },
+    [refresh, detailTicker, thesisTicker],
+  )
+
+  // Recompute the portfolio one ticker at a time, largest %NAV first. This
+  // avoids stacking many Codex/LLM calls at once and refreshes the grid after
+  // each finished holding so the tile updates immediately.
   const onRecomputeAll = useCallback(async () => {
+    const queue = [...(data?.positions ?? [])].sort((a, b) => b.pct_nav - a.pct_nav)
+    if (queue.length === 0) return
     setRecomputingAll(true)
     setNotice(null)
     try {
-      await api.recomputeAll()
-      const n = data?.positions.length ?? 0
-      setNotice(`Recompute started for ${n} position${n === 1 ? '' : 's'} — the grid updates as decisions complete.`)
-      await refresh()
+      for (let i = 0; i < queue.length; i += 1) {
+        const pos = queue[i]
+        setRecomputeQueue({ ticker: pos.ticker, index: i + 1, total: queue.length })
+        setNotice(`Recomputing ${i + 1}/${queue.length}: ${pos.ticker}`)
+        await api.recompute(pos.ticker, true, 'manual_all')
+        await refresh()
+      }
+      setNotice(`Evidence refresh + recompute finished for ${queue.length} position${queue.length === 1 ? '' : 's'}.`)
     } catch (e) {
       setError(String(e))
     } finally {
       setRecomputingAll(false)
+      setRecomputeQueue(null)
     }
   }, [refresh, data])
 
@@ -97,14 +137,14 @@ export default function App() {
   const stale = (status?.flags ?? []).some(
     (f) => f.flag_name === 'stale_positions' && Boolean(f.active),
   )
+  const thesisPosition =
+    data?.positions.find((p) => p.ticker === thesisTicker) ?? null
 
   return (
     <Box sx={{ pb: 6 }}>
       <AppBar position="sticky" color="default" enableColorOnDark elevation={0}>
         <Toolbar sx={{ gap: 2 }}>
-          <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 800 }}>
-            SMA&nbsp;MONITOR
-          </Typography>
+          <BrandLogo />
           <Box sx={{ flexGrow: 1 }} />
           <StatusBar status={status} />
           <Button
@@ -116,7 +156,9 @@ export default function App() {
             onClick={() => void onRecomputeAll()}
             sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            {recomputingAll ? 'Recomputing…' : 'Recompute all'}
+            {recomputingAll && recomputeQueue
+              ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker}`
+              : 'Recompute all'}
           </Button>
         </Toolbar>
         {!data && !error && <LinearProgress color="primary" />}
@@ -154,9 +196,10 @@ export default function App() {
               key={pos.ticker}
               pos={pos}
               stale={stale}
-              onSaveThesis={onSaveThesis}
               onUpload={onUpload}
               onRecompute={onRecompute}
+              onDelete={onDeleteHolding}
+              onOpenThesis={setThesisTicker}
               onOpenDetail={setDetailTicker}
             />
           ))}
@@ -172,6 +215,14 @@ export default function App() {
       <DetailDrawer
         ticker={detailTicker}
         onClose={() => setDetailTicker(null)}
+        onChanged={() => void refresh()}
+      />
+
+      <ThesisDrawer
+        ticker={thesisTicker}
+        position={thesisPosition}
+        onClose={() => setThesisTicker(null)}
+        onSavePackage={onSaveThesisPackage}
         onChanged={() => void refresh()}
       />
     </Box>

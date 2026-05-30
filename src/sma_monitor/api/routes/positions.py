@@ -5,6 +5,7 @@ Wraps the existing pipeline functions — no new business logic:
   GET    /api/positions/{ticker}             detail (scores, red-team, files)
   PUT    /api/positions/{ticker}/thesis      edit thesis (sidecar.set_thesis)
   POST   /api/positions/{ticker}/files       upload a thesis doc (uploads.save_upload)
+  DELETE /api/positions/{ticker}             delete a holding + ticker-owned monitor data
   DELETE /api/positions/{ticker}/files/{id}  remove an uploaded doc
   POST   /api/positions/{ticker}/recompute   run the decision engine (bg, or ?wait)
 """
@@ -14,9 +15,15 @@ import json
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
-from ...decision.engine import run_decisions
-from ...decision.store import latest_decision
+from ...decision.schema import GRADE_VERDICT, VERDICT_COLOR
+from ...decision.store import latest_decision, latest_rating
+from ...decision.technicals import technical_state
 from ...news.fmp_client import latest_fmp_metrics, latest_price_series
+from ...orchestrator.manual_recompute import (
+    recompute_all_with_refresh,
+    recompute_one_with_refresh,
+)
+from ...portfolio.delete import delete_holding_data
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
 from ...portfolio.sidecar import set_thesis
@@ -32,18 +39,22 @@ from ...scorer.store import recent_scores
 from ..schemas import (
     CatalystOut,
     DecisionOut,
+    DeleteHoldingResponse,
     FileOut,
     PositionDetail,
-    PositionSummary,
     PositionsResponse,
+    PositionSummary,
+    RatingOut,
     RecomputeAllResponse,
     RecomputeResponse,
     RedTeamOut,
     ScoreOut,
+    SparklineOut,
     ThesisUpdate,
 )
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
+UPLOAD_FILE = File(...)
 
 
 # Map a decision (+ its strongest red-team bear severity) to an A/B/C/D letter
@@ -65,12 +76,28 @@ def _grade(verdict: str, confidence: float, severity: int) -> str:
 # Highest red-team severity_of_concern recorded for a ticker (0 when none) —
 # the bear-pressure signal that splits a hold into A/B/C.
 def _max_severity(ticker: str) -> int:
-    return max((p["severity_of_concern"] or 0 for p in recent_passes(ticker=ticker, limit=50)), default=0)
+    return max(
+        (p["severity_of_concern"] or 0 for p in recent_passes(ticker=ticker, limit=50)),
+        default=0,
+    )
 
 
 # Parse a position_decisions row into the wire shape (drivers stored as JSON),
 # attaching the letter grade derived from the verdict + bear severity.
-def _decision_out(row, severity: int = 0) -> DecisionOut | None:
+def _decision_out(row, severity: int = 0, rating: RatingOut | None = None) -> DecisionOut | None:
+    if rating is not None:
+        verdict = GRADE_VERDICT[rating.grade]
+        return DecisionOut(
+            verdict=verdict,
+            color=VERDICT_COLOR[verdict],
+            grade=rating.grade,
+            note=rating.note,
+            drivers=rating.drivers,
+            confidence=rating.confidence,
+            model_used=rating.model_used,
+            compute_source=rating.compute_source,
+            decided_at=rating.decided_at,
+        )
     if row is None:
         return None
     try:
@@ -81,7 +108,58 @@ def _decision_out(row, severity: int = 0) -> DecisionOut | None:
         verdict=row["verdict"], color=row["color"],
         grade=_grade(row["verdict"], row["confidence"], severity),
         note=row["note"], drivers=drivers, confidence=row["confidence"],
-        model_used=row["model_used"], decided_at=row["decided_at"],
+        model_used=row["model_used"],
+        compute_source=row["compute_source"] or "unknown",
+        decided_at=row["decided_at"],
+    )
+
+
+def _rating_out(row) -> RatingOut | None:
+    if row is None:
+        return None
+    try:
+        drivers = json.loads(row["drivers"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        drivers = []
+    try:
+        risk_components = json.loads(row["risk_components"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        risk_components = {}
+    return RatingOut(
+        action=row["action"],
+        grade=row["grade"],
+        attention_state=row["attention_state"],
+        risk_score=row["risk_score"],
+        risk_components=risk_components,
+        latest_close=row["latest_close"],
+        ema20=row["ema20"],
+        price_vs_ema20_pct=row["price_vs_ema20_pct"],
+        technical_state=row["technical_state"],
+        deterministic_grade=row["deterministic_grade"],
+        llm_grade=row["llm_grade"],
+        final_grade=row["final_grade"],
+        note=row["note"],
+        drivers=drivers,
+        confidence=row["confidence"],
+        model_used=row["model_used"],
+        compute_source=row["compute_source"] or "unknown",
+        rating_version=row["rating_version"],
+        decided_at=row["decided_at"],
+    )
+
+
+def _spark_out(ticker: str) -> SparklineOut | None:
+    closes = latest_price_series(ticker)
+    if not closes:
+        return None
+    tech = technical_state(closes)
+    return SparklineOut(
+        closes=tech.closes,
+        ema20=tech.ema20,
+        latest_close=tech.latest_close,
+        latest_ema20=tech.latest_ema20,
+        price_vs_ema20_pct=tech.price_vs_ema20_pct,
+        technical_state=tech.technical_state,
     )
 
 
@@ -94,6 +172,7 @@ def _summary(h: Holding) -> PositionSummary:
         if h.cost_basis:
             pnl_pct = open_pnl / h.cost_basis
     dec_row = latest_decision(h.ticker)
+    rating = _rating_out(latest_rating(h.ticker))
     return PositionSummary(
         ticker=h.ticker, company_name=h.company_name, stage=h.stage,
         conviction_tier=int(h.conviction_tier), qty=h.qty,
@@ -102,8 +181,9 @@ def _summary(h: Holding) -> PositionSummary:
         nearest_catalyst_days=h.nearest_catalyst_days,
         has_overdue_catalyst=h.has_overdue_catalyst,
         thesis=h.thesis, n_files=len(list_files(h.ticker)),
-        spark=latest_price_series(h.ticker),  # W6: 1yr daily-close sparkline (None offline)
-        decision=_decision_out(dec_row, _max_severity(h.ticker) if dec_row else 0),
+        spark=_spark_out(h.ticker),  # W6/V2: 1yr close sparkline + EMA20 overlay
+        rating=rating,
+        decision=_decision_out(dec_row, _max_severity(h.ticker) if dec_row else 0, rating),
     )
 
 
@@ -206,7 +286,7 @@ def update_thesis(ticker: str, body: ThesisUpdate) -> PositionSummary:
 
 # POST /api/positions/{ticker}/files — upload a thesis document (multipart).
 @router.post("/{ticker}/files", response_model=FileOut, status_code=201)
-async def upload_file(ticker: str, file: UploadFile = File(...)) -> FileOut:
+async def upload_file(ticker: str, file: UploadFile = UPLOAD_FILE) -> FileOut:
     want = ticker.strip().upper()
     if want not in _position_tickers():
         raise HTTPException(status_code=404, detail=f"no held position for {want}")
@@ -215,8 +295,10 @@ async def upload_file(ticker: str, file: UploadFile = File(...)) -> FileOut:
         rec = save_upload(want, file.filename or "upload", content)
     except UploadError as e:
         raise HTTPException(status_code=415, detail=str(e)) from e
-    return FileOut(**{k: rec[k] for k in
-                      ("event_id", "filename", "content_type", "n_chars", "byte_size", "uploaded_at")})
+    return FileOut(**{
+        k: rec[k]
+        for k in ("event_id", "filename", "content_type", "n_chars", "byte_size", "uploaded_at")
+    })
 
 
 # DELETE /api/positions/{ticker}/files/{event_id} — remove an uploaded doc.
@@ -226,30 +308,57 @@ def remove_file(ticker: str, event_id: str) -> None:
         raise HTTPException(status_code=404, detail="file not found")
 
 
-# POST /api/positions/{ticker}/recompute — run the decision engine for one
-# ticker. Background by default; ?wait=true runs inline and returns the result.
+# DELETE /api/positions/{ticker} — operator override for closed/stale holdings.
+@router.delete("/{ticker}", response_model=DeleteHoldingResponse)
+def delete_holding(ticker: str) -> DeleteHoldingResponse:
+    want = ticker.strip().upper()
+    if want not in _position_tickers():
+        raise HTTPException(status_code=404, detail=f"no held position for {want}")
+    result = delete_holding_data(want)
+    return DeleteHoldingResponse(ticker=want, deleted=result["deleted"])
+
+
+# POST /api/positions/{ticker}/recompute — refresh ticker evidence, score and
+# red-team new rows, then run the decision engine for one ticker. Background by
+# default; ?wait=true runs inline and returns the saved result.
 @router.post("/{ticker}/recompute", response_model=RecomputeResponse)
 def recompute(
     ticker: str,
     background: BackgroundTasks,
     wait: bool = False,
     offline: bool = False,
+    compute_source: str = "manual_single",
 ) -> RecomputeResponse:
     want = ticker.strip().upper()
     _holding_or_404(want)  # 404 if not a current holding
     if wait:
-        run_decisions(only_ticker=want, force=True, offline=offline)
+        state = recompute_one_with_refresh(
+            want,
+            offline=offline,
+            compute_source=compute_source,
+        )
         row = latest_decision(want)
-        return RecomputeResponse(ticker=want, scheduled=False,
-                                 decision=_decision_out(row, _max_severity(want) if row else 0))
-    background.add_task(run_decisions, only_ticker=want, force=True, offline=offline)
+        rating = _rating_out(latest_rating(want))
+        return RecomputeResponse(
+            ticker=want,
+            scheduled=False,
+            rating=rating,
+            decision=_decision_out(row, _max_severity(want) if row else 0, rating),
+            refresh=state,
+        )
+    background.add_task(
+        recompute_one_with_refresh,
+        want,
+        offline=offline,
+        compute_source=compute_source,
+    )
     return RecomputeResponse(ticker=want, scheduled=True, decision=None)
 
 
-# POST /api/positions/recompute — run the decision engine for EVERY holding in
-# one call (the bulk version of the per-ticker route). Background by default;
-# ?wait=true runs inline and returns the {decided, skipped, errors, holdings}
-# summary. The engine fans out across holdings concurrently (W9 throughput).
+# POST /api/positions/recompute — refresh evidence and recompute EVERY holding
+# in one call. Background by default; ?wait=true runs inline and returns the
+# {decided, skipped, errors, holdings} summary. This can be slow because it may
+# run live search, scoring, red team, and decision LLM calls.
 @router.post("/recompute", response_model=RecomputeAllResponse)
 def recompute_all(
     background: BackgroundTasks,
@@ -258,11 +367,13 @@ def recompute_all(
     offline: bool = False,
 ) -> RecomputeAllResponse:
     if wait:
-        s = run_decisions(force=force, offline=offline)
+        state = recompute_all_with_refresh(offline=offline, force=force)
+        s = state.get("decisions", {})
         return RecomputeAllResponse(
             scheduled=False,
             decided=s.get("decided", 0), skipped=s.get("skipped", 0),
             errors=s.get("errors", 0), holdings=s.get("holdings", 0),
+            refresh=state,
         )
-    background.add_task(run_decisions, force=force, offline=offline)
+    background.add_task(recompute_all_with_refresh, offline=offline, force=force)
     return RecomputeAllResponse(scheduled=True)

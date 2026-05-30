@@ -66,6 +66,49 @@ export default function DetailDrawer({
 
         {detail && (
           <Stack spacing={2}>
+            <Section title="Rating">
+              {detail.rating ? (
+                <List dense disablePadding>
+                  <ListItem disableGutters>
+                    <ListItemText
+                      primary={`${detail.rating.action.toUpperCase()} ${detail.rating.grade} · ${detail.rating.attention_state}`}
+                      secondary={`Risk score ${detail.rating.risk_score.toFixed(1)} · ${sourceLabel(detail.rating.compute_source)} · ${detail.rating.model_used}`}
+                    />
+                  </ListItem>
+                  {Object.entries(detail.rating.risk_components).map(([k, v]) => (
+                    <ListItem key={k} disableGutters sx={{ py: 0.1 }}>
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" justifyContent="space-between" spacing={2}>
+                            <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                              {RISK_LABELS[k] ?? k}
+                            </Typography>
+                            <Typography variant="body2">{Number(v).toFixed(1)}</Typography>
+                          </Stack>
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                  <ListItem disableGutters sx={{ py: 0.1 }}>
+                    <ListItemText
+                      primary={
+                        <Stack direction="row" justifyContent="space-between" spacing={2}>
+                          <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                            20-day EMA
+                          </Typography>
+                          <Typography variant="body2">
+                            {fmtTechnical(detail.rating.price_vs_ema20_pct, detail.rating.technical_state)}
+                          </Typography>
+                        </Stack>
+                      }
+                    />
+                  </ListItem>
+                </List>
+              ) : (
+                <EmptyRow text="No rating yet." />
+              )}
+            </Section>
+
             <Section title={`Scored articles (${detail.scores.length})`}>
               <List dense disablePadding>
                 {detail.scores.map((s) => (
@@ -211,6 +254,15 @@ const FINANCIAL_ORDER = [
   'cash_per_share', 'fcf_per_share',
 ]
 
+const RISK_LABELS: Record<string, string> = {
+  red_team_severity: 'Red-team severity',
+  thesis_clause_impact: 'Thesis clause impact',
+  top_article_composite: 'Top article composite',
+  catalyst_timing: 'Catalyst timing',
+  technical_trend: 'Technical trend',
+  data_quality: 'Data quality',
+}
+
 // Order the financials dict by FINANCIAL_ORDER, then append any extra keys.
 function orderedFinancials(f: Record<string, unknown>): [string, unknown][] {
   const known = FINANCIAL_ORDER.filter((k) => f[k] !== undefined && f[k] !== null).map(
@@ -240,6 +292,22 @@ function compactUsd(n: number): string {
   if (abs >= 1e9) return `${(n / 1e9).toFixed(1)}B`
   if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+}
+
+function fmtTechnical(pct: number | null, state: string): string {
+  const label = state.split('_').join(' ')
+  if (pct === null || pct === undefined) return label
+  return `${label} · ${(pct * 100).toFixed(1)}%`
+}
+
+function sourceLabel(source: string | undefined) {
+  const labels: Record<string, string> = {
+    scheduler: 'auto scheduler',
+    manual_single: 'manual tile',
+    manual_all: 'manual all',
+    unknown: 'legacy run',
+  }
+  return labels[source ?? 'unknown'] ?? source
 }
 
 // Faint placeholder for an empty list.

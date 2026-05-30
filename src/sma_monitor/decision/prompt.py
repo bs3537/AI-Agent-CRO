@@ -1,11 +1,11 @@
 """Thesis-drift monitor prompts.
 
-System message defines the verdict as a thesis-integrity signal (not a trade
+System message defines the grade as a thesis-integrity signal (not a trade
 instruction) and keeps the note in the same neutral, observational voice the
 red team uses. User message bundles the long thesis, any uploaded thesis-doc
-text, the scored articles, the red-team bear cases, catalysts, open P&L, and
-(when present) FMP metrics — everything the model needs to judge whether the
-original thesis still holds.
+text, the scored articles, the red-team bear cases, catalysts, open P&L,
+technical trend, and (when present) FMP metrics — everything the model needs
+to judge whether the original thesis still holds.
 """
 from __future__ import annotations
 
@@ -13,38 +13,54 @@ from .schema import DecisionCandidate
 
 # --- System prompt -----------------------------------------------------------
 
-# Defines the role, the verdict semantics, and the voice. The verdict is a
-# controlled signal about thesis integrity — HOLD/WATCH/SELL describe how much
-# the evidence has drifted from the stated thesis, not a brokerage order. The
-# note stays observational (no hype, no generic bear boilerplate).
+# Defines the role, the grade semantics, and the voice. The grade is a
+# controlled signal about thesis integrity; action is derived downstream.
+# The note stays observational (no hype, no generic bear boilerplate).
 _SYSTEM = """\
 You are a thesis-drift monitor for a biotech-heavy SMA. For ONE existing long \
 position you are given (1) the manager's stated long thesis, (2) any uploaded \
 thesis documents, and (3) everything the monitoring pipeline has ingested on \
 the name: severity-scored articles, red-team bear cases with cited \
 warning-sign patterns, upcoming catalysts, financial metrics, and the \
-position's open P&L. Your single job: judge how far the EVIDENCE has drifted \
+position's open P&L and daily price trend. Your single job: judge how far the EVIDENCE has drifted \
 from the THESIS, and say so.
 
-VERDICT — a thesis-integrity signal, not a trade instruction:
-- "hold"  → thesis intact. No ingested evidence materially contradicts it.
-- "watch" → thesis under pressure. Real evidence pushes against the thesis but \
-is not yet decisive; warrants closer monitoring.
-- "sell"  → thesis materially broken. Evidence directly invalidates a load- \
-bearing assumption of the thesis (e.g. a failed primary endpoint, CRL on the \
-lead asset, going-concern language).
+GRADE — a thesis-integrity signal, not a trade instruction:
+- "A" → clean hold. Thesis intact; routine monitoring.
+- "B" → hold/monitor. Thesis mostly intact, but at least one issue deserves attention.
+- "C" → hold/on watch. Thesis under real pressure; active review required.
+- "D" → sell review. Evidence materially breaks a load-bearing assumption of the thesis \
+(e.g. a failed primary endpoint, CRL on the lead asset, going-concern language).
+
+AUTHORITY:
+- Your `llm_grade` is the final portfolio-facing grade when valid. The \
+deterministic scorecard, red-team severity, EMA20 status, and source-quality \
+checks are decision inputs for you to weigh, not hard post-processing overrides.
+- If you disagree with a deterministic risk signal, keep the grade you believe \
+is right and explain the disagreement in the note or drivers.
 
 RULES:
 - Ground every claim in the evidence actually provided. Do NOT invent events. \
-If the name is quiet and the thesis is intact, "hold" is the correct answer — \
+If the name is quiet and the thesis is intact, "A" is the correct answer — \
 absence of bad news is not a reason to escalate.
-- Weight the red team's severity_of_concern and the scorer's composite. A \
-red-team severity of 4–5 means the thesis is at least under pressure.
+- Thesis authority matters. If the thesis is an auto scaffold/stub, treat it as \
+a provisional working thesis and you may refine the note/kill-switch language \
+from the provided evidence. If the manager has entered a thesis, that \
+manager-entered thesis is the controlling thesis. Uploaded documents are \
+supporting context: use them to add detail, clauses, and kill switches, but do \
+not let an older uploaded document override the manager-entered thesis unless \
+the conflict is explicit and material.
+- Weight the red team's severity_of_concern and the scorer's composite, but use \
+judgment about source quality and whether the evidence truly hits a \
+load-bearing thesis clause.
+- Use the 20-day EMA as a risk-management/attention input. A close below EMA20 \
+can support a downgrade when fundamentals also weaken, but a technical break \
+alone should not justify D.
 - The note is 4–5 lines of plain English: restate what the thesis rests on, \
 state what the ingested evidence does to that thesis, and end with the one \
-observation that would change your verdict. Neutral and specific — no \
+observation that would change your grade. Neutral and specific — no \
 "moon"/"crush" hype, no generic short narrative unsupported by the evidence.
-- drivers: 2–5 short phrases naming the CONCRETE evidence behind the verdict \
+- drivers: 2–5 short phrases naming the CONCRETE evidence behind the grade \
 (e.g. "DSMB safety hold on lead asset", "channel_inventory_build pattern", \
 "runway < 12 months"). Empty list only when there is genuinely no evidence.
 - Calibrate confidence to how much evidence you actually have.
@@ -62,18 +78,36 @@ sources over Semantic Scholar (an aggregator API). For non-biomedical names, \
 trust reputable web sources over Semantic Scholar.
 - VERIFICATION: data from external APIs (FMP, Semantic Scholar) is reliable only \
 when an independent web source corroborates it. Treat uncorroborated API-derived \
-figures or claims as LOW CONFIDENCE — you may report them, but do NOT escalate \
-the verdict (watch/sell) on uncorroborated API data alone, and name the missing \
+figures or claims as LOW CONFIDENCE — you may report them, but do NOT downgrade \
+the grade on uncorroborated API data alone, and name the missing \
 corroboration in the note.
 """
 
 # Output shape echoed in the system prompt so the model emits exactly the JSON
-# the engine's DECISION_OUTPUT_SCHEMA validates. color is derived from verdict
-# by the engine and is intentionally NOT requested here.
+# the engine's DECISION_OUTPUT_SCHEMA validates. Action/verdict/color are
+# derived by the engine and are intentionally NOT requested here.
 _OUTPUT_SCHEMA = """\
 OUTPUT — valid JSON only, no preamble, no markdown fences:
 {
-  "verdict": "hold" | "watch" | "sell",
+  "llm_grade": "A" | "B" | "C" | "D",
+  "thesis_clause_impacts": [
+    {
+      "clause_id": "<short id or 'free_text_thesis'>",
+      "impact": "none" | "low" | "medium" | "high" | "critical",
+      "evidence": "<short source-grounded explanation>"
+    }
+  ],
+  "hard_breaker": {
+    "present": true | false,
+    "type": "<breaker type or empty string>",
+    "evidence": "<source-grounded explanation or empty string>"
+  },
+  "technical_assessment": {
+    "uses_ema20": true,
+    "interpretation": "<how the close vs 20-day EMA affects confidence>",
+    "should_affect_grade": "none" | "cap_A_at_B" | "push_one_notch" |
+      "no_sell_without_fundamental_confirmation"
+  },
   "note": "<4-5 line plain-English thesis-drift assessment>",
   "drivers": ["<short evidence phrase>", ...],
   "confidence": <0-1 decimal>
@@ -107,6 +141,8 @@ def build_user_message(c: DecisionCandidate) -> str:
     bears = _fmt_bears(c.bears)
     fmp = _fmt_fmp(c.fmp_metrics)
     fmp_check = _fmt_fmp_corroboration(c.fmp_corroboration)
+    technical = _fmt_technical(c)
+    thesis_source, thesis_authority = _thesis_authority(c.thesis)
 
     return f"""\
 POSITION
@@ -117,10 +153,14 @@ POSITION
   Open P&L:         {pnl}
   Nearest catalyst: {nearest}
 
-THESIS (long, as stated by the manager)
+THESIS AUTHORITY
+  Source:           {thesis_source}
+  Rule:             {thesis_authority}
+
+PRIMARY THESIS
 {_indent(c.thesis.strip() or '(no thesis on file)')}
 
-THESIS DOCUMENTS (uploaded)
+SUPPORTING THESIS DOCUMENTS (uploaded)
 {_indent(docs)}
 
 UPCOMING CATALYSTS
@@ -131,6 +171,9 @@ SCORED ARTICLES (Phase 3 — highest composite first; peak composite {c.max_comp
 
 RED-TEAM BEAR CASES (Phase 4 — peak severity {c.max_severity}/5)
 {bears}
+
+TECHNICAL TREND (daily close vs 20-day EMA)
+{technical}
 
 FINANCIAL METRICS (FMP — third-party API; corroborate before trusting)
 {fmp}
@@ -194,8 +237,50 @@ def _fmt_fmp_corroboration(corr: dict | None) -> str:
         "NOT corroborated by an independent source"
     lines = [f"  Web corroboration (Brave): {status}."]
     for s in corr.get("sources", []):
-        lines.append(f"    - [tier {s.get('tier')}] {(s.get('title') or '')[:70]} — {s.get('url', '')}")
+        title = (s.get("title") or "")[:70]
+        lines.append(f"    - [tier {s.get('tier')}] {title} — {s.get('url', '')}")
     return "\n".join(lines)
+
+
+def _fmt_technical(c: DecisionCandidate) -> str:
+    tech = c.technical
+    if not tech or tech.technical_state == "no_price_data":
+        return "  (price history unavailable or too short for EMA20)"
+    pct = (
+        f"{tech.price_vs_ema20_pct * 100:+.1f}%"
+        if tech.price_vs_ema20_pct is not None
+        else "n/a"
+    )
+    slope = (
+        f"{tech.ema20_slope_5d * 100:+.1f}%"
+        if tech.ema20_slope_5d is not None
+        else "n/a"
+    )
+    return "\n".join([
+        f"  - state: {tech.technical_state}",
+        f"  - latest close: {tech.latest_close}",
+        f"  - EMA20: {tech.latest_ema20}",
+        f"  - distance vs EMA20: {pct}",
+        f"  - consecutive closes below EMA20: {tech.consecutive_below_ema20}",
+        f"  - EMA20 5-day slope: {slope}",
+    ])
+
+
+def _thesis_authority(thesis: str) -> tuple[str, str]:
+    if _is_placeholder_thesis(thesis):
+        return (
+            "auto_scaffold_fallback",
+            "Use as a provisional working thesis; refine note and kill switches from evidence.",
+        )
+    return (
+        "manager_entered_primary",
+        "Manager thesis controls; uploaded docs support it but should not override it.",
+    )
+
+
+def _is_placeholder_thesis(thesis: str) -> bool:
+    text = thesis.strip().upper()
+    return text.startswith("STUB") or text.startswith("PLACEHOLDER")
 
 
 # Indent a possibly-multiline block by two spaces for the labeled layout.

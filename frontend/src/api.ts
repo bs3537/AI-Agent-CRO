@@ -6,6 +6,7 @@ import type {
   PositionDetail,
   PositionsResponse,
   PositionSummary,
+  DeleteHoldingResponse,
   RecomputeAllResponse,
   RecomputeResponse,
   Status,
@@ -53,11 +54,20 @@ export const api = {
     if (!r.ok && r.status !== 204) throw new Error(`${r.status} ${r.statusText}`)
   },
 
+  // Delete a holding and its ticker-owned monitor data.
+  deleteHolding: (ticker: string) =>
+    fetch(`/api/positions/${ticker}`, { method: 'DELETE' }).then(json<DeleteHoldingResponse>),
+
   // Recompute one ticker's decision. wait=true runs inline and returns it.
-  recompute: (ticker: string, wait = true) =>
-    fetch(`/api/positions/${ticker}/recompute?wait=${wait}`, { method: 'POST' }).then(
+  recompute: (ticker: string, wait = true, computeSource = 'manual_single') => {
+    const params = new URLSearchParams({
+      wait: String(wait),
+      compute_source: computeSource,
+    })
+    return fetch(`/api/positions/${ticker}/recompute?${params}`, { method: 'POST' }).then(
       json<RecomputeResponse>,
-    ),
+    )
+  },
 
   // Recompute every holding's decision in one call. Defaults to background
   // (wait=false) so the request returns immediately; the grid poll surfaces

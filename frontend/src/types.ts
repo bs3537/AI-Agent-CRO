@@ -5,6 +5,9 @@ export type Verdict = 'hold' | 'watch' | 'sell'
 export type Color = 'green' | 'yellow' | 'red'
 // Letter grade: A strong hold · B/C hold · D sell.
 export type Grade = 'A' | 'B' | 'C' | 'D'
+export type RatingAction = 'hold' | 'sell'
+export type AttentionState = 'clean' | 'monitor' | 'watch' | 'broken'
+export type TechnicalState = 'above_ema20' | 'below_ema20' | 'extended_below_ema20' | 'no_price_data'
 
 // Latest thesis-drift decision for a position.
 export interface Decision {
@@ -15,7 +18,41 @@ export interface Decision {
   drivers: string[]
   confidence: number
   model_used: string
+  compute_source?: string
   decided_at: string
+}
+
+// Canonical synchronized rating. Prefer this over legacy Decision.
+export interface Rating {
+  action: RatingAction
+  grade: Grade
+  attention_state: AttentionState
+  risk_score: number
+  risk_components: Record<string, number>
+  latest_close: number | null
+  ema20: number | null
+  price_vs_ema20_pct: number | null
+  technical_state: TechnicalState
+  deterministic_grade: Grade
+  llm_grade: Grade | null
+  final_grade: Grade
+  note: string
+  drivers: string[]
+  confidence: number
+  model_used: string
+  compute_source?: string
+  rating_version: string
+  decided_at: string
+}
+
+// Sparkline payload with price closes and server-computed EMA20 overlay.
+export interface SparklineData {
+  closes: number[]
+  ema20: Array<number | null>
+  latest_close: number | null
+  latest_ema20: number | null
+  price_vs_ema20_pct: number | null
+  technical_state: TechnicalState
 }
 
 // One upcoming catalyst.
@@ -79,7 +116,8 @@ export interface PositionSummary {
   has_overdue_catalyst: boolean
   thesis: string
   n_files: number
-  spark: number[] | null
+  spark: SparklineData | null
+  rating: Rating | null
   decision: Decision | null
 }
 
@@ -103,7 +141,9 @@ export interface PositionDetail extends PositionSummary {
 export interface RecomputeResponse {
   ticker: string
   scheduled: boolean
+  rating: Rating | null
   decision: Decision | null
+  refresh?: Record<string, unknown> | null
 }
 
 // POST /api/positions/recompute (whole-portfolio) response.
@@ -113,6 +153,12 @@ export interface RecomputeAllResponse {
   skipped: number
   errors: number
   holdings: number
+  refresh?: Record<string, unknown> | null
+}
+
+export interface DeleteHoldingResponse {
+  ticker: string
+  deleted: Record<string, number>
 }
 
 // GET /api/status snapshot.

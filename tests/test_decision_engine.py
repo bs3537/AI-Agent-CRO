@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO / "src"))
 from sma_monitor.decision.engine import (  # noqa: E402
     DECISION_OUTPUT_SCHEMA,
     decide,
+    decide_with_grade,
     decision_inputs_hash,
     thesis_hash,
 )
@@ -90,34 +91,35 @@ def test_heuristic_watch_on_alert_band_score():
     assert d.verdict == "watch" and d.color == "yellow"
 
 
-# The PLAN guard: severity ≥ 4 can never resolve to HOLD, even if the model
-# (here a fake provider) returns "hold".
-def test_sev4_forces_at_least_watch():
+# LLM-final mode: severe deterministic/red-team inputs are prompt context, but
+# a valid LLM grade remains the final decision.
+def test_llm_grade_is_authoritative_even_with_sev4():
     c = _candidate(bears=[_bear(4)], max_severity=4)
-    provider = _FakeProvider({"verdict": "hold", "note": "looks fine",
+    provider = _FakeProvider({"llm_grade": "A", "note": "looks fine",
                               "drivers": [], "confidence": 0.9})
     d = decide(c, "th", "ih", provider=provider)
-    assert d.verdict == "watch" and d.color == "yellow"
-    assert "Auto-escalated" in d.note
+    assert d.verdict == "hold" and d.color == "green"
+    assert "Auto-escalated" not in d.note
 
 
 # The LLM path parses the provider's JSON into a PositionDecision and labels it.
 def test_llm_path_parses_and_labels():
     c = _candidate(bears=[_bear(2)], max_severity=2)
-    provider = _FakeProvider({"verdict": "sell", "note": "thesis broken",
+    provider = _FakeProvider({"llm_grade": "D", "note": "thesis broken",
                               "drivers": ["failed endpoint"], "confidence": 0.77})
-    d = decide(c, "th", "ih", provider=provider)
+    d, llm_grade = decide_with_grade(c, "th", "ih", provider=provider)
     assert d.verdict == "sell" and d.color == "red"
+    assert llm_grade == "D"
     assert d.model_used == "fake-llm" and d.confidence == 0.77
     assert d.drivers == ["failed endpoint"]
 
 
-# An unparseable verdict from the model is treated as needing attention (watch),
-# never silently dropped.
-def test_llm_bad_verdict_defaults_to_watch():
-    provider = _FakeProvider({"verdict": "🤷", "note": "n", "drivers": [], "confidence": 0.5})
+# An unparseable grade falls back to the deterministic path.
+def test_llm_bad_grade_uses_deterministic_fallback():
+    provider = _FakeProvider({"llm_grade": "?", "note": "n", "drivers": [], "confidence": 0.5})
     d = decide(_candidate(), "th", "ih", provider=provider)
-    assert d.verdict == "watch"
+    assert d.verdict == "hold"
+    assert d.model_used == "heuristic-v1"
 
 
 # inputs_hash changes when a new score id enters the evidence set — the signal
@@ -143,13 +145,23 @@ def test_thesis_edit_changes_inputs_hash():
     assert h_old != h_new
 
 
-# The output schema the provider is constrained to never asks for color
-# (engine derives it) and requires the four decision fields.
+# The output schema the provider is constrained to asks Codex for a structured
+# grade assessment; action/verdict/color are derived by the engine.
 def test_output_schema_shape():
     props = DECISION_OUTPUT_SCHEMA["properties"]
     assert "color" not in props
-    assert set(DECISION_OUTPUT_SCHEMA["required"]) == {"verdict", "note", "drivers", "confidence"}
-    assert props["verdict"]["enum"] == ["hold", "watch", "sell"]
+    assert "verdict" not in props
+    assert set(DECISION_OUTPUT_SCHEMA["required"]) == {
+        "llm_grade",
+        "thesis_clause_impacts",
+        "hard_breaker",
+        "technical_assessment",
+        "note",
+        "drivers",
+        "confidence",
+    }
+    assert props["llm_grade"]["enum"] == ["A", "B", "C", "D"]
+    assert "technical_assessment" in props
 
 
 # In-process fake provider returning fixed JSON — no subprocess.

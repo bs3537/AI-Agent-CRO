@@ -11,6 +11,7 @@ import logging
 import sys
 
 from ..config import settings
+from ..db import init_db
 from ..logging_setup import setup_logging
 from ..paths import ensure_dirs
 from .engine import run_decisions
@@ -82,6 +83,7 @@ def main(argv=None):
     ensure_dirs()
     setup_logging(settings.log_level)
     log = logging.getLogger("sma_monitor.decision")
+    init_db()
     init_decision_schema()
 
     parser = argparse.ArgumentParser(prog="python -m sma_monitor.decision")
