@@ -38,13 +38,12 @@ outputType = "webview"
 name = "Backend API"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python -m sma_monitor.api --host localhost --port 8000"
-waitForPort = 8000
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "(test -f .venv/bin/pip || python -m venv .venv) && (.venv/bin/python -c 'import fastapi' 2>/dev/null || .venv/bin/pip install --no-user -q -r requirements.txt -e .) && .venv/bin/python -m sma_monitor.api --host localhost --port 8000"
 
 [[ports]]
 localPort = 5000
@@ -53,12 +52,11 @@ externalPort = 80
 [[ports]]
 localPort = 8000
 externalPort = 8000
-exposeLocalhost = true
 
 [deployment]
 deploymentTarget = "vm"
-run = ["bash", "-c", ".pythonlibs/bin/python -m sma_monitor.api --host 0.0.0.0 --port 5000"]
-build = ["bash", "-c", "cd frontend && npm install && npm run build"]
+run = ["bash", "-c", ".venv/bin/python -m sma_monitor.api --host 0.0.0.0 --port 5000"]
+build = ["bash", "-c", "python -m venv .venv && .venv/bin/pip install --no-user -r requirements.txt -e . && cd frontend && npm install && npm run build"]
 
 [userenv]
 

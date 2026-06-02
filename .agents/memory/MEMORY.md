@@ -1,0 +1,2 @@
+- [Workflow waitForPort pitfall](workflow-port-detection.md) — compound shell commands need waitForPort removed or Replit's port tracker misses the child server process.
+- [Deployment build fix](deployment-build.md) — uv sync no-op via empty pyproject.toml deps; pip install with --no-user into .venv for the actual build.

@@ -1,0 +1,104 @@
+This is a **virtualenv targeting bug**, not a bad package.
+
+`uv sync` is trying to install `typing_inspection` into:
+
+```bash
+/nix/store/.../python3-3.11.14/lib/python3.11/site-packages/
+```
+
+That path is Replit/Nix’s immutable system Python store, so writes fail with `Permission denied`. `uv` should instead install into a writable project env such as `.venv` or Replit’s `.pythonlibs`. `uv` normally creates a project virtualenv at `.venv`, and `UV_PROJECT_ENVIRONMENT` can override that path; if it points to a system prefix, `uv` will target that system environment, which is explicitly risky. ([Astral Docs][1])
+
+## Fix to try first
+
+Edit `.replit` and force deployment to use a writable env:
+
+```toml
+packager.language = "python3"
+
+[packager.features]
+guessImports = false
+packageSearch = false
+enabledForHosting = false
+
+[deployment]
+build = "rm -rf .venv && UV_PROJECT_ENVIRONMENT=.venv uv sync --locked --no-dev"
+run = "UV_PROJECT_ENVIRONMENT=.venv uv run python main.py"
+```
+
+Replace `python main.py` with your actual start command, for example:
+
+```toml
+run = "UV_PROJECT_ENVIRONMENT=.venv uv run uvicorn main:app --host 0.0.0.0 --port $PORT"
+```
+
+or, if your package exposes a console script:
+
+```toml
+run = "UV_PROJECT_ENVIRONMENT=.venv uv run sma-monitor"
+```
+
+Replit supports explicit deployment `build` and `run` commands in `.replit`; its docs list `deployment.build` as the command before running the deployment and `deployment.run` as the command that starts it. ([Replit Docs][2])
+
+## Also clean committed env folders
+
+In the Replit shell:
+
+```bash
+rm -rf .venv .pythonlibs
+git rm -r --cached .venv .pythonlibs 2>/dev/null || true
+printf "\n.venv/\n.pythonlibs/\n" >> .gitignore
+uv lock
+uv sync
+```
+
+Then commit:
+
+```bash
+git add pyproject.toml uv.lock .replit .gitignore
+git commit -m "Fix Replit uv deployment environment"
+```
+
+## Why disable Replit auto-packager?
+
+Your log shows Replit’s package-install phase running `uv lock` / `uv sync` automatically before deployment. Replit has automatic dependency detection and packager settings controlled through `.replit`; `guessImports` and `enabledForHosting` are configurable. ([Replit Docs][3])
+
+You want **one package installer**, not Replit auto-packager plus your own deployment build. The config above disables the auto guesser and makes your deployment deterministic.
+
+## Verify the fix
+
+Run this in the Replit shell:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv uv run python - <<'PY'
+import sys, sysconfig
+print("executable:", sys.executable)
+print("prefix:", sys.prefix)
+print("site-packages:", sysconfig.get_paths()["purelib"])
+PY
+```
+
+Correct output should point to something like:
+
+```bash
+/home/runner/workspace/.venv/...
+```
+
+It must **not** point to:
+
+```bash
+/nix/store/...
+```
+
+## Replit Agent prompt
+
+Paste this to Replit Agent:
+
+```text
+Fix the deployment failure where uv is trying to install Python packages into /nix/store/.../site-packages and failing with permission denied. Do not install into system Python. Update .replit so deployment disables Replit auto package guessing for hosting and runs uv sync with UV_PROJECT_ENVIRONMENT=.venv. Ensure deployment run command also uses UV_PROJECT_ENVIRONMENT=.venv and uv run. Remove any committed .venv or .pythonlibs from git tracking and add them to .gitignore. Do not use sudo. Do not use uv --system.
+```
+
+Most likely final patch: force `UV_PROJECT_ENVIRONMENT=.venv`, disable Replit auto package installation for hosting, and run the app through `uv run`.
+
+[1]: https://docs.astral.sh/uv/concepts/projects/config/?utm_source=chatgpt.com "Configuring projects | uv"
+[2]: https://docs.replit.com/references/project-setup/configuration "Replit Docs"
+[3]: https://docs.replit.com/references/project-setup/dependency-management "Replit Docs"
