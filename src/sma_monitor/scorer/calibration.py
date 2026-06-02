@@ -85,7 +85,7 @@ def run(*, api_key: str | None, offline: bool = False) -> list[dict]:
     if not cset.entries:
         return []
     buckets = load_buckets()
-    # Provider when available (Codex login); else the heuristic baseline.
+    # Provider when available; else the heuristic baseline.
     # W9: calibration mirrors the scorer, so it uses the "scorer" tier too.
     provider = get_provider(prefer_offline=offline, stage="scorer")
     out: list[dict] = []

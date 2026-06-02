@@ -1,6 +1,6 @@
 """LLM-backed red team.
 
-Routes the red-team pass through the pluggable LLM provider (Codex by
+Routes the red-team pass through the pluggable LLM provider (OpenRouter by
 default; see `sma_monitor.llm`). The system prompt carries the full warning-
 signs catalog. Output is schema-conforming JSON; we then drop any cited
 warning-sign id that isn't in the catalog (voice constraint: cite real ids
@@ -13,7 +13,8 @@ from .catalog import Catalog, by_id
 from .prompt import build_system_prompt, build_user_message
 from .schema import MatchedWarningSign, RedTeamCandidate, RedTeamResult
 
-# Back-compat label persisted to red_team_passes.model_used.
+# Back-compat default for call sites that still accept a model argument. Actual
+# LLM rows persist the provider's concrete model_label.
 DEFAULT_MODEL = "codex-cli"
 MAX_TOKENS = 800
 

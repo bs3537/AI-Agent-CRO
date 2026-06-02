@@ -1,6 +1,6 @@
 """LLM-backed severity scoring.
 
-Routes scoring through the pluggable LLM provider (Codex by default; see
+Routes scoring through the pluggable LLM provider (OpenRouter by default; see
 `sma_monitor.llm`). The provider returns schema-conforming JSON which we
 validate into AxisScores. When no provider is available the pipeline uses
 the deterministic heuristic scorer instead — this module is never reached
@@ -12,8 +12,8 @@ from ..llm import LLMError, LLMProvider
 from .prompt import SYSTEM_PROMPT, build_user_message
 from .schema import AxisScores, ScoreCandidate
 
-# Back-compat label persisted to scores.model_used. With Codex the concrete
-# model (gpt-5.x) is whatever the logged-in account selects; we don't pin it.
+# Back-compat default for call sites that still accept a model argument. Actual
+# LLM rows persist the provider's concrete model_label.
 DEFAULT_MODEL = "codex-cli"
 MAX_TOKENS = 512
 

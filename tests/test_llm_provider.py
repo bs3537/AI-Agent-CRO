@@ -1,8 +1,9 @@
-"""W1 tests — LLM provider abstraction + Codex CLI client.
+"""W1 tests — LLM provider abstraction + OpenRouter/Codex clients.
 
 Two layers:
-  - subprocess: drive the real CodexProvider against a stub `codex` (tests/stub_codex.py)
-    to prove complete_json/complete_text actually shell out and parse correctly.
+  - subprocess: drive the CodexProvider fallback against a stub `codex`
+    (tests/stub_codex.py) to prove complete_json/complete_text shell out and
+    parse correctly.
   - in-process: a fake provider exercises score_with_llm / red_team_with_llm parsing +
     catalog enrichment without any subprocess.
 """
@@ -38,12 +39,27 @@ def test_codex_available_with_stub(stub_codex):
     assert codex_available() is True
 
 
-# get_provider() returns a CodexProvider when the stub is present, and honors
-# prefer_offline by returning None.
-def test_get_provider_selects_codex(stub_codex):
+# get_provider() returns a CodexProvider only when OpenRouter is not configured,
+# and honors prefer_offline by returning None.
+def test_get_provider_selects_codex_when_openrouter_unconfigured(stub_codex, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr("sma_monitor.config.settings.openrouter_api_key", None)
     from sma_monitor.llm import get_provider
-    assert get_provider() is not None
+    p = get_provider()
+    assert p is not None
+    assert p.model_label == "codex-cli"
     assert get_provider(prefer_offline=True) is None
+
+
+def test_get_provider_prefers_openrouter_over_codex(stub_codex, monkeypatch):
+    from sma_monitor.llm import get_provider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "minimax/minimax-m2.7")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "xiaomi/mimo-v2.5-pro")
+    p = get_provider(stage="decision")
+    assert p is not None
+    assert p.model_label == "openrouter:minimax/minimax-m2.7"
 
 
 # complete_json shells out to the stub and returns a schema-conforming object.
@@ -77,11 +93,22 @@ def test_get_provider_uses_openrouter_when_codex_unavailable(monkeypatch):
 
     monkeypatch.setattr("sma_monitor.llm.codex_client.codex_available", lambda: False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.setenv("OPENROUTER_MODEL", "xiaomi/mimo-v2.5-pro")
-    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "minimax/minimax-m2.7")
+    monkeypatch.setenv("OPENROUTER_MODEL", "minimax/minimax-m2.7")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "xiaomi/mimo-v2.5-pro")
     p = provider_mod.get_provider(stage="decision")
     assert p is not None
-    assert p.model_label == "openrouter:xiaomi/mimo-v2.5-pro"
+    assert p.model_label == "openrouter:minimax/minimax-m2.7"
+
+
+def test_openrouter_default_model_order(monkeypatch):
+    from sma_monitor.llm.openrouter_client import fallback_models, primary_model
+
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_FALLBACK_MODELS", raising=False)
+    monkeypatch.setattr("sma_monitor.config.settings.openrouter_model", None)
+    monkeypatch.setattr("sma_monitor.config.settings.openrouter_fallback_models", None)
+    assert primary_model() == "minimax/minimax-m2.7"
+    assert fallback_models() == ["xiaomi/mimo-v2.5-pro"]
 
 
 def test_openrouter_provider_parses_json(monkeypatch):
@@ -119,7 +146,7 @@ def test_fallback_provider_uses_fallback_after_primary_error():
             raise LLMError("codex broken")
 
     class GoodProvider:
-        model_label = "openrouter:xiaomi/mimo-v2.5-pro"
+        model_label = "openrouter:minimax/minimax-m2.7"
 
         def complete_json(self, **kwargs):
             return {"ok": True}
@@ -129,7 +156,7 @@ def test_fallback_provider_uses_fallback_after_primary_error():
 
     p = FallbackProvider(primary=BadProvider(), fallbacks=[GoodProvider()])
     assert p.complete_json(system="s", user="u") == {"ok": True}
-    assert p.model_label == "openrouter:xiaomi/mimo-v2.5-pro"
+    assert p.model_label == "openrouter:minimax/minimax-m2.7"
 
 
 # An in-process fake provider returning fixed JSON — used to test the scorer

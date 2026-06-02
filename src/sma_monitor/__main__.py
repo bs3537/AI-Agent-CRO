@@ -5,7 +5,7 @@ Run: python -m sma_monitor
 Verifies:
   - config loads from .env
   - data directories are created
-  - SQLite events table initializes
+  - Turso events table initializes
   - event_id generation works
   - reports which later-phase secrets are still missing
 """
@@ -13,11 +13,11 @@ import logging
 import sys
 
 from .config import settings
-from .db import init_db
+from .db import database_backend, init_db
 from .decision.store import init_decision_schema
 from .identity import article_event_id
 from .logging_setup import setup_logging
-from .paths import DATA_ROOT, DB_PATH, ensure_dirs
+from .paths import DATA_ROOT, ensure_dirs
 from .news.fmp_client import init_fmp_schema
 from .news.store import init_news_schema
 from .orchestrator.store import init_orchestrator_schema
@@ -29,7 +29,7 @@ from .scorer.store import init_scores_schema
 
 
 # Bootstrap entry point invoked by `python -m sma_monitor`. Initializes
-# the runtime (logging, dirs, every phase's SQLite schema), verifies
+# the runtime (logging, dirs, every phase's DB schema), verifies
 # event_id generation, and reports which per-phase secrets are missing.
 def main() -> int:
     setup_logging(settings.log_level)
@@ -50,7 +50,7 @@ def main() -> int:
     init_outputs_schema()
     init_orchestrator_schema()
     init_decision_schema()
-    log.info("db_initialized", extra={"db_path": str(DB_PATH)})
+    log.info("db_initialized", extra={"db_backend": database_backend()})
 
     sample = article_event_id(
         url="https://example.com/a", title="Test", lede="First sentence."

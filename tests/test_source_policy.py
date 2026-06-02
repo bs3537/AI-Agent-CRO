@@ -2,7 +2,7 @@
 
 Verifies the single-source-of-truth precedence (financials SEC->FMP, biomed vs
 general literature), the API-verification set, and that the decision system
-prompt actually carries the source policy Codex must follow.
+prompt actually carries the source policy the LLM must follow.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_literature_order_branches():
     assert sp.literature_order(gen) == sp.GENERAL_LITERATURE_ORDER
 
 
-# The decision system prompt carries the source policy Codex must follow.
+# The decision system prompt carries the source policy the LLM must follow.
 def test_system_prompt_carries_source_policy():
     from sma_monitor.decision.prompt import build_system_prompt
     text = build_system_prompt()

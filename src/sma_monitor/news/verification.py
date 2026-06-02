@@ -2,14 +2,14 @@
 
 The source policy requires that data from external APIs (FMP financials,
 Semantic Scholar literature — see source_policy.API_SOURCES_REQUIRING_VERIFICATION)
-be corroborated by an independent web search before Codex trusts it. This module
+be corroborated by an independent web search before the LLM trusts it. This module
 runs that cross-check via Brave and returns the corroborating sources WITH their
-credibility tiers, so Codex can weigh them under the decision prompt's rule
+credibility tiers, so the LLM can weigh them under the decision prompt's rule
 (uncorroborated API data is low-confidence and must not escalate a verdict).
 
 This is a corroboration SIGNAL, not a numeric fact-check: a keyword search can't
 confirm a specific figure, so the boolean only means "an independent, non-junk
-source was found," and the real judgment is Codex's, informed by the attached
+source was found," and the real judgment is the LLM's, informed by the attached
 sources. Reuses brave_client (search) and source_tiers (credibility).
 """
 from __future__ import annotations
@@ -66,7 +66,7 @@ def verify(
 
 
 # Corroborate an FMP financial snapshot: search recent independent coverage of
-# the company's financials so Codex can compare it against the FMP figures.
+# the company's financials so the LLM can compare it against the FMP figures.
 def verify_fmp(company: str, *, api_key: str | None, **kw) -> Verification:
     return verify(f"{company} quarterly financial results earnings", api_key=api_key, **kw)
 

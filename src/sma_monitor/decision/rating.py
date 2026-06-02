@@ -4,7 +4,7 @@ The grade is the canonical portfolio-facing signal:
   A/B/C -> HOLD with rising attention
   D     -> SELL / thesis broken
 
-Codex is the final decision-maker when it returns a valid grade. The
+The configured LLM is the final decision-maker when it returns a valid grade. The
 deterministic risk score remains stored and visible as an audit/input layer;
 it is only used as the fallback when no LLM grade is available.
 """
@@ -181,7 +181,7 @@ def _resolve_llm_grade(
         return deterministic
     # LLM-final mode: deterministic risk, technicals, severity, and source
     # policy are advisory inputs to the prompt, not post-hoc overrides. If
-    # Codex returns a valid A/B/C/D grade, use it exactly.
+    # the LLM returns a valid A/B/C/D grade, use it exactly.
     return _valid_grade(llm_grade)
 
 

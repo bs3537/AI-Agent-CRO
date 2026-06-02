@@ -1,8 +1,8 @@
 """OpenRouter LLM backend.
 
-OpenRouter is the paid API fallback behind the Codex CLI subscription path.
-It implements the same provider contract as Codex so scoring, red-team,
-decision, digest, and chat callers keep using `get_provider()`.
+OpenRouter is the primary paid API backend. It implements the same provider
+contract as the local Codex CLI fallback so scoring, red-team, decision,
+digest, and chat callers keep using `get_provider()`.
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ from .provider import LLMError
 
 log = logging.getLogger("sma_monitor.llm.openrouter_client")
 
-DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro"
-DEFAULT_FALLBACK_MODEL = "minimax/minimax-m2.7"
+DEFAULT_MODEL = "minimax/minimax-m2.7"
+DEFAULT_FALLBACK_MODEL = "xiaomi/mimo-v2.5-pro"
 DEFAULT_FILE_MODEL = "google/gemini-3.1-flash-lite"
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_TIMEOUT_S = 180.0

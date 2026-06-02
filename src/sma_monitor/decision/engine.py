@@ -4,10 +4,10 @@ For each holding it bundles the long thesis, scored articles, red-team bear
 cases, catalysts, and open P&L (a DecisionCandidate), then produces one
 HOLD/WATCH/SELL verdict with a short note. Offline-first: a deterministic
 heuristic verdict (max red-team severity + composite band) runs whenever no
-LLM provider is available; otherwise the Codex provider (W1) is asked for the
+LLM provider is available; otherwise the configured LLM provider is asked for the
 final grade under a strict output schema. Deterministic scores, red-team passes,
-FMP metrics, and EMA20 state guide the prompt; when Codex returns a valid grade,
-that LLM grade is authoritative.
+FMP metrics, and EMA20 state guide the prompt; when the LLM returns a valid
+grade, that grade is authoritative.
 
 Idempotency mirrors the scorer/red-team: inputs_hash captures the thesis plus
 the exact evidence set, so run_decisions skips holdings whose thesis and
@@ -453,7 +453,7 @@ def run_decisions(
         log.warning("no_holdings_for_decisions", extra={"missing_sidecars": missing})
         return {"decided": 0, "skipped": 0, "errors": 0, "holdings": 0}
 
-    # Codex when available; otherwise None → heuristic. --offline forces None.
+    # LLM provider when available; otherwise None → heuristic. --offline forces None.
     # W9: low-volume synthesis runs on the deeper "decision" tier.
     provider = get_provider(prefer_offline=offline, stage="decision")
     model_label = provider.model_label if provider else HEURISTIC_MODEL
@@ -496,7 +496,7 @@ def run_decisions(
         work.append((h, candidate, th, ih))
 
     # Per-holding compute (runs in the worker pool): corroborate the FMP
-    # financials against the web (Brave) so Codex can weigh them per the source
+    # financials against the web (Brave) so the LLM can weigh them per the source
     # policy — display-only, deliberately NOT in inputs_hash — then ask for the
     # verdict. Live Brave call is skipped offline / keyless.
     def _compute(
@@ -535,7 +535,7 @@ def run_decisions(
         return decision, rating
 
     # Phase 2 (bounded concurrency): compute verdicts. Sequential on the
-    # heuristic path; ~SMA_LLM_CONCURRENCY codex processes when LLM-backed.
+    # heuristic path; ~SMA_LLM_CONCURRENCY calls when LLM-backed.
     results = map_concurrent(_compute, work, workers=workers)
 
     # Phase 3 (sequential writes): persist decisions, count failures.

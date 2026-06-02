@@ -29,7 +29,7 @@ from .store import init_red_team_schema, pick_candidates, save_red_team_pass
 
 log = logging.getLogger("sma_monitor.red_team.pipeline")
 
-# Signature shared by Claude + heuristic red-team runners so the pipeline
+# Signature shared by LLM + heuristic red-team runners so the pipeline
 # can swap them based on --offline / cost-degrade state.
 RedTeamFn = Callable[[RedTeamCandidate, Catalog], tuple[RedTeamResult, str]]
 
@@ -58,9 +58,9 @@ def run_red_team(
         log.warning("no_holdings_loaded")
         return {"ran": 0, "errors": 0, "skipped": 0}
 
-    # Use the LLM provider when available (Codex login); otherwise heuristic.
+    # Use the LLM provider when available; otherwise heuristic.
     # `--offline` forces heuristic; `api_key` no longer gates. W9: the red team
-    # is high-volume triage — runs on the "red_team" tier (model + effort).
+    # is high-volume triage — runs on the "red_team" tier for cost tracking.
     provider = get_provider(prefer_offline=offline, stage="red_team")
     if provider is None:
         def runner(c: RedTeamCandidate, cat: Catalog) -> tuple[RedTeamResult, str]:
@@ -118,7 +118,7 @@ def run_red_team(
         ))
 
     # Phase 2 (bounded concurrency): run the red team. Sequential on the
-    # heuristic path; ~SMA_LLM_CONCURRENCY codex processes when LLM-backed.
+    # heuristic path; ~SMA_LLM_CONCURRENCY calls when LLM-backed.
     workers = llm_concurrency() if provider is not None else 1
     def _run_candidate(c: RedTeamCandidate) -> tuple[RedTeamResult, str]:
         return runner(c, catalog)

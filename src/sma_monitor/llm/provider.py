@@ -144,8 +144,10 @@ class FallbackProvider:
 # Return the active provider, or None when no backend is available (the
 # signal for callers to use their heuristic fallback). `prefer_offline`
 # forces None so `--offline` flags and tests bypass the model entirely.
-# `stage` (W9) selects that stage's tiered model + reasoning effort; omit it
-# to get the account default (no effort flag).
+# OpenRouter is primary when an API key is configured. Codex is only an
+# emergency fallback for hosts that have no OpenRouter key but do have a
+# local Codex login. `stage` still maps to cost-ledger kind, and only affects
+# Codex's model/effort if Codex is selected.
 def get_provider(
     *, prefer_offline: bool = False, stage: str | None = None
 ) -> LLMProvider | None:
@@ -173,19 +175,7 @@ def get_provider(
             *[OpenRouterProvider(model=m, cost_kind=cost_kind) for m in fallback_models()],
         ]
 
-    if codex is not None and openrouter_chain:
-        return FallbackProvider(
-            primary=codex,
-            fallbacks=openrouter_chain,
-            stage=stage,
-            alert_on_primary_failure=True,
-        )
-    if codex is not None:
-        return codex
     if openrouter_chain:
-        from .alerts import alert_codex_unavailable
-
-        alert_codex_unavailable(stage=stage, fallback_label=openrouter_chain[0].model_label)
         if len(openrouter_chain) == 1:
             return openrouter_chain[0]
         return FallbackProvider(
@@ -193,6 +183,8 @@ def get_provider(
             fallbacks=openrouter_chain[1:],
             stage=stage,
         )
+    if codex is not None:
+        return codex
 
     return None
 

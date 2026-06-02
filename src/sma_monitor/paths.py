@@ -18,8 +18,8 @@ LOGS_DIR = DATA_ROOT / "logs"                     # Phase 6: cron/systemd log mi
 FACTOR_BUCKETS_DIR = DATA_ROOT / "factor_buckets" # Phase 2: 12-bucket taxonomy
 TUNING_DIR = DATA_ROOT / "tuning"                 # Phase 7: dated tuning reports
 
-# Single SQLite database shared by every phase. WAL mode + foreign keys
-# are enabled in db.py's connection helper.
+# Test-only SQLite database path. App runtime uses Turso/libSQL through
+# db.py; this path is used only when SMA_TEST_SQLITE=1.
 DB_PATH = DATA_ROOT / "sma.db"
 
 # Full list of directories that ensure_dirs() must create at bootstrap.

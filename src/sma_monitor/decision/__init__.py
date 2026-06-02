@@ -4,7 +4,7 @@ A per-position synthesis layered on top of the phase 1–7 pipeline. For each
 holding it folds the long thesis together with the scored articles, red-team
 bear cases, catalysts, open P&L, and EMA20 trend into one LLM-final A/B/C/D
 rating plus a short note. Offline-first deterministic fallback remains
-available when Codex is unavailable. Output persists to the legacy
+available when no LLM provider is available. Output persists to the legacy
 position_decisions table and the V2 position_ratings table that powers the
 synchronized grade/action dashboard.
 """

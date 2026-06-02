@@ -34,53 +34,56 @@ CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen);
 """
 
 
-# Context manager that yields a DB-API connection. Local dev/test defaults to
-# SQLite at DATA_ROOT/sma.db. Deployment can use Turso/libSQL by setting both
-# TURSO_DATABASE_URL and TURSO_AUTH_TOKEN. Set SMA_DB_BACKEND=sqlite to force
-# local SQLite even when Turso credentials are present.
+# Context manager that yields a DB-API connection. Runtime DB access is Turso
+# only and requires TURSO_DATABASE_URL + TURSO_AUTH_TOKEN. Unit tests can opt
+# into a local SQLite sandbox by setting SMA_TEST_SQLITE=1 before import; that
+# path is intentionally not exposed as an app/runtime backend.
 @contextmanager
 def connection() -> Iterator[Any]:
-    remote = _use_turso()
-    lock = _TURSO_LOCK if remote else _NullLock()
+    use_turso = _use_turso()
+    lock = _TURSO_LOCK if use_turso else _NullLock()
     with lock:
-        conn = _connect(remote=remote)
+        conn = _connect(use_turso=use_turso)
         try:
             yield conn
-            if not remote:
+            if not use_turso:
                 conn.commit()
         except Exception:
-            if not remote:
+            if not use_turso:
                 conn.rollback()
             raise
         finally:
             conn.close()
 
 
-def _connect(*, remote: bool | None = None) -> Any:
-    remote = _use_turso() if remote is None else remote
-    if remote:
+def _connect(*, use_turso: bool | None = None) -> Any:
+    use_turso = _use_turso() if use_turso is None else use_turso
+    if use_turso:
         conn = _connect_turso()
-        _configure_connection(conn, remote=True)
+        _configure_connection(conn, use_turso=True)
         return conn
     conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
-    _configure_connection(conn, remote=False)
+    _configure_connection(conn, use_turso=False)
     return conn
 
 
 def _use_turso() -> bool:
-    backend = os.environ.get("SMA_DB_BACKEND", "").strip().lower()
-    if backend == "sqlite":
-        return False
-    if backend == "turso":
-        return True
-    return bool(settings.turso_database_url and settings.turso_auth_token)
+    return not _use_test_sqlite()
+
+
+def _use_test_sqlite() -> bool:
+    return os.environ.get("SMA_TEST_SQLITE", "").strip() == "1"
+
+
+def database_backend() -> str:
+    return "turso" if _use_turso() else "sqlite-test"
 
 
 def _connect_turso() -> Any:
     if not settings.turso_database_url or not settings.turso_auth_token:
         raise RuntimeError(
-            "SMA_DB_BACKEND=turso requires TURSO_DATABASE_URL and TURSO_AUTH_TOKEN"
+            "Turso is the only runtime DB backend; set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN"
         )
     try:
         import libsql
@@ -94,8 +97,8 @@ def _connect_turso() -> Any:
     return _TursoConnection(conn)
 
 
-def _configure_connection(conn: Any, *, remote: bool) -> None:
-    if not remote:
+def _configure_connection(conn: Any, *, use_turso: bool) -> None:
+    if not use_turso:
         conn.execute("PRAGMA journal_mode = WAL")
     for pragma in (
         "PRAGMA foreign_keys = ON",

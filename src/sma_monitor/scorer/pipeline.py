@@ -40,14 +40,14 @@ from .store import (
 
 log = logging.getLogger("sma_monitor.scorer.pipeline")
 
-# Signature shared by the Claude scorer and the heuristic scorer so the
+# Signature shared by the LLM scorer and the heuristic scorer so the
 # pipeline can swap them transparently based on --offline / cost-degrade.
 Scorer = Callable[[ScoreCandidate], tuple[AxisScores, str]]
 
 
 # Score every (article, ticker) pair that lacks a score row at the current
-# MULTIPLIERS_VERSION. Routes to Claude or heuristic based on `offline`
-# and API-key presence. Returns a counts summary for logging.
+# MULTIPLIERS_VERSION. Routes to the configured LLM provider or heuristic based
+# on `offline` and provider availability. Returns a counts summary for logging.
 def score_unscored(
     *,
     api_key: str | None,
@@ -65,10 +65,10 @@ def score_unscored(
         return {"scored": 0, "errors": 0, "skipped": 0}
     buckets = load_buckets()
 
-    # Use the LLM provider when one is available (Codex login); otherwise
+    # Use the LLM provider when one is available; otherwise
     # fall back to the deterministic heuristic. `--offline` forces heuristic.
     # `api_key` is retained for signature compatibility but no longer gates.
-    # W9: high-volume triage runs on the "scorer" tier (model + reasoning effort).
+    # W9: high-volume triage runs on the "scorer" tier for cost tracking.
     provider = get_provider(prefer_offline=offline, stage="scorer")
     if provider is None:
         def scorer(c: ScoreCandidate) -> tuple[AxisScores, str]:
@@ -121,8 +121,8 @@ def score_unscored(
         ))
 
     # Phase 2 (bounded concurrency): score the candidates. Sequential on the
-    # heuristic path (workers=1); ~SMA_LLM_CONCURRENCY codex processes when an
-    # LLM provider is active.
+    # heuristic path (workers=1); ~SMA_LLM_CONCURRENCY calls when an LLM
+    # provider is active.
     workers = llm_concurrency() if provider is not None else 1
     results = map_concurrent(scorer, candidates, workers=workers)
 

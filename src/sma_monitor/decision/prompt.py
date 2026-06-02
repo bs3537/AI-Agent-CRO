@@ -70,7 +70,7 @@ observation that would change your grade. Neutral and specific — no \
 - Calibrate confidence to how much evidence you actually have.
 """
 
-# Source-provenance policy injected into the system prompt: how Codex must weigh
+# Source-provenance policy injected into the system prompt: how the LLM must weigh
 # evidence by where it came from, plus the rule that API-derived data needs Brave
 # corroboration. Mirrors news/source_policy.py (the single source of truth).
 _SOURCE_POLICY = """\
@@ -243,7 +243,7 @@ def _fmt_fmp(metrics: dict | None) -> str:
 
 # Render the Brave web-corroboration of the FMP data (the source-policy
 # verification): whether an independent source backs the API figures, plus the
-# top corroborating sources with their credibility tiers, for Codex to weigh.
+# top corroborating sources with their credibility tiers, for the LLM to weigh.
 def _fmt_fmp_corroboration(corr: dict | None) -> str:
     if not corr:
         return "  Web corroboration (Brave): not checked."
