@@ -1,0 +1,101 @@
+The original Python/Nix permission issue is gone. New failure is **frontend TypeScript build**, specifically MUI icon declaration resolution.
+
+Your deploy now reaches:
+
+```bash
+> sma-monitor-frontend@0.1.0 build
+> tsc -b && vite build
+```
+
+Then fails on imports like:
+
+```ts
+import RefreshIcon from "@mui/icons-material/Refresh";
+```
+
+TypeScript sees the JS file but cannot find the `.d.ts` type declaration for the icon modules. The repeated errors are all the same class: `TS7016` for `@mui/icons-material/*`. 
+
+## Fix
+
+In `frontend/package.json`, make sure these are real dependencies, not missing/transitive:
+
+```json
+{
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^7.0.0",
+    "@mui/icons-material": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "vite": "^6.0.0"
+  }
+}
+```
+
+Use the same major version for:
+
+```bash
+@mui/material
+@mui/icons-material
+```
+
+Do **not** mix MUI v5 material with v7 icons, or vice versa.
+
+## Reinstall frontend dependencies cleanly
+
+Run this from Replit shell:
+
+```bash
+cd frontend
+
+rm -rf node_modules package-lock.json
+
+npm install @mui/material @mui/icons-material @emotion/react @emotion/styled
+npm install -D typescript @types/react @types/react-dom vite
+
+npm run build
+```
+
+Then commit the regenerated lockfile:
+
+```bash
+cd ..
+git add frontend/package.json frontend/package-lock.json
+git commit -m "Fix MUI icon TypeScript declarations"
+```
+
+## If you need a fast unblock
+
+Create:
+
+```bash
+frontend/src/types/mui-icons.d.ts
+```
+
+Add:
+
+```ts
+declare module "@mui/icons-material/Refresh";
+declare module "@mui/icons-material/Search";
+declare module "@mui/icons-material/Send";
+declare module "@mui/icons-material/UploadFile";
+declare module "@mui/icons-material/TrendingUp";
+declare module "@mui/icons-material/TrendingDown";
+```
+
+But this is a **patch**, not the preferred fix. It silences TypeScript by treating those icon imports as `any`. The cleaner fix is reinstalling/pinning MUI packages correctly.
+
+## Also note
+
+Your deployment still shows Python packages being installed into both:
+
+```bash
+./.pythonlibs/...
+./.venv/...
+```
+
+That is no longer the failing issue, but it is messy. Once frontend builds, I would still make deployment deterministic by using only `.venv` for Python and only `frontend/package-lock.json` for frontend.
