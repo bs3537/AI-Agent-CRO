@@ -46,6 +46,7 @@ export default function ChatPanel({
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
+  const [thinkingSecs, setThinkingSecs] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -57,6 +58,13 @@ export default function ChatPanel({
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight })
   }, [messages, sending])
+
+  useEffect(() => {
+    if (!sending) { setThinkingSecs(0); return }
+    setThinkingSecs(0)
+    const id = setInterval(() => setThinkingSecs((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [sending])
 
   const visibleMessages = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -176,7 +184,7 @@ export default function ChatPanel({
           ))}
           {sending && (
             <Typography variant="body2" sx={{ opacity: 0.55 }}>
-              Thinking…
+              Thinking… {thinkingSecs}s
             </Typography>
           )}
         </Stack>
