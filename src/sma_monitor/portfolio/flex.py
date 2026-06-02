@@ -10,6 +10,7 @@ the scheduler in Phase 6 owns the cadence — this module just executes one pull
 """
 from __future__ import annotations
 
+import logging
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -19,6 +20,11 @@ from pathlib import Path
 import httpx
 
 from .schema import Position
+
+log = logging.getLogger(__name__)
+
+# Free public FX API — no key required. Returns rates relative to USD base.
+_FX_API_URL = "https://open.er-api.com/v6/latest/USD"
 
 # Flex Web Service URLs. Two endpoints, used in sequence: SendRequest gets a
 # ReferenceCode, then GetStatement is polled until the report is generated.
@@ -95,6 +101,41 @@ def load_xml_from_file(path: Path) -> FlexRawStatement:
     )
 
 
+# --- FX helpers --------------------------------------------------------------
+
+
+def _fetch_fx_rates() -> dict[str, float]:
+    """Fetch live USD-base exchange rates from open.er-api.com.
+
+    Returns a mapping of currency code → units-per-USD (e.g. {"JPY": 157.3}).
+    On any network/parse failure returns an empty dict so callers can decide
+    whether to proceed with a warning or skip the conversion.
+    """
+    try:
+        resp = httpx.get(_FX_API_URL, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+        rates: dict[str, float] = data.get("rates", {})
+        log.info("FX rates fetched: %d currencies (base=USD)", len(rates))
+        return rates
+    except Exception as exc:
+        log.warning("FX rate fetch failed (%s) — non-USD fallback values will not be converted", exc)
+        return {}
+
+
+def _to_usd(local_value: float, currency: str, rates: dict[str, float]) -> float | None:
+    """Convert *local_value* in *currency* to USD using *rates*.
+
+    Returns None if the rate is unavailable so the caller can warn and skip.
+    """
+    if currency == "USD":
+        return local_value
+    rate = rates.get(currency)
+    if rate is None or rate == 0.0:
+        return None
+    return local_value / rate
+
+
 # --- Parsing -----------------------------------------------------------------
 
 
@@ -107,6 +148,11 @@ def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Positio
     <EquitySummaryByReportDateInBase> (most recent reportDate), then
     <ChangeInNAV endingValue=...>. The Flex Query template must enable at
     least one of these sections — fail loudly if none are found.
+
+    Market values are taken from positionValueInBase (already USD-converted by
+    IBKR). When that field is absent for a non-USD position the parser fetches
+    live exchange rates and converts automatically, logging a warning so the
+    operator knows the Flex template should be fixed.
     """
     root = ET.fromstring(xml_text)
 
@@ -117,19 +163,48 @@ def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Positio
             "or 'Change in NAV' in the Flex Query template."
         )
 
+    # Lazily fetched — only populated if at least one position is missing
+    # positionValueInBase and has a non-USD currency field.
+    fx_rates: dict[str, float] | None = None
+
     positions: list[Position] = []
     for op in root.iter("OpenPosition"):
         symbol = (op.get("symbol") or "").strip().upper()
         if not symbol:
             continue
         qty = _to_float(op.get("position")) or 0.0
-        # Prefer the base-currency (USD) value so international stocks (e.g.
-        # JPY-denominated Japanese equities) are already converted by IBKR.
-        mv = (
-            _to_float(op.get("positionValueInBase"))
-            or _to_float(op.get("positionValue"))
-            or 0.0
-        )
+        currency = (op.get("currency") or "USD").strip().upper()
+
+        # Prefer the base-currency (USD) value IBKR already computed.
+        mv_base = _to_float(op.get("positionValueInBase"))
+        if mv_base is not None:
+            mv = mv_base
+        else:
+            # positionValueInBase missing — use positionValue and convert if
+            # the position is denominated in a foreign currency.
+            mv_local = _to_float(op.get("positionValue")) or 0.0
+            if currency == "USD":
+                mv = mv_local
+            else:
+                # Fetch rates once per parse call.
+                if fx_rates is None:
+                    fx_rates = _fetch_fx_rates()
+                mv_usd = _to_usd(mv_local, currency, fx_rates)
+                if mv_usd is not None:
+                    log.warning(
+                        "%s: positionValueInBase missing — converted %.2f %s → $%.2f USD "
+                        "(rate %.6f). Fix Flex template to include positionValueInBase.",
+                        symbol, mv_local, currency, mv_usd, fx_rates.get(currency, 0),
+                    )
+                    mv = mv_usd
+                else:
+                    log.error(
+                        "%s: positionValueInBase missing and no FX rate for %s — "
+                        "storing raw local value %.2f (INCORRECT USD figure).",
+                        symbol, currency, mv_local,
+                    )
+                    mv = mv_local
+
         cb = _cost_basis(op, qty)
         positions.append(
             Position(
