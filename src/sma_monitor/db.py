@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
@@ -18,10 +19,14 @@ _TURSO_LOCK = threading.RLock()
 # Persistent singleton Turso connection. Re-establishing a libsql connection
 # to Turso requires a full TLS+auth handshake on every call (~2-5s RTT), which
 # makes multi-query request handlers unacceptably slow. We keep one connection
-# alive for the process lifetime, reconnecting only on failure. All Turso
-# operations already serialize under _TURSO_LOCK so there is no concurrency
-# risk from sharing a single connection.
+# alive for the process lifetime, reconnecting proactively before the server-
+# side Hrana stream expires. All Turso operations already serialize under
+# _TURSO_LOCK so there is no concurrency risk from sharing a single connection.
 _TURSO_SINGLETON: Any = None
+_TURSO_LAST_USED: float = 0.0
+# Hrana streams are silently closed by the Turso server after ~5 minutes of
+# inactivity. Reconnect proactively after 90 seconds idle to stay well clear.
+_TURSO_IDLE_RECONNECT_S: float = 90.0
 
 # Universal idempotency table. Every artifact across all phases registers
 # its event_id here on creation. Per-phase tables (articles, scores,
@@ -71,11 +76,17 @@ def connection() -> Iterator[Any]:
                 conn.close()
 
 
-# Return the persistent Turso singleton, creating it on first call.
+# Return the persistent Turso singleton, creating or reconnecting as needed.
+# Proactively reconnects after _TURSO_IDLE_RECONNECT_S seconds idle so the
+# Hrana stream never reaches the server-side expiry timeout.
 def _turso_singleton() -> Any:
-    global _TURSO_SINGLETON
-    if _TURSO_SINGLETON is None:
+    global _TURSO_SINGLETON, _TURSO_LAST_USED
+    now = time.monotonic()
+    idle = now - _TURSO_LAST_USED
+    if _TURSO_SINGLETON is None or idle >= _TURSO_IDLE_RECONNECT_S:
+        _reset_turso_singleton()
         _TURSO_SINGLETON = _connect_turso()
+    _TURSO_LAST_USED = now
     return _TURSO_SINGLETON
 
 

@@ -122,7 +122,7 @@ export const api = {
     fetchJsonWithTimeout<IBKRPullResponse>(
       '/api/portfolio/pull',
       { method: 'POST' },
-      90 * 1000,
+      3 * 60 * 1000,
     ),
 
   // Operational snapshot for the status bar.

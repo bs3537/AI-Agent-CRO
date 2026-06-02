@@ -70,12 +70,11 @@ async def pull_from_ibkr() -> PullResponse:
         raw_xml=None,
     )
 
-    # Populate IR URLs for newly discovered tickers (best-effort, non-blocking).
+    # Populate IR URLs for newly discovered tickers — fire-and-forget so the
+    # pull response returns immediately rather than waiting for web crawls.
     new_ticker_list = [p.ticker for p in positions]
-    await asyncio.to_thread(
-        populate_ir_urls_for_tickers,
-        new_ticker_list,
-        create_missing=True,
+    asyncio.create_task(
+        asyncio.to_thread(populate_ir_urls_for_tickers, new_ticker_list, create_missing=True)
     )
 
     # Compute the diff: which tickers are brand-new, which were removed.
