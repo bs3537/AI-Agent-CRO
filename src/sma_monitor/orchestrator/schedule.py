@@ -24,7 +24,7 @@ UTC = ZoneInfo("UTC")
 # running.
 MORNING_RECOMPUTE_TIME_ET = dtime(6, 0)  # 6:00 AM ET — smart news/SEC/EMA/P&L gate
 MORNING_EMAIL_TIME_ET = dtime(9, 15)     # 9:15 AM ET — wait if recompute still runs
-COLLECT_TIME_ET = dtime(18, 0)      # 6:00 PM ET — positions + news + score + red-team + decide
+COLLECT_TIME_ET = dtime(20, 0)      # 8:00 PM ET — positions + news + score + red-team + decide
 DISPATCH_TIME_ET = dtime(21, 0)     # 9:00 PM ET — digest assembly + delivery
 
 # Slack window around each firing. Handles cron jitter and manual `run`
