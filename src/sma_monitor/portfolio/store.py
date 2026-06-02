@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS manual_positions (
     ticker        TEXT NOT NULL UNIQUE,
     pct_nav       REAL NOT NULL,
     added_at      TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    cost_basis    REAL,
+    qty           REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_manual_positions_ticker ON manual_positions(ticker);
@@ -60,6 +62,12 @@ CREATE INDEX IF NOT EXISTS idx_manual_positions_ticker ON manual_positions(ticke
 def init_portfolio_schema() -> None:
     with connection() as conn:
         conn.executescript(POSITIONS_SCHEMA)
+        # Migrate existing manual_positions tables that predate the cost_basis/qty columns.
+        for col_def in ("cost_basis REAL", "qty REAL"):
+            try:
+                conn.execute(f"ALTER TABLE manual_positions ADD COLUMN {col_def}")
+            except Exception:  # noqa: BLE001 — column already exists
+                pass
 
 
 # Stable id for a Flex pull. Keyed on (pulled_at, nav) so re-running the
@@ -144,9 +152,17 @@ def save_manual_position(
     ticker: str,
     *,
     pct_nav: float,
+    cost_basis: float | None = None,
+    qty: float | None = None,
     updated_at: datetime | None = None,
 ) -> str:
-    """Persist a manually-added dashboard position by portfolio weight."""
+    """Persist a manually-added dashboard position by portfolio weight.
+
+    cost_basis is the *total* cost basis in USD (cost_basis_per_share * qty).
+    qty is the estimated share count derived from the current market price.
+    Both are optional — left NULL when price data is unavailable or cost basis
+    was not provided by the user; the IBKR sync backfills them later.
+    """
     init_portfolio_schema()
     ticker = ticker.strip().upper()
     updated_at = updated_at or datetime.now(UTC)
@@ -165,16 +181,52 @@ def save_manual_position(
                 "manual_position",
                 ticker,
                 added_at,
-                json.dumps({"pct_nav": pct_nav}),
+                json.dumps({"pct_nav": pct_nav, "cost_basis": cost_basis, "qty": qty}),
             ),
         )
         conn.execute(
             """INSERT OR REPLACE INTO manual_positions
-               (event_id, ticker, pct_nav, added_at, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (eid, ticker, pct_nav, added_at, updated_at.isoformat()),
+               (event_id, ticker, pct_nav, added_at, updated_at, cost_basis, qty)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (eid, ticker, pct_nav, added_at, updated_at.isoformat(), cost_basis, qty),
         )
     return eid
+
+
+def backfill_manual_positions_from_ibkr(positions: list[Position]) -> int:
+    """After an IBKR sync, update manual_positions rows for matching tickers.
+
+    Fills in pct_nav (when it was left at 0 as a placeholder) and cost_basis /
+    qty (when they were left NULL) from the live IBKR data.  Returns the number
+    of rows that were updated.
+    """
+    init_portfolio_schema()
+    updated = 0
+    now = datetime.now(UTC).isoformat()
+    with connection() as conn:
+        for p in positions:
+            row = conn.execute(
+                "SELECT pct_nav, cost_basis, qty FROM manual_positions WHERE ticker = ?",
+                (p.ticker,),
+            ).fetchone()
+            if row is None:
+                continue
+            new_pct_nav = p.pct_nav if float(row["pct_nav"]) == 0.0 else float(row["pct_nav"])
+            new_cost_basis = (
+                p.cost_basis if row["cost_basis"] is None else float(row["cost_basis"])
+            )
+            new_qty = (
+                p.qty
+                if (row["qty"] is None or float(row["qty"] or 0) == 0.0)
+                else float(row["qty"])
+            )
+            conn.execute(
+                "UPDATE manual_positions "
+                "SET pct_nav=?, cost_basis=?, qty=?, updated_at=? WHERE ticker=?",
+                (new_pct_nav, new_cost_basis, new_qty, now, p.ticker),
+            )
+            updated += 1
+    return updated
 
 
 def latest_pull_at() -> datetime | None:
@@ -232,10 +284,10 @@ def latest_positions() -> tuple[list[Position], datetime | None]:
         positions.append(
             Position(
                 ticker=ticker,
-                qty=0.0,
+                qty=float(r["qty"] or 0.0),
                 market_value=pct_nav * nav,
                 pct_nav=pct_nav,
-                cost_basis=None,
+                cost_basis=float(r["cost_basis"]) if r["cost_basis"] is not None else None,
                 pulled_at=updated_at,
                 nav=nav,
             )

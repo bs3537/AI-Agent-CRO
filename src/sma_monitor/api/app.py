@@ -98,6 +98,12 @@ async def _ibkr_sync_loop() -> None:
                     "ticker_count": len(positions_list),
                 },
             )
+            from ..portfolio.store import backfill_manual_positions_from_ibkr
+            filled = await asyncio.to_thread(
+                backfill_manual_positions_from_ibkr, positions_list
+            )
+            if filled:
+                _log.info("ibkr_sync_backfilled_manual", extra={"count": filled})
             tickers = [p.ticker for p in positions_list]
             asyncio.create_task(
                 asyncio.to_thread(

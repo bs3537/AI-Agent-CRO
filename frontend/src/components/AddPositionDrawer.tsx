@@ -23,18 +23,32 @@ export default function AddPositionDrawer({
 }) {
   const [ticker, setTicker] = useState('')
   const [weightPct, setWeightPct] = useState('')
+  const [costBasis, setCostBasis] = useState('')
   const [thesis, setThesis] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const wordCount = countWords(thesis)
-  const parsedWeight = Number(weightPct)
-  const invalidWeight = !Number.isFinite(parsedWeight) || parsedWeight <= 0 || parsedWeight > 100
-  const invalid = !ticker.trim() || invalidWeight || !thesis.trim() || wordCount > MAX_THESIS_WORDS
+
+  const parsedWeight = weightPct === '' ? 0 : Number(weightPct)
+  const invalidWeight =
+    weightPct !== '' && (!Number.isFinite(parsedWeight) || parsedWeight < 0 || parsedWeight > 100)
+
+  const parsedCostBasis = costBasis === '' ? null : Number(costBasis)
+  const invalidCostBasis =
+    costBasis !== '' && (!Number.isFinite(parsedCostBasis) || (parsedCostBasis ?? 0) <= 0)
+
+  const invalid =
+    !ticker.trim() ||
+    invalidWeight ||
+    invalidCostBasis ||
+    !thesis.trim() ||
+    wordCount > MAX_THESIS_WORDS
 
   const reset = () => {
     setTicker('')
     setWeightPct('')
+    setCostBasis('')
     setThesis('')
     setError(null)
   }
@@ -54,6 +68,7 @@ export default function AddPositionDrawer({
         ticker: ticker.trim().toUpperCase(),
         portfolio_weight_pct: parsedWeight,
         thesis,
+        cost_basis_per_share: parsedCostBasis,
       })
       reset()
       onClose()
@@ -91,12 +106,26 @@ export default function AddPositionDrawer({
             autoFocus
           />
           <TextField
-            label="Portfolio weight (%)"
+            label="Portfolio weight (%) — optional"
             value={weightPct}
             onChange={(e) => setWeightPct(e.target.value)}
             disabled={busy}
-            error={Boolean(weightPct) && invalidWeight}
-            helperText="Example: 2.5 means 2.5% NAV"
+            error={invalidWeight}
+            helperText="e.g. 2.5 = 2.5% NAV. Leave blank — IBKR sync will fill this in."
+            inputProps={{ inputMode: 'decimal' }}
+            fullWidth
+          />
+          <TextField
+            label="Cost basis per share ($) — optional"
+            value={costBasis}
+            onChange={(e) => setCostBasis(e.target.value)}
+            disabled={busy}
+            error={invalidCostBasis}
+            helperText={
+              parsedCostBasis !== null && parsedWeight > 0
+                ? 'Open P&L will be calculated automatically from current price.'
+                : 'Leave blank — IBKR sync will fill this in.'
+            }
             inputProps={{ inputMode: 'decimal' }}
             fullWidth
           />

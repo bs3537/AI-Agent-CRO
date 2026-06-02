@@ -298,8 +298,29 @@ def add_manual_position(
     body: ManualPositionCreate,
     offline: bool = False,
 ) -> ManualPositionResponse:
+    from ..portfolio.store import latest_positions as _latest_positions_store
+
     want = body.ticker.strip().upper()
-    save_manual_position(want, pct_nav=body.portfolio_weight_pct / 100.0)
+
+    # Derive qty and total cost basis from cost_basis_per_share + current price.
+    cost_basis_total: float | None = None
+    qty_est: float | None = None
+    if body.cost_basis_per_share is not None and body.portfolio_weight_pct > 0:
+        closes = latest_price_series(want)
+        current_price = closes[-1] if closes else None
+        if current_price and current_price > 0:
+            all_pos, _ = _latest_positions_store()
+            nav = all_pos[0].nav if all_pos else 1_000_000.0
+            market_value = body.portfolio_weight_pct / 100.0 * nav
+            qty_est = market_value / current_price
+            cost_basis_total = body.cost_basis_per_share * qty_est
+
+    save_manual_position(
+        want,
+        pct_nav=body.portfolio_weight_pct / 100.0,
+        cost_basis=cost_basis_total,
+        qty=qty_est,
+    )
     set_thesis(want, body.thesis)
     ir_state = _populate_ir_urls_best_effort(want, offline=offline)
     state = recompute_one_with_refresh(

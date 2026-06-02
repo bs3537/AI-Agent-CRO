@@ -160,8 +160,9 @@ class ThesisUpdate(BaseModel):
 # POST /api/positions request body for manually adding a dashboard position.
 class ManualPositionCreate(BaseModel):
     ticker: str
-    portfolio_weight_pct: float = Field(gt=0, le=100)
+    portfolio_weight_pct: float = Field(ge=0, le=100, default=0.0)
     thesis: str
+    cost_basis_per_share: float | None = Field(default=None, gt=0)
 
     @field_validator("ticker")
     @classmethod

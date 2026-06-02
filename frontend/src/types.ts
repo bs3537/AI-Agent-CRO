@@ -165,6 +165,7 @@ export interface ManualPositionPayload {
   ticker: string
   portfolio_weight_pct: number
   thesis: string
+  cost_basis_per_share?: number | null
 }
 
 export interface ManualPositionResponse {
