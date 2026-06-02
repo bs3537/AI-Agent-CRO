@@ -10,7 +10,7 @@ import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
-import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
@@ -234,7 +234,7 @@ export default function App() {
               onClick={() => setChatOpen((v) => !v)}
               sx={{ flexShrink: 0 }}
             >
-              <ChatBubbleOutlineIcon />
+              <AutoAwesomeIcon />
             </IconButton>
           </Tooltip>
           <Button
