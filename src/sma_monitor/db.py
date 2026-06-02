@@ -1,3 +1,4 @@
+import logging
 import os
 import sqlite3
 import threading
@@ -5,6 +6,8 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 from .config import settings
 from .paths import DB_PATH
@@ -226,14 +229,37 @@ class _TursoConnection:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._conn, name)
 
+    # Reconnect the underlying libsql connection in-place and update the
+    # module-level globals so the next idle-check starts from now.
+    def _reconnect(self) -> None:
+        global _TURSO_LAST_USED
+        _log.warning("Turso stream expired — reconnecting in-place")
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        fresh = _connect_turso()
+        self._conn = fresh._conn
+        _TURSO_LAST_USED = time.monotonic()
+
+    def _exec(self, method: str, *args: Any, **kwargs: Any) -> _TursoCursor:
+        """Call *method* on the underlying connection, retrying once on stream expiry."""
+        try:
+            return _TursoCursor(getattr(self._conn, method)(*args, **kwargs))
+        except (ValueError, Exception) as exc:
+            if "stream not found" not in str(exc):
+                raise
+            self._reconnect()
+            return _TursoCursor(getattr(self._conn, method)(*args, **kwargs))
+
     def execute(self, *args: Any, **kwargs: Any) -> _TursoCursor:
-        return _TursoCursor(self._conn.execute(*args, **kwargs))
+        return self._exec("execute", *args, **kwargs)
 
     def executemany(self, *args: Any, **kwargs: Any) -> _TursoCursor:
-        return _TursoCursor(self._conn.executemany(*args, **kwargs))
+        return self._exec("executemany", *args, **kwargs)
 
     def executescript(self, *args: Any, **kwargs: Any) -> _TursoCursor:
-        return _TursoCursor(self._conn.executescript(*args, **kwargs))
+        return self._exec("executescript", *args, **kwargs)
 
 
 class _NullLock:
