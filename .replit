@@ -56,6 +56,6 @@ externalPort = 8000
 exposeLocalhost = true
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["python", "-m", "sma_monitor.api", "--host", "0.0.0.0", "--port", "5000"]
-build = ["bash", "-c", "cd frontend && npm install && npm run build"]
+deploymentTarget = "vm"
+run = ["bash", "-c", ".venv/bin/python -m sma_monitor.api --host 0.0.0.0 --port 5000"]
+build = ["bash", "-c", "uv venv .venv && uv sync && cd frontend && npm install && npm run build"]
