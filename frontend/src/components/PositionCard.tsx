@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -47,6 +47,7 @@ export default function PositionCard({
   onOpenDetail: (ticker: string) => void
 }) {
   const [recomputing, setRecomputing] = useState(false)
+  const [recomputingSecs, setRecomputingSecs] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -63,6 +64,13 @@ export default function PositionCard({
   // A thesis is a placeholder until the manager replaces the scaffolded stub.
   const thesisLabel = pos.thesis.trim().toUpperCase()
   const isStub = thesisLabel.startsWith('STUB') || thesisLabel.startsWith('PLACEHOLDER')
+
+  useEffect(() => {
+    if (!recomputing) { setRecomputingSecs(0); return }
+    setRecomputingSecs(0)
+    const id = setInterval(() => setRecomputingSecs((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [recomputing])
 
   // Recompute this position's decision, showing a busy label meanwhile.
   const recompute = async () => {
@@ -168,7 +176,7 @@ export default function PositionCard({
               disabled={recomputing}
               onClick={() => void recompute()}
             >
-              {recomputing ? 'Recomputing…' : 'Recompute'}
+              {recomputing ? `Recomputing… ${recomputingSecs}s` : 'Recompute'}
             </Button>
             <Button
               size="small"

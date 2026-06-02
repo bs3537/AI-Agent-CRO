@@ -39,6 +39,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(480)
   const [recomputingAll, setRecomputingAll] = useState(false)
+  const [recomputeAllSecs, setRecomputeAllSecs] = useState(0)
   const [recomputeQueue, setRecomputeQueue] = useState<{
     ticker: string
     index: number
@@ -46,6 +47,13 @@ export default function App() {
   } | null>(null)
   const [pullingIBKR, setPullingIBKR] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!recomputingAll) { setRecomputeAllSecs(0); return }
+    setRecomputeAllSecs(0)
+    const id = setInterval(() => setRecomputeAllSecs((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [recomputingAll])
 
   // Refetch the grid + status snapshot.
   const refresh = useCallback(async () => {
@@ -239,7 +247,7 @@ export default function App() {
             sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             {recomputingAll && recomputeQueue
-              ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker}`
+              ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker} · ${recomputeAllSecs}s`
               : 'Recompute all'}
           </Button>
         </Toolbar>
