@@ -26,7 +26,7 @@ from ..news.pipeline import poll_literature as news_poll_literature
 from ..news.pipeline import poll_sec as news_poll_sec
 from ..outputs.alerts import run_alerts
 from ..outputs.digest import assemble_digest
-from ..outputs.thesis_email import assemble_thesis_email
+from ..outputs.risk_brief import assemble_risk_brief
 from ..portfolio.flex import FlexError, fetch_statement, parse_positions
 from ..portfolio.store import latest_pull_at, save_pull
 from ..red_team.pipeline import run_red_team
@@ -199,7 +199,9 @@ def run_morning_thesis_delivery_cycle(
             return state
 
     clear_flag(THESIS_EMAIL_DEFERRED_FLAG)
-    state["email"] = assemble_thesis_email()
+    # W7: the 9 AM delivery now sends the HTML risk brief (rating/grade-change
+    # exception report via Resend), superseding the plain-markdown thesis email.
+    state["email"] = assemble_risk_brief()
     state["finished_at"] = datetime.now(UTC).isoformat()
     log.info("morning_thesis_email_done", extra={"summary": state})
     return state

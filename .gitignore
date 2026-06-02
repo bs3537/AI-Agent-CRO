@@ -11,6 +11,7 @@ data/sma.db-*
 # Runtime outputs
 data/digests/*.md
 data/digests/alerts/
+data/digests/thesis/
 data/tuning/*.md
 data/logs/
 

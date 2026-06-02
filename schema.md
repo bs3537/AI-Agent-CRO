@@ -795,6 +795,32 @@ CREATE TABLE position_decisions (
 -- latest_decisions() = most recent decided_at per ticker (dashboard + 9 AM email feed).
 ```
 
+### Workstream 7 — Daily rating snapshot (`decision/snapshots.py`)
+
+Immutable one-row-per-ticker-per-ET-day capture written by the 9 AM risk brief so
+day-over-day rating/grade changes are detectable even when the content-addressed
+`position_ratings` table didn't churn (a quiet holding otherwise keeps a single row).
+
+```sql
+CREATE TABLE rating_snapshots (
+    snapshot_date     TEXT NOT NULL,        -- YYYY-MM-DD (ET)
+    ticker            TEXT NOT NULL,
+    action            TEXT NOT NULL,        -- hold | sell
+    grade             TEXT NOT NULL,        -- A | B | C | D
+    attention_state   TEXT NOT NULL,
+    risk_score        REAL,
+    note              TEXT,                 -- rationale captured at snapshot time
+    drivers           TEXT,                 -- json array
+    confidence        REAL,
+    rating_event_id   TEXT,                 -- link to position_ratings.event_id
+    captured_at       TEXT NOT NULL,
+    PRIMARY KEY (snapshot_date, ticker)
+);
+-- previous_snapshots(today) = each ticker's latest snapshot < today (prior session).
+-- The 9 AM brief (outputs/risk_brief.py) diffs live latest_ratings() vs this to bucket
+-- SELL-from-HOLD flips first, then HOLD-but-grade-worsened, and ships via ResendChannel.
+```
+
 ---
 
 ## 6. Versioning hinges

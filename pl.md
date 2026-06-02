@@ -49,9 +49,15 @@ Flex-query field property, handled gracefully end to end.)*
   Crontab (system TZ = America/New_York, so these are true ET): `0 18 collect · 0 21 dispatch · 0 9 thesis-email`.
   **Verified full-powered under a simulated cron env** (`env -i`): `codex_available: True`. cron is running + boot-enabled.
 
+**✅ EMAIL TRANSPORT (W7, updated):** the 9 AM slot now sends the **HTML risk brief** (`outputs/risk_brief.py`)
+via **Resend** (`RESEND_API_KEY/EMAIL_FROM/EMAIL_TO` in `.env`), which supersedes SMTP when set. The brief leads
+with rating-change-to-SELL, then HOLD-but-grade-worsened, using day-over-day diffs from `rating_snapshots`.
+Sender is `risk@mirawealth.io` (verified domain); recipients `bhavn008@`, `bhavya20051@`. Live-send verified.
+
 **⛔ STILL OPEN (not agent-fixable):**
-1. **SMTP creds** in `.env` (`ALERT_EMAIL_FROM/TO`, `SMTP_HOST/USERNAME/PASSWORD`) — until set, the 9 AM email +
-   9 PM digest **archive to `data/digests/…` but do not send**.
+1. **SMTP creds** in `.env` (`ALERT_EMAIL_FROM/TO`, `SMTP_HOST/USERNAME/PASSWORD`) — legacy fallback only, used
+   when `RESEND_API_KEY` is unset. With Resend configured (current state) the 9 AM email + 9 PM digest send via
+   Resend; without either, they **archive to `data/digests/…` but do not send**.
 2. **WSL uptime** — cron only fires while this WSL distro is running. For a guaranteed 9 AM firing the box/WSL
    must be up at 9 AM ET; otherwise deploy to the always-on VM (the `systemd/` units, pointed at the host's
    Codex login). Also: the `codex login` token may need periodic re-auth.

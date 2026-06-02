@@ -17,6 +17,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+import httpx
+
 from ..config import settings
 from ..paths import DIGESTS_DIR
 
@@ -45,6 +47,11 @@ class Channel(ABC):
     def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str):
         return None
 
+    # Send the daily HTML risk brief (W7, Resend era). Carries both an HTML body
+    # and a plain-text fallback. Concrete no-op default so channels opt in.
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str):
+        return None
+
 
 # Always-on channel that appends alerts to a per-day markdown file and
 # writes the digest as one file per day. Used as the offline review trail.
@@ -56,8 +63,8 @@ class FileChannel(Channel):
     # Append the rendered alert text to data/digests/alerts/YYYY-MM-DD.md.
     def send_alert(self, ticker: str, rendered_text: str) -> None:
         ALERTS_DIR.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timezone
-        date_iso = datetime.now(timezone.utc).date().isoformat()
+        from datetime import UTC, datetime
+        date_iso = datetime.now(UTC).date().isoformat()
         p = ALERTS_DIR / f"{date_iso}.md"
         sep = "\n\n---\n\n" if p.exists() else ""
         with p.open("a") as f:
@@ -81,6 +88,18 @@ class FileChannel(Channel):
             f.write(rendered_md)
         return p
 
+    # Archive the daily risk brief as both the rendered HTML (what recipients
+    # see) and a plain-text copy, under data/digests/thesis/. Returns the HTML
+    # path so the assembler can log where the canonical artifact landed.
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> Path:
+        THESIS_DIR.mkdir(parents=True, exist_ok=True)
+        html_path = THESIS_DIR / f"{date_iso}.html"
+        with html_path.open("w") as f:
+            f.write(html)
+        with (THESIS_DIR / f"{date_iso}.txt").open("w") as f:
+            f.write(text)
+        return html_path
+
 
 # Channel that prints to stdout. Useful for testing and for tee'ing the
 # digest to a terminal when invoked manually.
@@ -95,6 +114,9 @@ class StdoutChannel(Channel):
 
     def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
         print(rendered_md, file=sys.stdout, flush=True)
+
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> None:
+        print(text, file=sys.stdout, flush=True)
 
 
 # SMTP-over-STARTTLS email channel. Only configured when every SMTP_*
@@ -138,14 +160,21 @@ class EmailChannel(Channel):
     def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
         self._send(subject=subject, text_body=rendered_md)
 
-    # Internal SMTP helper used by both alert and digest paths. Raises so
-    # the pipeline can log + record channel-send failures.
-    def _send(self, *, subject: str, text_body: str) -> None:
+    # Send the daily risk brief as a multipart/alternative (HTML + text) email.
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> None:
+        self._send(subject=subject, text_body=text, html_body=html)
+
+    # Internal SMTP helper used by every send path. Attaches the HTML part last
+    # so MUAs prefer it while plain-text stays the fallback. Raises so the
+    # pipeline can log + record channel-send failures.
+    def _send(self, *, subject: str, text_body: str, html_body: str | None = None) -> None:
         msg = MIMEMultipart("alternative")
         msg["From"] = self.from_addr
         msg["To"] = self.to_addr
         msg["Subject"] = subject
         msg.attach(MIMEText(text_body, "plain", "utf-8"))
+        if html_body:
+            msg.attach(MIMEText(html_body, "html", "utf-8"))
         try:
             with smtplib.SMTP(self.host, self.port, timeout=30) as smtp:
                 smtp.starttls()
@@ -156,16 +185,112 @@ class EmailChannel(Channel):
             raise
 
 
+# Raised on any non-2xx Resend API response so the assembler can log + continue
+# (the FileChannel archive has already captured the brief regardless).
+class ResendError(RuntimeError):
+    pass
+
+
+# HTTP email channel backed by Resend (https://resend.com). Preferred over SMTP
+# for the daily risk brief: native multi-recipient delivery and a real HTML
+# body, no STARTTLS handshake. Configured when RESEND_API_KEY + sender +
+# recipients are present.
+class ResendChannel(Channel):
+    """Resend HTTP API channel. HTML-capable, multi-recipient."""
+
+    name = "resend"
+
+    RESEND_ENDPOINT = "https://api.resend.com/emails"
+
+    # Capture the API key, verified sender, and recipient list at init.
+    def __init__(self, *, api_key: str, from_addr: str, to_addrs: list[str],
+                 reply_to: str | None = None):
+        self.api_key = api_key
+        self.from_addr = from_addr
+        self.to_addrs = list(to_addrs)
+        self.reply_to = reply_to
+
+    # Send one alert as a plain-text email; subject from the first line.
+    def send_alert(self, ticker: str, rendered_text: str) -> None:
+        subject = rendered_text.split("\n", 1)[0][:120]
+        self._post(subject=subject, text=rendered_text)
+
+    # Send the evening digest as a plain-text email.
+    def send_digest(self, date_iso: str, rendered_md: str) -> None:
+        self._post(subject=f"SMA digest — {date_iso}", text=rendered_md)
+
+    # Send the morning thesis email (markdown body as text).
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
+        self._post(subject=subject, text=rendered_md)
+
+    # Send the daily HTML risk brief with a plain-text fallback.
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> None:
+        self._post(subject=subject, html=html, text=text)
+
+    # POST one message to the Resend API. `client` is injectable so tests can run
+    # fully offline. Raises ResendError on any non-2xx response.
+    def _post(self, *, subject: str, text: str, html: str | None = None,
+              client: httpx.Client | None = None) -> str | None:
+        payload: dict = {
+            "from": self.from_addr,
+            "to": self.to_addrs,
+            "subject": subject,
+            "text": text,
+        }
+        if html:
+            payload["html"] = html
+        if self.reply_to:
+            payload["reply_to"] = self.reply_to
+        owns = client is None
+        client = client or httpx.Client(timeout=30.0)
+        try:
+            resp = client.post(
+                self.RESEND_ENDPOINT,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        finally:
+            if owns:
+                client.close()
+        if resp.status_code >= 300:
+            log.error("resend_send_failed",
+                      extra={"status": resp.status_code, "body": resp.text[:300]})
+            raise ResendError(f"Resend API {resp.status_code}: {resp.text[:300]}")
+        try:
+            return resp.json().get("id")
+        except Exception:
+            return None
+
+
+# Split a comma/semicolon-separated recipient string into a clean list, dropping
+# blanks. Resend's `to` field takes an array, so multiple addresses just work.
+def _split_recipients(raw: str) -> list[str]:
+    parts = raw.replace(";", ",").split(",")
+    return [p.strip() for p in parts if p.strip()]
+
+
 # Build the default channel set. FileChannel is always included; add
-# StdoutChannel when prefer_stdout; add EmailChannel when SMTP creds are
-# all present. Add Slack/SMS by registering another Channel subclass here.
+# StdoutChannel when prefer_stdout. For email, Resend supersedes SMTP when its
+# key is configured; otherwise fall back to the legacy SMTP EmailChannel. Add
+# Slack/SMS by registering another Channel subclass here.
 def build_channels(*, prefer_stdout: bool = False) -> list[Channel]:
-    """Default set. FileChannel is always included (archive)."""
+    """Default set. FileChannel always on; Resend over SMTP when configured."""
     channels: list[Channel] = [FileChannel()]
     if prefer_stdout:
         channels.append(StdoutChannel())
-    if all([settings.smtp_host, settings.smtp_username, settings.smtp_password,
-            settings.alert_email_from, settings.alert_email_to]):
+    if settings.resend_api_key and settings.resend_email_from and settings.resend_email_to:
+        recipients = _split_recipients(settings.resend_email_to)
+        if recipients:
+            channels.append(ResendChannel(
+                api_key=settings.resend_api_key,
+                from_addr=settings.resend_email_from,
+                to_addrs=recipients,
+            ))
+    elif all([settings.smtp_host, settings.smtp_username, settings.smtp_password,
+              settings.alert_email_from, settings.alert_email_to]):
         channels.append(EmailChannel(
             host=settings.smtp_host,  # type: ignore[arg-type]
             port=settings.smtp_port,

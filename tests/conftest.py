@@ -1,10 +1,9 @@
 """Session-wide test isolation.
 
 Redirects DATA_ROOT to a throwaway copy of the repo's data/ dir BEFORE any
-sma_monitor module imports (conftest loads ahead of test modules). This keeps
-the live data/sma.db, sidecars, and uploads untouched while giving DB-backed
-tests (e.g. the API) realistic seed state — the copy includes positions,
-scores, red-team passes, the warning-signs catalog, and news fixtures.
+sma_monitor module imports (conftest loads ahead of test modules). App runtime
+uses Turso only; tests explicitly opt into a SQLite sandbox so DB-backed tests
+(e.g. the API) get realistic seed state without touching the cloud DB.
 """
 from __future__ import annotations
 
@@ -23,7 +22,15 @@ sys.path.insert(0, str(REPO / "src"))
 _SANDBOX = Path(tempfile.mkdtemp(prefix="sma_test_data_")) / "data"
 shutil.copytree(REPO / "data", _SANDBOX)
 os.environ["DATA_ROOT"] = str(_SANDBOX)
-os.environ["SMA_DB_BACKEND"] = "sqlite"
+os.environ["SMA_TEST_SQLITE"] = "1"
+
+# Tests must never send real email. The developer's .env may carry a live
+# Resend key / SMTP creds, and pydantic-settings reads .env — so blank the
+# live-transport secrets in the environment (env wins over .env) before any
+# sma_monitor import builds the settings singleton. build_channels() then only
+# ever returns FileChannel/StdoutChannel under test.
+for _live_secret in ("RESEND_API_KEY", "SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD"):
+    os.environ[_live_secret] = ""
 
 # Seed a deterministic positions pull (VRTX/MRNA — the tickers with committed
 # sidecars) into the sandbox so DB-backed tests (the API suite) don't depend on
