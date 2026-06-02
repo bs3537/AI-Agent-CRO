@@ -63,6 +63,7 @@ def connection() -> Iterator[Any]:
             conn = _turso_singleton()
             try:
                 yield conn
+                conn.commit()
             except Exception:
                 # On any DB error reset the singleton so the next call reconnects.
                 _reset_turso_singleton()

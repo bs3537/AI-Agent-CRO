@@ -1,7 +1,14 @@
 ticker: ABVX
 conviction_tier: 3
 stage: hybrid
-thesis: STUB - auto-scaffolded; replace with the actual long-term buying thesis.
+thesis: 'Bought 6/2/26 after stock fell 40% following reports of 2-3 cancer cases
+  i 50 mg dose arm in P3 maintenece data trial in ulcerative colitis, efficacy is
+  best among competition. Ave price is $86. I think it is an over reaction and the
+  stock will rebound. Next clearing event is fda feedback about BLA maybe in 3-6 months.
+  They can still go ahead with 25 mg dose which showed same efficacy as 50 mg but
+  no cancer cases. Kill switches: 1. FDA gives negative feedback about cancer cases,
+  asking for more longer term data or an additional trial. 2. stock below 20% of buying
+  price level. '
 company_name: Abivax S.A.
 aliases: []
 brands: []
