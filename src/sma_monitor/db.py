@@ -92,7 +92,6 @@ def _connect_turso() -> Any:
     conn = libsql.connect(
         database=settings.turso_database_url,
         auth_token=settings.turso_auth_token,
-        autocommit=True,
     )
     return _TursoConnection(conn)
 
