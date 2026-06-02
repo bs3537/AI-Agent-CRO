@@ -105,7 +105,7 @@ export default function PositionCard({
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
           <PnL openPnl={pos.open_pnl} pnlPct={pos.pnl_pct} />
-          <Chip size="small" variant="outlined" label={`${pos.pct_nav.toFixed(1)}% NAV`} />
+          <Chip size="small" variant="outlined" label={`${(pos.pct_nav * 100).toFixed(1)}% NAV`} />
           {/* Per-tile operational flags: stale pull (book-wide) + un-filled thesis. */}
           {stale && <Chip size="small" color="warning" label="STALE DATA" />}
           {isStub && <Chip size="small" color="warning" variant="outlined" label="STUB THESIS" />}
