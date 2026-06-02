@@ -25,32 +25,23 @@ export default function StatusBar({ status }: { status: Status | null }) {
   // re-check `active` defensively). Dead-letter flags read as errors, rest warn.
   const flags = (status.flags ?? []).filter((f) => Boolean(f.active))
   const deadPending = status.dead_letters?.pending ?? 0
+  // Filter out dead_letter flags — they are surfaced through the dead_letters
+  // count separately and are not actionable from the status bar.
+  const visibleFlags = flags.filter((f) => !String(f.flag_name ?? '').includes('dead_letter'))
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
       <Chip size="small" variant="outlined" label={`${status.positions.count} positions`} />
-      <Chip
-        size="small"
-        variant="outlined"
-        label={`Paid LLM $${spendLabel(spent_usd)} / $${budget_usd.toFixed(0)} today`}
-      />
-      {flags.map((f) => {
+      {visibleFlags.map((f) => {
         const name = String(f.flag_name ?? 'flag')
         return (
           <Chip
             key={name}
             size="small"
-            color={name.includes('dead_letter') ? 'error' : 'warning'}
+            color="warning"
             label={flagLabel(name)}
           />
         )
       })}
-      {deadPending > 0 && (
-        <Chip
-          size="small"
-          color="error"
-          label={`${deadPending} dead-letter${deadPending > 1 ? 's' : ''}`}
-        />
-      )}
       <Typography variant="caption" sx={{ opacity: 0.6 }}>
         positions pulled {pulled}
       </Typography>

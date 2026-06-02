@@ -196,6 +196,16 @@ export interface ChatResponse {
   attachments: ChatAttachmentMeta[]
 }
 
+// POST /api/portfolio/pull response.
+export interface IBKRPullResponse {
+  pull_id: string
+  nav: number
+  ticker_count: number
+  pulled_at: string
+  new_tickers: string[]
+  removed_tickers: string[]
+}
+
 // GET /api/status snapshot.
 export interface Status {
   spend: { spent_usd: number; budget_usd: number; fraction_spent: number }

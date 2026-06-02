@@ -11,6 +11,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
+import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
 import type { ManualPositionPayload, PositionsResponse, Status } from './types'
@@ -43,6 +44,7 @@ export default function App() {
     index: number
     total: number
   } | null>(null)
+  const [pullingIBKR, setPullingIBKR] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   // Refetch the grid + status snapshot.
@@ -123,6 +125,25 @@ export default function App() {
     [refresh, detailTicker, thesisTicker],
   )
 
+  // Pull fresh positions from IBKR, then refresh the grid. Surfaces a notice
+  // listing new and removed tickers so the user knows what changed.
+  const onPullFromIBKR = useCallback(async () => {
+    setPullingIBKR(true)
+    setNotice(null)
+    try {
+      const result = await api.pullFromIBKR()
+      await refresh()
+      const parts: string[] = [`${result.ticker_count} positions pulled (NAV $${result.nav.toLocaleString(undefined, { maximumFractionDigits: 0 })}).`]
+      if (result.new_tickers.length > 0) parts.push(`New: ${result.new_tickers.join(', ')}.`)
+      if (result.removed_tickers.length > 0) parts.push(`Removed from dashboard: ${result.removed_tickers.join(', ')}.`)
+      setNotice(parts.join(' '))
+    } catch (e) {
+      setError(`IBKR pull failed: ${String(e)}`)
+    } finally {
+      setPullingIBKR(false)
+    }
+  }, [refresh])
+
   const onAddManualPosition = useCallback(
     async (payload: ManualPositionPayload) => {
       const res = await api.addManualPosition(payload)
@@ -172,6 +193,21 @@ export default function App() {
           <BrandLogo />
           <Box sx={{ flexGrow: 1 }} />
           <StatusBar status={status} />
+          <Tooltip title="Pull fresh positions from IBKR account">
+            <span>
+              <Button
+                variant="outlined"
+                color="secondary"
+                size="small"
+                startIcon={<CloudDownloadIcon />}
+                disabled={pullingIBKR || recomputingAll}
+                onClick={() => void onPullFromIBKR()}
+                sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                {pullingIBKR ? 'Pulling…' : 'Pull from IBKR'}
+              </Button>
+            </span>
+          </Tooltip>
           <Button
             variant="outlined"
             color="primary"

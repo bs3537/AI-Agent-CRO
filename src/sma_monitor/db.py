@@ -15,6 +15,14 @@ from .paths import DB_PATH
 BUSY_TIMEOUT_MS = int(os.environ.get("SMA_SQLITE_BUSY_TIMEOUT_MS", "30000"))
 _TURSO_LOCK = threading.RLock()
 
+# Persistent singleton Turso connection. Re-establishing a libsql connection
+# to Turso requires a full TLS+auth handshake on every call (~2-5s RTT), which
+# makes multi-query request handlers unacceptably slow. We keep one connection
+# alive for the process lifetime, reconnecting only on failure. All Turso
+# operations already serialize under _TURSO_LOCK so there is no concurrency
+# risk from sharing a single connection.
+_TURSO_SINGLETON: Any = None
+
 # Universal idempotency table. Every artifact across all phases registers
 # its event_id here on creation. Per-phase tables (articles, scores,
 # alerts, feedback, etc.) are defined in each phase's store.py and
@@ -34,26 +42,52 @@ CREATE INDEX IF NOT EXISTS idx_events_first_seen ON events(first_seen);
 """
 
 
-# Context manager that yields a DB-API connection. Runtime DB access is Turso
-# only and requires TURSO_DATABASE_URL + TURSO_AUTH_TOKEN. Unit tests can opt
-# into a local SQLite sandbox by setting SMA_TEST_SQLITE=1 before import; that
-# path is intentionally not exposed as an app/runtime backend.
+# Context manager that yields a DB-API connection. For Turso, a persistent
+# singleton is returned (never closed between calls) to avoid repeated TLS+auth
+# handshakes. The singleton is reconnected automatically on any error. For the
+# test-only SQLite path, a fresh connection is opened and closed per call.
 @contextmanager
 def connection() -> Iterator[Any]:
     use_turso = _use_turso()
     lock = _TURSO_LOCK if use_turso else _NullLock()
     with lock:
-        conn = _connect(use_turso=use_turso)
-        try:
-            yield conn
-            if not use_turso:
+        if use_turso:
+            conn = _turso_singleton()
+            try:
+                yield conn
+            except Exception:
+                # On any DB error reset the singleton so the next call reconnects.
+                _reset_turso_singleton()
+                raise
+        else:
+            conn = _connect(use_turso=False)
+            try:
+                yield conn
                 conn.commit()
-        except Exception:
-            if not use_turso:
+            except Exception:
                 conn.rollback()
-            raise
-        finally:
-            conn.close()
+                raise
+            finally:
+                conn.close()
+
+
+# Return the persistent Turso singleton, creating it on first call.
+def _turso_singleton() -> Any:
+    global _TURSO_SINGLETON
+    if _TURSO_SINGLETON is None:
+        _TURSO_SINGLETON = _connect_turso()
+    return _TURSO_SINGLETON
+
+
+# Discard the singleton so the next call to _turso_singleton() reconnects.
+def _reset_turso_singleton() -> None:
+    global _TURSO_SINGLETON
+    try:
+        if _TURSO_SINGLETON is not None:
+            _TURSO_SINGLETON._conn.close()
+    except Exception:
+        pass
+    _TURSO_SINGLETON = None
 
 
 def _connect(*, use_turso: bool | None = None) -> Any:

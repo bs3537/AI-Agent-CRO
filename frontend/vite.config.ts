@@ -11,7 +11,14 @@ export default defineConfig({
     port: 5000,
     allowedHosts: true,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      // Increase timeouts so slow Turso DB responses don't get cut off by the
+      // Vite proxy before the backend finishes the query.
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        proxyTimeout: 120_000,
+        timeout: 120_000,
+      },
     },
   },
 })

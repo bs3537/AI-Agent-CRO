@@ -9,6 +9,7 @@ import type {
   DeleteHoldingResponse,
   ChatHistoryMessage,
   ChatResponse,
+  IBKRPullResponse,
   ManualPositionPayload,
   ManualPositionResponse,
   RecomputeAllResponse,
@@ -113,6 +114,15 @@ export const api = {
   recomputeAll: (wait = false) =>
     fetch(`/api/positions/recompute?wait=${wait}`, { method: 'POST' }).then(
       json<RecomputeAllResponse>,
+    ),
+
+  // Trigger a live IBKR Flex pull and persist results. Returns a diff of
+  // new vs removed tickers relative to the previous pull.
+  pullFromIBKR: () =>
+    fetchJsonWithTimeout<IBKRPullResponse>(
+      '/api/portfolio/pull',
+      { method: 'POST' },
+      90 * 1000,
     ),
 
   // Operational snapshot for the status bar.

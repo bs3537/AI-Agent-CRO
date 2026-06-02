@@ -123,7 +123,13 @@ def parse_positions(xml_text: str, *, pulled_at: datetime) -> tuple[list[Positio
         if not symbol:
             continue
         qty = _to_float(op.get("position")) or 0.0
-        mv = _to_float(op.get("positionValue")) or 0.0
+        # Prefer the base-currency (USD) value so international stocks (e.g.
+        # JPY-denominated Japanese equities) are already converted by IBKR.
+        mv = (
+            _to_float(op.get("positionValueInBase"))
+            or _to_float(op.get("positionValue"))
+            or 0.0
+        )
         cb = _cost_basis(op, qty)
         positions.append(
             Position(

@@ -1,6 +1,7 @@
 """Dashboard chatbot route."""
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -70,8 +71,15 @@ async def chat(
         database_context=context.text,
         attachment_context="\n\n".join(attachment_blocks) or "(no uploaded files in this turn)",
     )
+    # Run the blocking synchronous LLM call in a thread pool so it does not
+    # stall the asyncio event loop (and avoid proxy-layer timeouts on long calls).
     try:
-        answer = provider.complete_text(system=SYSTEM_PROMPT, user=user, max_tokens=1400)
+        answer = await asyncio.to_thread(
+            provider.complete_text,
+            system=SYSTEM_PROMPT,
+            user=user,
+            max_tokens=1400,
+        )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=f"chat LLM failed: {str(e)[:300]}") from e
 
