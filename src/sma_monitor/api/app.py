@@ -32,8 +32,9 @@ _log = logging.getLogger(__name__)
 # Default dev origins (Vite). Override with SMA_API_CORS_ORIGINS (comma-sep).
 _DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-# Scheduled automatic IBKR position sync — 8:00 PM Eastern every day.
-_IBKR_SYNC_TIME_ET = dtime(20, 0)
+# Scheduled automatic IBKR position sync — midnight Eastern every day so
+# positions are fresh before the 6 AM recompute and 9:15 AM email.
+_IBKR_SYNC_TIME_ET = dtime(0, 0)
 _ET = ZoneInfo("America/New_York")
 
 
