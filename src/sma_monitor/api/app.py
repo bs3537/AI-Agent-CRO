@@ -48,6 +48,71 @@ def _seconds_until_next(target: dtime) -> float:
     return (candidate - now_et).total_seconds()
 
 
+async def _scheduler_loop() -> None:
+    """Background task: fire the four daily orchestrator cycles at their scheduled ET times.
+
+    Mirrors orchestrator/schedule.py run_loop() but runs inside the API process
+    as an asyncio background task so it works in Replit deployments where systemd
+    and cron are unavailable.
+
+    Firing times (Eastern, DST-aware):
+      06:00  — morning thesis recompute (smart news/SEC/EMA/P&L gate)
+      09:15  — morning thesis email delivery
+      20:00  — evening collect cycle (positions + news + score + decisions)
+      21:00  — evening dispatch cycle (digest assembly + delivery)
+    """
+    from ..orchestrator.pipeline import (
+        run_collect_cycle,
+        run_dispatch_cycle,
+        run_morning_thesis_delivery_cycle,
+        run_morning_thesis_recompute_cycle,
+    )
+    from ..orchestrator.schedule import (
+        COLLECT_TIME_ET,
+        DISPATCH_TIME_ET,
+        MORNING_EMAIL_TIME_ET,
+        MORNING_RECOMPUTE_TIME_ET,
+        next_firing_at,
+    )
+    from datetime import timezone
+
+    UTC = timezone.utc
+
+    firings = [
+        (MORNING_RECOMPUTE_TIME_ET, "morning_thesis_recompute", run_morning_thesis_recompute_cycle),
+        (MORNING_EMAIL_TIME_ET,     "morning_thesis_email",    run_morning_thesis_delivery_cycle),
+        (COLLECT_TIME_ET,           "collect",                 run_collect_cycle),
+        (DISPATCH_TIME_ET,          "dispatch",                run_dispatch_cycle),
+    ]
+
+    _log.info("scheduler_loop_started")
+
+    while True:
+        now_utc = datetime.now(tz=ZoneInfo("UTC"))
+        target_dt, cycle_name, cycle_fn = min(
+            ((next_firing_at(t, now_utc=now_utc), name, fn) for t, name, fn in firings),
+            key=lambda x: x[0],
+        )
+        sleep_secs = max(60, (target_dt - now_utc).total_seconds())
+        _log.info(
+            "scheduler_sleeping",
+            extra={
+                "next_cycle": cycle_name,
+                "next_fire_utc": target_dt.isoformat(),
+                "sleep_secs": int(sleep_secs),
+            },
+        )
+        await asyncio.sleep(sleep_secs)
+
+        _log.info("scheduler_cycle_start", extra={"cycle": cycle_name})
+        try:
+            await asyncio.to_thread(cycle_fn)
+        except Exception as exc:
+            _log.exception("scheduler_cycle_error", extra={"cycle": cycle_name, "err": str(exc)})
+        else:
+            _log.info("scheduler_cycle_done", extra={"cycle": cycle_name})
+
+
 async def _ibkr_sync_loop() -> None:
     """Background task: pull IBKR positions at 8 PM ET daily, fire-and-forget."""
     from ..config import settings
@@ -140,15 +205,17 @@ async def _lifespan(app: FastAPI):
     ensure_dirs()
     init_db()
     _init_served_phase_schemas()
-    task = asyncio.create_task(_ibkr_sync_loop())
+    ibkr_task = asyncio.create_task(_ibkr_sync_loop())
+    scheduler_task = asyncio.create_task(_scheduler_loop())
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        for t in (ibkr_task, scheduler_task):
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
 
 
 def _init_served_phase_schemas() -> None:
