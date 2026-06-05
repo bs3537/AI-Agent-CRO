@@ -38,13 +38,8 @@ class Settings(BaseSettings):
 
     # Scoring & red team — Phase 3-4
     anthropic_api_key: str | None = None
-    # OpenRouter LLMs. OpenRouter is the primary app backend; Codex is kept as
-    # an emergency local fallback only when no OpenRouter key is configured.
-    openrouter_api_key: str | None = None
-    openrouter_model: str = "minimax/minimax-m2.7"
-    openrouter_fallback_models: str = "xiaomi/mimo-v2.5-pro"
-    openrouter_file_model: str = "google/gemini-3.1-flash-lite"
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Codex CLI is the only live LLM backend. When it is unavailable, the
+    # pipeline uses the deterministic heuristic fallbacks.
 
     # Alerts — Phase 5
     alert_email_from: str | None = None
@@ -64,6 +59,9 @@ class Settings(BaseSettings):
     resend_email_to: str | None = "bhavn008@gmail.com,bhavya20051@gmail.com"
 
     # Runtime
+    # combined = local/dev legacy behavior; dashboard = Replit UI/API only;
+    # runner = Hermes/VPS CLI jobs, Codex, and email delivery.
+    sma_deployment_role: str = "combined"
     data_root: str = "./data"
     log_level: str = "INFO"
     # Cloud SQLite / Turso. Runtime DB access requires both values. Tests use
@@ -101,6 +99,16 @@ class Settings(BaseSettings):
                         "smtp_username", "smtp_password")
             if not getattr(self, v)
         ]
+
+    def deployment_role(self) -> str:
+        role = (self.sma_deployment_role or "combined").strip().lower()
+        return role if role in {"combined", "dashboard", "runner"} else "combined"
+
+    def is_dashboard_role(self) -> bool:
+        return self.deployment_role() == "dashboard"
+
+    def is_combined_role(self) -> bool:
+        return self.deployment_role() == "combined"
 
 
 # Singleton settings instance imported by every phase via `from .config import settings`.

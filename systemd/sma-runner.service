@@ -1,0 +1,34 @@
+# Install: copy to /etc/systemd/system/sma-runner.service
+# Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-runner
+# Logs:    journalctl -u sma-runner -f
+#
+# Hermes/VPS runner. Drains dashboard-enqueued runner_requests from Turso and
+# executes them on the trusted host that has Codex CLI login + Resend secrets.
+
+[Unit]
+Description=SMA Monitor — Hermes runner queue processor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator runner-run --limit 1 --poll-seconds 30
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data /opt/sma-monitor/.codex
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

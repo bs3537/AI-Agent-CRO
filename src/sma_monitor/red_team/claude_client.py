@@ -1,7 +1,7 @@
 """LLM-backed red team.
 
-Routes the red-team pass through the pluggable LLM provider (OpenRouter by
-default; see `sma_monitor.llm`). The system prompt carries the full warning-
+Routes the red-team pass through the pluggable LLM provider (Codex CLI; see
+`sma_monitor.llm`). The system prompt carries the full warning-
 signs catalog. Output is schema-conforming JSON; we then drop any cited
 warning-sign id that isn't in the catalog (voice constraint: cite real ids
 only) and enrich the rest with their canonical name + bucket.

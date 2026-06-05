@@ -1,8 +1,7 @@
 """Cost tracking + degrade cascade (PLAN.MD §6).
 
 Per-call token usage from paid API backends lands here. Codex subscription
-calls are recorded as zero-cost call counts; OpenRouter fallback calls are
-recorded with estimated USD cost from token usage.
+calls are recorded as zero-cost call counts.
 
 Cascade (post-batch-model):
   60% budget → drop red team on T₂-T band (still red-team above T)
@@ -17,8 +16,9 @@ Cache-read tokens are billed at 10% of standard input rate.
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .store import cost_sum_since, save_cost_row
@@ -45,28 +45,6 @@ _PRICING: dict[str, dict[str, float]] = {
         "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0,
     },
 }
-
-# OpenRouter pricing values are USD per token. The three configured fallback
-# models are seeded from OpenRouter's public Models API; unknown OpenRouter
-# models fall back to the conservative estimate_cost_usd path below.
-_OPENROUTER_PRICING_PER_TOKEN: dict[str, dict[str, float]] = {
-    "openrouter:xiaomi/mimo-v2.5-pro": {
-        "prompt": 0.000000435,
-        "completion": 0.00000087,
-        "input_cache_read": 0.0000000036,
-    },
-    "openrouter:minimax/minimax-m2.7": {
-        "prompt": 0.00000026,
-        "completion": 0.0000012,
-    },
-    "openrouter:google/gemini-3.1-flash-lite": {
-        "prompt": 0.00000025,
-        "completion": 0.0000015,
-        "input_cache_read": 0.000000025,
-        "input_cache_write": 0.00000008333333333333334,
-    },
-}
-
 
 # Compute the dollar cost of one Claude call from its token breakdown.
 # Falls back to Sonnet rates for unknown models (conservative — Sonnet is
@@ -122,7 +100,7 @@ def record_usage(
         input_tokens=input_tokens, output_tokens=output_tokens,
         cache_read_tokens=cache_read, cache_write_tokens=cache_write,
         cost_usd=cost_usd, related_event_id=related_event_id,
-        incurred_at=datetime.now(timezone.utc),
+        incurred_at=datetime.now(UTC),
     )
     return cost_usd
 
@@ -136,138 +114,20 @@ def record_llm_call(
     model: str,
     related_event_id: str | None = None,
 ) -> None:
-    # OpenRouter calls are paid and are recorded by record_openrouter_usage()
-    # inside the OpenRouter client with token counts and estimated USD cost.
-    # Do not add a second zero-cost row from the generic caller layer.
-    if model.startswith("openrouter:"):
-        return
-    try:
+    with suppress(Exception):
         save_cost_row(
             kind=kind, model=model,
             input_tokens=0, output_tokens=0,
             cache_read_tokens=0, cache_write_tokens=0,
             cost_usd=0.0, related_event_id=related_event_id,
-            incurred_at=datetime.now(timezone.utc),
+            incurred_at=datetime.now(UTC),
         )
-    except Exception:
-        pass  # cost recording must never break the calling path
-
-
-def record_openrouter_usage(
-    *,
-    kind: str,
-    model: str,
-    usage: dict[str, Any] | None,
-    related_event_id: str | None = None,
-) -> float:
-    """Record one paid OpenRouter response.
-
-    OpenRouter returns OpenAI-style token usage. Some responses may also carry
-    a direct cost-like field; when present, prefer it. Otherwise estimate from
-    the configured model's public per-token prices.
-    """
-    prompt_tokens = _usage_int(usage, "prompt_tokens", "input_tokens")
-    completion_tokens = _usage_int(usage, "completion_tokens", "output_tokens")
-    cache_read = _usage_int(usage, "cache_read_input_tokens", "input_cache_read_tokens")
-    cache_write = _usage_int(
-        usage,
-        "cache_creation_input_tokens",
-        "input_cache_write_tokens",
-    )
-    details = usage.get("prompt_tokens_details") if isinstance(usage, dict) else None
-    if isinstance(details, dict) and not cache_read:
-        cache_read = int(details.get("cached_tokens") or 0)
-
-    explicit_cost = _usage_float(
-        usage,
-        "cost",
-        "total_cost",
-        "cost_usd",
-        "usage",
-    )
-    if explicit_cost is not None:
-        cost_usd = round(explicit_cost, 6)
-    else:
-        cost_usd = estimate_openrouter_cost_usd(
-            model,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            cache_read_tokens=cache_read,
-            cache_write_tokens=cache_write,
-        )
-
-    try:
-        save_cost_row(
-            kind=kind,
-            model=model,
-            input_tokens=prompt_tokens,
-            output_tokens=completion_tokens,
-            cache_read_tokens=cache_read,
-            cache_write_tokens=cache_write,
-            cost_usd=cost_usd,
-            related_event_id=related_event_id,
-            incurred_at=datetime.now(timezone.utc),
-        )
-    except Exception:
-        return 0.0
-    return cost_usd
-
-
-def estimate_openrouter_cost_usd(
-    model: str,
-    *,
-    prompt_tokens: int,
-    completion_tokens: int,
-    cache_read_tokens: int = 0,
-    cache_write_tokens: int = 0,
-) -> float:
-    pricing = _OPENROUTER_PRICING_PER_TOKEN.get(model)
-    if pricing is None:
-        return estimate_cost_usd(
-            model,
-            input_tokens=prompt_tokens,
-            output_tokens=completion_tokens,
-            cache_read_tokens=cache_read_tokens,
-            cache_write_tokens=cache_write_tokens,
-        )
-    return round(
-        prompt_tokens * pricing.get("prompt", 0.0)
-        + completion_tokens * pricing.get("completion", 0.0)
-        + cache_read_tokens * pricing.get("input_cache_read", 0.0)
-        + cache_write_tokens * pricing.get("input_cache_write", 0.0),
-        6,
-    )
-
-
-def _usage_int(usage: dict[str, Any] | None, *keys: str) -> int:
-    if not isinstance(usage, dict):
-        return 0
-    for key in keys:
-        try:
-            return int(usage.get(key) or 0)
-        except (TypeError, ValueError):
-            continue
-    return 0
-
-
-def _usage_float(usage: dict[str, Any] | None, *keys: str) -> float | None:
-    if not isinstance(usage, dict):
-        return None
-    for key in keys:
-        raw = usage.get(key)
-        if raw is None:
-            continue
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            continue
-    return None
 
 
 # Sum today's spend from the cost ledger (UTC midnight forward). Used by
 # the cascade and the digest's System status section.
 def today_spent_usd(now: datetime | None = None) -> float:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     summary = cost_sum_since(midnight)
     return float(summary["total_cost"])

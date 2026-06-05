@@ -17,11 +17,12 @@ from .db import database_backend, init_db
 from .decision.store import init_decision_schema
 from .identity import article_event_id
 from .logging_setup import setup_logging
-from .paths import DATA_ROOT, ensure_dirs
 from .news.fmp_client import init_fmp_schema
 from .news.store import init_news_schema
 from .orchestrator.store import init_orchestrator_schema
 from .outputs.store import init_outputs_schema
+from .paths import DATA_ROOT, ensure_dirs
+from .portfolio.sidecar import init_sidecar_schema
 from .portfolio.store import init_portfolio_schema
 from .portfolio.uploads import init_uploads_schema
 from .red_team.store import init_red_team_schema
@@ -42,6 +43,7 @@ def main() -> int:
 
     init_db()
     init_portfolio_schema()
+    init_sidecar_schema()
     init_uploads_schema()
     init_news_schema()
     init_fmp_schema()

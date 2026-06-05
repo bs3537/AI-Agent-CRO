@@ -6,14 +6,15 @@ letters) plus a position-count summary, returned as JSON for the dashboard.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
+from ...config import settings
 from ...orchestrator import dead_letter as dl
 from ...orchestrator.cost import current_degrade_state
 from ...orchestrator.flags import get_active_flags
-from ...orchestrator.store import cost_by_kind_since
+from ...orchestrator.store import cost_by_kind_since, recent_runner_requests
 from ...portfolio.joined import latest_joined
 from ..schemas import StatusOut
 
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["status"])
 def get_status() -> StatusOut:
     degrade = current_degrade_state()
     midnight = (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .replace(hour=0, minute=0, second=0, microsecond=0)
         .isoformat()
     )
@@ -58,4 +59,6 @@ def get_status() -> StatusOut:
             "pulled_at": pulled_at.isoformat() if pulled_at else None,
             "missing_sidecars": missing,
         },
+        deployment={"role": settings.deployment_role()},
+        runner_requests=recent_runner_requests(limit=10),
     )

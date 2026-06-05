@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..db import connection
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS position_files (
     filename      TEXT NOT NULL,
     stored_path   TEXT NOT NULL,
     text_path     TEXT,
+    text_content  TEXT NOT NULL DEFAULT '',
     content_type  TEXT NOT NULL,
     content_sha   TEXT NOT NULL,
     byte_size     INTEGER NOT NULL,
@@ -66,12 +67,26 @@ CREATE INDEX IF NOT EXISTS idx_position_files_uploaded_at ON position_files(uplo
 def init_uploads_schema() -> None:
     with connection() as conn:
         conn.executescript(POSITION_FILES_SCHEMA)
+        _ensure_column(
+            conn,
+            "position_files",
+            "text_content",
+            "TEXT NOT NULL DEFAULT ''",
+        )
+
+
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 # Stable id for an uploaded file, keyed on (ticker, content hash) so identical
 # re-uploads collapse to one row.
 def file_event_id(ticker: str, content_sha: str) -> str:
-    return event_id({"kind": "position_file", "ticker": ticker.upper(), "content_sha": content_sha})
+    return event_id(
+        {"kind": "position_file", "ticker": ticker.upper(), "content_sha": content_sha}
+    )
 
 
 # Reduce an arbitrary client filename to a safe basename (no path parts, no
@@ -99,7 +114,9 @@ def extract_text(path: Path) -> str:
         try:
             import docx
         except ImportError as e:
-            raise UploadError("DOCX extraction needs `python-docx` (pip install python-docx)") from e
+            raise UploadError(
+                "DOCX extraction needs `python-docx` (pip install python-docx)"
+            ) from e
         document = docx.Document(str(path))
         return "\n".join(p.text for p in document.paragraphs).strip()
     raise UploadError(f"unsupported file type: {suffix or '(none)'}")
@@ -140,27 +157,44 @@ def save_upload(ticker: str, filename: str, content: bytes) -> dict:
         "filename": safe,
         "stored_path": str(stored.relative_to(DATA_ROOT)),
         "text_path": str(text_path.relative_to(DATA_ROOT)),
+        "text_content": text,
         "content_type": suffix,
         "content_sha": content_sha,
         "byte_size": len(content),
         "n_chars": len(text),
-        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "uploaded_at": datetime.now(UTC).isoformat(),
     }
     with connection() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO events(event_id, kind, ticker, first_seen, payload) "
             "VALUES (?, ?, ?, ?, ?)",
-            (eid, "position_file", ticker, record["uploaded_at"],
-             json.dumps({"filename": safe, "content_type": suffix, "n_chars": len(text)})),
+            (
+                eid,
+                "position_file",
+                ticker,
+                record["uploaded_at"],
+                json.dumps(
+                    {"filename": safe, "content_type": suffix, "n_chars": len(text)}
+                ),
+            ),
         )
         conn.execute(
             """INSERT OR IGNORE INTO position_files
-               (event_id, ticker, filename, stored_path, text_path, content_type,
-                content_sha, byte_size, n_chars, uploaded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (event_id, ticker, filename, stored_path, text_path, text_content,
+                content_type, content_sha, byte_size, n_chars, uploaded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                eid, ticker, safe, record["stored_path"], record["text_path"],
-                suffix, content_sha, len(content), len(text), record["uploaded_at"],
+                eid,
+                ticker,
+                safe,
+                record["stored_path"],
+                record["text_path"],
+                text,
+                suffix,
+                content_sha,
+                len(content),
+                len(text),
+                record["uploaded_at"],
             ),
         )
     return record
@@ -191,9 +225,14 @@ def read_text(event_id_str: str) -> str:
     init_uploads_schema()
     with connection() as conn:
         row = conn.execute(
-            "SELECT text_path FROM position_files WHERE event_id = ?", (event_id_str,)
+            "SELECT text_content, text_path FROM position_files WHERE event_id = ?",
+            (event_id_str,),
         ).fetchone()
-    if row is None or not row["text_path"]:
+    if row is None:
+        return ""
+    if row["text_content"]:
+        return row["text_content"]
+    if not row["text_path"]:
         return ""
     p = DATA_ROOT / row["text_path"]
     return p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
@@ -206,12 +245,11 @@ def combined_text(ticker: str, max_chars: int = MAX_COMBINED_CHARS) -> str:
     rows = list_files(ticker)
     parts: list[str] = []
     for r in rows:
-        if not r["text_path"]:
-            continue
-        p = DATA_ROOT / r["text_path"]
-        if not p.exists():
-            continue
-        body = p.read_text(encoding="utf-8", errors="replace").strip()
+        body = (r["text_content"] or "").strip()
+        if not body and r["text_path"]:
+            p = DATA_ROOT / r["text_path"]
+            if p.exists():
+                body = p.read_text(encoding="utf-8", errors="replace").strip()
         if body:
             parts.append(f"### {r['filename']}\n{body}")
     combined = "\n\n".join(parts)

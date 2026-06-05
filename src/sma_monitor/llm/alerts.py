@@ -5,7 +5,7 @@ import logging
 import os
 import smtplib
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.mime.text import MIMEText
 
 from ..config import settings
@@ -24,7 +24,7 @@ def alert_codex_failure(
     fallback_label: str | None,
     fallback_succeeded: bool | None = None,
 ) -> bool:
-    """Email the operator when Codex fails and OpenRouter has to take over.
+    """Email the operator when Codex fails and the pipeline must fall back.
 
     Returns True only when an SMTP email was sent. Failures are logged and never
     raised into the LLM path.
@@ -44,7 +44,7 @@ def alert_codex_failure(
     body = "\n".join([
         "Codex GPT failed inside AI Chief Risk Officer.",
         "",
-        f"Time UTC: {datetime.now(timezone.utc).isoformat()}",
+        f"Time UTC: {datetime.now(UTC).isoformat()}",
         f"Stage: {stage_label}",
         f"Method: {method}",
         f"Fallback model: {fallback_label or 'none'}",
@@ -82,7 +82,7 @@ def _should_send(key: str) -> bool:
         cooldown = max(0, int(os.environ.get("SMA_CODEX_ALERT_COOLDOWN_S", "900")))
     except ValueError:
         cooldown = 900
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
     with _LOCK:
         last = _LAST_SENT.get(key)
         if last is not None and now - last < cooldown:

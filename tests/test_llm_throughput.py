@@ -103,13 +103,10 @@ def test_map_concurrent_runs_in_parallel():
 
 # --- Stage-aware provider construction --------------------------------------
 
-# When OpenRouter is not configured, get_provider(stage=...) builds a Codex
-# fallback carrying that stage's model + effort; with no stage it returns the
-# bare account-default provider.
+# get_provider(stage=...) builds a Codex provider carrying that stage's model +
+# effort; with no stage it returns the bare account-default provider.
 def test_get_provider_stage_sets_model_and_effort(monkeypatch):
     import sma_monitor.llm.provider as provider_mod
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setattr("sma_monitor.config.settings.openrouter_api_key", None)
     monkeypatch.setattr("sma_monitor.llm.codex_client.codex_available", lambda: True)
     monkeypatch.setenv("SMA_CODEX_MODEL_SCORER", "gpt-5.5")
     monkeypatch.setenv("SMA_CODEX_EFFORT_SCORER", "low")
@@ -151,7 +148,11 @@ def test_run_retries_on_rate_limit_then_succeeds(monkeypatch):
     def fake_run(cmd, **kw):
         calls["n"] += 1
         if calls["n"] < 3:
-            return SimpleNamespace(returncode=1, stdout="", stderr="stream error: 429 Too Many Requests")
+            return SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="stream error: 429 Too Many Requests",
+            )
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr(cc.subprocess, "run", fake_run)

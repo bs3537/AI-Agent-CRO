@@ -7,14 +7,14 @@
 # (CODEX_HOME), an absolute DATA_ROOT, and the W9 concurrency knob. Without
 # these the app silently falls back to its heuristics instead of real Codex.
 #
-# Usage: sma_cron.sh <collect|dispatch|thesis-email|selfcheck>
+# Usage: sma_cron.sh <collect|dispatch|thesis-recompute|thesis-email|runner-once|selfcheck>
 set -euo pipefail
 
 # --- Environment the scheduler doesn't provide -------------------------------
-REPO="/home/bhavy/AI_Agent_CRO"
-export PATH="/home/bhavy/.local/node/bin:${PATH:-/usr/bin:/bin}"   # codex CLI + node runtime
-export SMA_CODEX_BIN="/home/bhavy/.local/node/bin/codex"
-export CODEX_HOME="/home/bhavy/.codex"              # holds auth.json from `codex login`
+REPO="${SMA_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export PATH="${SMA_NODE_BIN_DIR:-$HOME/.local/bin}:${PATH:-/usr/bin:/bin}"   # codex CLI + node runtime
+export SMA_CODEX_BIN="${SMA_CODEX_BIN:-$(command -v codex || true)}"
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"              # holds auth.json from `codex login`
 export DATA_ROOT="$REPO/data"                       # live DB / sidecars / archived outputs
 export SMA_LLM_CONCURRENCY="${SMA_LLM_CONCURRENCY:-4}"
 PY="$REPO/.venv/bin/python"
@@ -32,8 +32,8 @@ fi
 
 # --- normal path: bootstrap schema (idempotent) then run the requested cycle -
 case "$CMD" in
-  collect|dispatch|thesis-email) ;;
-  *) echo "usage: $0 <collect|dispatch|thesis-email|selfcheck>" >&2; exit 2 ;;
+  collect|dispatch|thesis-recompute|thesis-email|runner-once) ;;
+  *) echo "usage: $0 <collect|dispatch|thesis-recompute|thesis-email|runner-once|selfcheck>" >&2; exit 2 ;;
 esac
 
 cd "$REPO"
@@ -41,5 +41,8 @@ TS="$(date +%Y-%m-%d)"
 {
   echo "===== $(date -Is) :: sma_cron $CMD ====="
   "$PY" -m sma_monitor                                # Phase 0 bootstrap (idempotent)
-  "$PY" -m sma_monitor.orchestrator "$CMD"
+  case "$CMD" in
+    runner-once) "$PY" -m sma_monitor.orchestrator process-runner-requests --limit 5 ;;
+    *) "$PY" -m sma_monitor.orchestrator "$CMD" ;;
+  esac
 } >> "$LOG_DIR/$CMD-$TS.log" 2>&1

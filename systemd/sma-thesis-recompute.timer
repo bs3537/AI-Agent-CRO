@@ -1,0 +1,15 @@
+# Install: copy sma-thesis-recompute.{service,timer} to /etc/systemd/system/
+# Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-thesis-recompute.timer
+#
+# Fires the smart thesis recompute at 6 AM ET daily so the 9:15 AM thesis email
+# can wait for fresh Codex ratings.
+
+[Unit]
+Description=SMA Monitor — thesis-drift recompute at 6 AM ET
+
+[Timer]
+OnCalendar=06:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

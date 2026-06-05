@@ -6,12 +6,13 @@ system_flags   — current operational flags. Digest footer reads active ones.
                  Examples: 'stale_positions', 'exa_failure', 'budget_degraded'.
 dead_letters   — failed scorer / red-team calls. Retry policy is "retry once,
                  then abandon and flag" per PLAN §6.
+runner_requests — dashboard-enqueued work for a trusted Hermes/Codex runner.
 """
 from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ..db import connection
 from ..identity import event_id
@@ -56,6 +57,23 @@ CREATE TABLE IF NOT EXISTS dead_letters (
     last_attempt_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dead_letters_status ON dead_letters(status);
+
+CREATE TABLE IF NOT EXISTS runner_requests (
+    request_id    TEXT PRIMARY KEY,
+    command       TEXT NOT NULL,
+    ticker        TEXT,
+    payload_json  TEXT NOT NULL DEFAULT '{}',
+    status        TEXT NOT NULL DEFAULT 'queued',
+    requested_at  TEXT NOT NULL,
+    claimed_at    TEXT,
+    finished_at   TEXT,
+    summary_json  TEXT,
+    error         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_runner_requests_status_requested
+    ON runner_requests(status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_runner_requests_ticker
+    ON runner_requests(ticker);
 """
 
 
@@ -71,7 +89,9 @@ def init_orchestrator_schema() -> None:
 # Stable id for one cost ledger row. Keyed on (kind, model, incurred_at,
 # related_event_id) so duplicate writes within the same millisecond don't
 # create duplicate rows.
-def cost_event_id(kind: str, model: str, incurred_at: datetime, related_event_id: str | None) -> str:
+def cost_event_id(
+    kind: str, model: str, incurred_at: datetime, related_event_id: str | None
+) -> str:
     return event_id({
         "kind": "cost", "subkind": kind, "model": model,
         "incurred_at": incurred_at.isoformat(),
@@ -251,6 +271,116 @@ def clear_dead_letter(event_id_str: str) -> None:
     init_orchestrator_schema()
     with connection() as conn:
         conn.execute("DELETE FROM dead_letters WHERE event_id = ?", (event_id_str,))
+
+
+# --- runner requests ----------------------------------------------------------
+
+
+def runner_request_event_id(command: str, requested_at: datetime, ticker: str | None) -> str:
+    return event_id({
+        "kind": "runner_request",
+        "command": command,
+        "ticker": ticker.upper() if ticker else None,
+        "requested_at": requested_at.isoformat(),
+    })
+
+
+def enqueue_runner_request(
+    *,
+    command: str,
+    ticker: str | None = None,
+    payload: dict | None = None,
+    requested_at: datetime | None = None,
+) -> dict:
+    init_orchestrator_schema()
+    requested_at = requested_at or datetime.now(UTC)
+    ticker = ticker.upper() if ticker else None
+    payload = payload or {}
+    rid = runner_request_event_id(command, requested_at, ticker)
+    with connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO events(event_id, kind, ticker, first_seen, payload) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                rid,
+                "runner_request",
+                ticker,
+                requested_at.isoformat(),
+                json.dumps({"command": command, "ticker": ticker}),
+            ),
+        )
+        conn.execute(
+            """INSERT INTO runner_requests
+               (request_id, command, ticker, payload_json, status, requested_at)
+               VALUES (?, ?, ?, ?, 'queued', ?)""",
+            (rid, command, ticker, json.dumps(payload), requested_at.isoformat()),
+        )
+    return {
+        "request_id": rid,
+        "command": command,
+        "ticker": ticker,
+        "status": "queued",
+        "requested_at": requested_at.isoformat(),
+    }
+
+
+def claim_next_runner_request(*, claimed_at: datetime | None = None) -> dict | None:
+    init_orchestrator_schema()
+    claimed_at = claimed_at or datetime.now(UTC)
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM runner_requests
+               WHERE status = 'queued'
+               ORDER BY requested_at ASC LIMIT 1"""
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            """UPDATE runner_requests
+               SET status = 'running', claimed_at = ?
+               WHERE request_id = ? AND status = 'queued'""",
+            (claimed_at.isoformat(), row["request_id"]),
+        )
+    out = dict(row)
+    out["status"] = "running"
+    out["claimed_at"] = claimed_at.isoformat()
+    return out
+
+
+def finish_runner_request(
+    request_id: str,
+    *,
+    summary: dict | None = None,
+    error: str | None = None,
+    finished_at: datetime | None = None,
+) -> None:
+    init_orchestrator_schema()
+    finished_at = finished_at or datetime.now(UTC)
+    status = "failed" if error else "succeeded"
+    with connection() as conn:
+        conn.execute(
+            """UPDATE runner_requests
+               SET status = ?, finished_at = ?, summary_json = ?, error = ?
+               WHERE request_id = ?""",
+            (
+                status,
+                finished_at.isoformat(),
+                json.dumps(summary or {}),
+                error[:1000] if error else None,
+                request_id,
+            ),
+        )
+
+
+def recent_runner_requests(*, limit: int = 20) -> list[dict]:
+    init_orchestrator_schema()
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT * FROM runner_requests
+               ORDER BY requested_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # List 'pending' dead-letter rows for retry-dead-letters. Optional filter

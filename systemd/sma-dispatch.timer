@@ -1,15 +1,15 @@
 # Install: copy sma-dispatch.{service,timer} to /etc/systemd/system/
 # Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-dispatch.timer
 #
-# Fires the evening digest at 9 PM ET, Mon-Fri (3h after collect so scoring
+# Fires the evening digest at 9 PM ET daily (1h after collect so scoring
 # and red-team have time to finish). Requires systemd >= 252 for the
 # America/New_York suffix; otherwise use the sma-monitor run-loop service.
 
 [Unit]
-Description=SMA Monitor — dispatch evening digest at 9 PM ET (Mon-Fri)
+Description=SMA Monitor — dispatch evening digest at 9 PM ET
 
 [Timer]
-OnCalendar=Mon-Fri 21:00 America/New_York
+OnCalendar=21:00 America/New_York
 Persistent=true
 
 [Install]

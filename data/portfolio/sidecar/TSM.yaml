@@ -1,12 +1,10 @@
-ticker: FLNC
+ticker: TSM
 conviction_tier: 3
 stage: hybrid
 thesis: STUB - auto-scaffolded; replace with the actual long-term buying thesis.
-company_name: Fluence Energy, Inc.
+company_name: Taiwan Semiconductor Manufacturing Company Limited
 aliases: []
 brands: []
 products: []
 indications: []
-ir_url: https://ir.fluenceenergy.com/
-press_releases_url: https://ir.fluenceenergy.com/news-events
 catalysts: []

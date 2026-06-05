@@ -7,6 +7,9 @@
   python -m sma_monitor.orchestrator tick [--offline] [--with-digest]   ad-hoc all-in-one
   python -m sma_monitor.orchestrator run [--offline]         long-running scheduler
   python -m sma_monitor.orchestrator status
+  python -m sma_monitor.orchestrator process-runner-requests [--limit N]
+  python -m sma_monitor.orchestrator runner-run
+  python -m sma_monitor.orchestrator runner-requests
   python -m sma_monitor.orchestrator install-cron
   python -m sma_monitor.orchestrator retry-dead-letters [--offline]
   python -m sma_monitor.orchestrator simulate-spend --usd N
@@ -17,18 +20,13 @@ import argparse
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..config import settings
 from ..logging_setup import setup_logging
 from ..paths import ensure_dirs
 from . import dead_letter as dl
-from .cost import (
-    DAILY_BUDGET_USD,
-    current_degrade_state,
-    record_usage,
-    today_spent_usd,
-)
+from .cost import current_degrade_state, today_spent_usd
 from .flags import clear_flag, get_active_flags
 from .pipeline import (
     run_collect_cycle,
@@ -116,21 +114,21 @@ def cmd_status(args, log):
     flags = get_active_flags()
     degrade = current_degrade_state()
     today_kind = cost_by_kind_since(
-        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     )
     pending = dl.pending()
     all_dl = dl.all_recent(limit=20)
 
-    print(f"=== Orchestrator status ===")
+    print("=== Orchestrator status ===")
     print(f"Today's spend:   ${degrade.spent_usd:.4f} / ${degrade.budget_usd:.2f} "
           f"({degrade.fraction_spent*100:.1f}%)")
-    print(f"Degrade cascade:")
+    print("Degrade cascade:")
     print(f"  step 1 — skip red team T₂–T band:  {degrade.skip_red_team_t2_t_band}")
     print(f"  step 2 — skip Opus narrative:      {degrade.skip_opus_narrative}")
     print(f"  step 3 — drop buckets #10/#11:     {degrade.drop_buckets_10_11}")
     print(f"  step 4 — drop bucket #12:          {degrade.drop_bucket_12}")
     print()
-    print(f"Spend by kind today:")
+    print("Spend by kind today:")
     if not today_kind:
         print("  (no Claude calls recorded today)")
     else:
@@ -153,6 +151,33 @@ def cmd_status(args, log):
     return 0
 
 
+def cmd_process_runner_requests(args, log):
+    from .runner import process_runner_requests
+
+    summary = process_runner_requests(limit=args.limit, offline=args.offline)
+    log.info("runner_requests_processed", extra=summary)
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+def cmd_runner_run(args, log):
+    from .runner import run_runner_loop
+
+    log.info(
+        "runner_loop_starting",
+        extra={"offline": args.offline, "poll_seconds": args.poll_seconds, "limit": args.limit},
+    )
+    run_runner_loop(offline=args.offline, poll_seconds=args.poll_seconds, batch_limit=args.limit)
+    return 0
+
+
+def cmd_runner_requests(args, log):
+    from .store import recent_runner_requests
+
+    print(json.dumps(recent_runner_requests(limit=args.limit), indent=2, default=str))
+    return 0
+
+
 # CLI: emit a crontab snippet for the cron-driven deployment. Pipe through
 # `crontab -` or paste into `crontab -e`.
 def cmd_install_cron(args, log):
@@ -166,8 +191,8 @@ def cmd_install_cron(args, log):
 def cmd_retry_dead_letters(args, log):
     """Re-run scorer + red-team pipelines; rows still failing will bump
     attempt_count and (on second failure) be marked 'abandoned'."""
-    from ..scorer.pipeline import score_unscored
     from ..red_team.pipeline import run_red_team
+    from ..scorer.pipeline import score_unscored
 
     pending = dl.pending()
     log.info("retry_dead_letters_start", extra={"n_pending": len(pending)})
@@ -197,7 +222,7 @@ def cmd_simulate_spend(args, log):
         cache_read_tokens=0, cache_write_tokens=0,
         cost_usd=float(args.usd),
         related_event_id=None,
-        incurred_at=datetime.now(timezone.utc),
+        incurred_at=datetime.now(UTC),
     )
     print(json.dumps({"simulated_usd": args.usd,
                       "today_total_after": today_spent_usd(),
@@ -265,6 +290,28 @@ def main(argv=None):
     p_run.add_argument("--offline", action="store_true")
 
     sub.add_parser("status", help="Today's spend, degrade cascade, flags, dead letters")
+    p_runner_once = sub.add_parser(
+        "process-runner-requests",
+        aliases=["hermes-once"],
+        help="Hermes/VPS: process queued dashboard runner requests once",
+    )
+    p_runner_once.add_argument("--limit", type=int, default=1)
+    p_runner_once.add_argument("--offline", action="store_true")
+
+    p_runner_run = sub.add_parser(
+        "runner-run",
+        aliases=["hermes-run"],
+        help="Hermes/VPS: poll and process queued dashboard runner requests",
+    )
+    p_runner_run.add_argument("--limit", type=int, default=1, help="Requests per poll")
+    p_runner_run.add_argument("--poll-seconds", type=int, default=30)
+    p_runner_run.add_argument("--offline", action="store_true")
+
+    p_runner_list = sub.add_parser(
+        "runner-requests",
+        help="List recent dashboard-enqueued runner requests",
+    )
+    p_runner_list.add_argument("--limit", type=int, default=20)
     sub.add_parser("install-cron", help="Emit a crontab snippet")
 
     p_retry = sub.add_parser("retry-dead-letters", help="Re-attempt pending dead-lettered scores")
@@ -286,6 +333,11 @@ def main(argv=None):
         "tick": cmd_tick,
         "run": cmd_run,
         "status": cmd_status,
+        "process-runner-requests": cmd_process_runner_requests,
+        "hermes-once": cmd_process_runner_requests,
+        "runner-run": cmd_runner_run,
+        "hermes-run": cmd_runner_run,
+        "runner-requests": cmd_runner_requests,
         "install-cron": cmd_install_cron,
         "retry-dead-letters": cmd_retry_dead_letters,
         "simulate-spend": cmd_simulate_spend,

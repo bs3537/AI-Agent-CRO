@@ -1,10 +1,9 @@
-# Oneshot: the daily 9 PM ET dispatch step, fired by sma-dispatch.timer.
-# Assembles the evening digest (with the synthesis narrative) and sends it
-# via every configured channel. Pair with the timer; do not also run the
-# sma-monitor run-loop service.
+# Oneshot: the daily 6 AM ET smart thesis recompute, fired by
+# sma-thesis-recompute.timer. Refreshes signals and runs Codex-backed thesis
+# decisions before the 9:15 AM email job.
 
 [Unit]
-Description=SMA Monitor — daily dispatch (assemble + send evening digest)
+Description=SMA Monitor — morning thesis-drift recompute
 After=network-online.target
 Wants=network-online.target
 
@@ -15,7 +14,7 @@ Group=sma
 WorkingDirectory=/opt/sma-monitor
 EnvironmentFile=/opt/sma-monitor/.env
 ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
-ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator dispatch
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator thesis-recompute
 StandardOutput=journal
 StandardError=journal
 

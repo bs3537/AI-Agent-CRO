@@ -1,17 +1,17 @@
 # Install: copy sma-collect.{service,timer} to /etc/systemd/system/
 # Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-collect.timer
 #
-# Fires the collect step at 6 PM ET, Mon-Fri. The America/New_York suffix
+# Fires the collect step at 6 PM ET daily. The America/New_York suffix
 # makes systemd evaluate the time in Eastern (DST-aware) and requires
 # systemd >= 252; on older systemd, use the sma-monitor run-loop service
 # instead (it resolves ET via Python zoneinfo, version-independent).
 # Persistent=true runs a missed firing once after downtime.
 
 [Unit]
-Description=SMA Monitor — collect at 6 PM ET (Mon-Fri)
+Description=SMA Monitor — collect at 6 PM ET
 
 [Timer]
-OnCalendar=Mon-Fri 18:00 America/New_York
+OnCalendar=18:00 America/New_York
 Persistent=true
 
 [Install]

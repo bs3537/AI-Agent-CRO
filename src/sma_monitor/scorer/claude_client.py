@@ -1,6 +1,6 @@
 """LLM-backed severity scoring.
 
-Routes scoring through the pluggable LLM provider (OpenRouter by default; see
+Routes scoring through the pluggable LLM provider (Codex CLI; see
 `sma_monitor.llm`). The provider returns schema-conforming JSON which we
 validate into AxisScores. When no provider is available the pipeline uses
 the deterministic heuristic scorer instead — this module is never reached

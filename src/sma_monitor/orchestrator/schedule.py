@@ -24,7 +24,7 @@ UTC = ZoneInfo("UTC")
 # running.
 MORNING_RECOMPUTE_TIME_ET = dtime(6, 0)  # 6:00 AM ET — smart news/SEC/EMA/P&L gate
 MORNING_EMAIL_TIME_ET = dtime(9, 15)     # 9:15 AM ET — wait if recompute still runs
-COLLECT_TIME_ET = dtime(20, 0)      # 8:00 PM ET — positions + news + score + red-team + decide
+COLLECT_TIME_ET = dtime(18, 0)      # 6:00 PM ET — positions + news + score + red-team + decide
 DISPATCH_TIME_ET = dtime(21, 0)     # 9:00 PM ET — digest assembly + delivery
 
 # Slack window around each firing. Handles cron jitter and manual `run`
@@ -63,6 +63,7 @@ def crontab_lines() -> list[str]:
     return [
         "# AI CRO — daily firings: 6 AM smart thesis recompute, 9:15 AM thesis email,",
         "# 6 PM collect, 9 PM dispatch.",
+        "# Runner queue drain handles Replit dashboard manual requests.",
         "# TZ pin lets cron handle EST/EDT transitions automatically.",
         "TZ=America/New_York",
         "WORKDIR=/opt/sma-monitor",
@@ -83,6 +84,10 @@ def crontab_lines() -> list[str]:
         "# 9 PM ET — assemble and dispatch the digest.",
         "0 21 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "dispatch >> data/logs/cron.log 2>&1",
+        "",
+        "# Every 5 minutes — process queued Replit dashboard manual requests.",
+        "*/5 * * * *   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "process-runner-requests --limit 5 >> data/logs/cron.log 2>&1",
     ]
 
 

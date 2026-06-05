@@ -144,10 +144,8 @@ class FallbackProvider:
 # Return the active provider, or None when no backend is available (the
 # signal for callers to use their heuristic fallback). `prefer_offline`
 # forces None so `--offline` flags and tests bypass the model entirely.
-# OpenRouter is primary when an API key is configured. Codex is only an
-# emergency fallback for hosts that have no OpenRouter key but do have a
-# local Codex login. `stage` still maps to cost-ledger kind, and only affects
-# Codex's model/effort if Codex is selected.
+# Codex CLI is the only live LLM backend. When Codex is unavailable, callers
+# receive None and use their deterministic heuristic fallback.
 def get_provider(
     *, prefer_offline: bool = False, stage: str | None = None
 ) -> LLMProvider | None:
@@ -156,44 +154,12 @@ def get_provider(
     # Import backends lazily so missing CLIs/SDKs never break modules that only
     # might use an LLM.
     from .codex_client import CodexProvider, codex_available
-    from .openrouter_client import OpenRouterProvider, fallback_models, openrouter_available, primary_model
 
-    codex: LLMProvider | None = None
-    if codex_available():
-        if stage is None:
-            codex = CodexProvider()
-        else:
-            from .throughput import stage_effort, stage_model
+    if not codex_available():
+        return None
+    if stage is None:
+        return CodexProvider()
 
-            codex = CodexProvider(model=stage_model(stage), effort=stage_effort(stage))
+    from .throughput import stage_effort, stage_model
 
-    openrouter_chain: list[LLMProvider] = []
-    if openrouter_available():
-        cost_kind = _stage_cost_kind(stage)
-        openrouter_chain = [
-            OpenRouterProvider(model=primary_model(), cost_kind=cost_kind),
-            *[OpenRouterProvider(model=m, cost_kind=cost_kind) for m in fallback_models()],
-        ]
-
-    if openrouter_chain:
-        if len(openrouter_chain) == 1:
-            return openrouter_chain[0]
-        return FallbackProvider(
-            primary=openrouter_chain[0],
-            fallbacks=openrouter_chain[1:],
-            stage=stage,
-        )
-    if codex is not None:
-        return codex
-
-    return None
-
-
-def _stage_cost_kind(stage: str | None) -> str:
-    return {
-        "scorer": "score",
-        "red_team": "red_team",
-        "decision": "decision",
-        "digest": "digest_narrative",
-        "chat": "chat",
-    }.get(stage or "", "llm")
+    return CodexProvider(model=stage_model(stage), effort=stage_effort(stage))

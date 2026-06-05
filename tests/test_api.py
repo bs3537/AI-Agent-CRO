@@ -29,6 +29,32 @@ def test_health(client):
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
+def test_dashboard_role_does_not_start_background_loops(monkeypatch):
+    import asyncio
+
+    import sma_monitor.api.app as app_mod
+    from sma_monitor.config import settings
+
+    started = {"scheduler": False, "ibkr": False}
+
+    async def fake_scheduler():
+        started["scheduler"] = True
+        await asyncio.sleep(0)
+
+    async def fake_ibkr():
+        started["ibkr"] = True
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
+    monkeypatch.setattr(app_mod, "_scheduler_loop", fake_scheduler)
+    monkeypatch.setattr(app_mod, "_ibkr_sync_loop", fake_ibkr)
+
+    with TestClient(app_mod.create_app()) as c:
+        assert c.get("/api/health").status_code == 200
+
+    assert started == {"scheduler": False, "ibkr": False}
+
+
 # The A/B/C/D rubric: verdict sets the band; within a hold, bear severity then
 # confidence split it (A strong hold, B/C hold, D sell).
 def test_grade_rubric():
@@ -119,6 +145,42 @@ def test_recompute_wait(client):
     assert body["decision"]["compute_source"] == "manual_single"
 
 
+def test_recompute_dashboard_role_enqueues(client, monkeypatch):
+    from sma_monitor.api.routes.positions import settings
+    from sma_monitor.db import connection
+
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
+
+    r = client.post(f"/api/positions/{HELD}/recompute")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scheduled"] is True
+    assert body["request_id"]
+    assert body["queue_status"] == "queued"
+
+    status = client.get("/api/status").json()
+    queued = [q for q in status["runner_requests"] if q["request_id"] == body["request_id"]]
+    assert queued and queued[0]["command"] == "manual_recompute_one"
+
+
+def test_recompute_all_dashboard_role_enqueues(client, monkeypatch):
+    from sma_monitor.api.routes.positions import settings
+    from sma_monitor.db import connection
+
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
+
+    r = client.post("/api/positions/recompute", params={"force": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scheduled"] is True
+    assert body["request_id"]
+    assert body["queue_status"] == "queued"
+
+
 def test_add_manual_position_runs_analysis(client):
     r = client.post(
         "/api/positions",
@@ -153,8 +215,13 @@ def test_chat_portfolio_context(client, monkeypatch):
         def complete_json(self, **kwargs):
             return {}
 
-    monkeypatch.setattr("sma_monitor.api.routes.chat.get_provider", lambda **kw: FakeChatProvider())
-    r = client.post("/api/chat", data={"message": "What is the latest CRO view on VRTX?", "history": "[]"})
+    monkeypatch.setattr(
+        "sma_monitor.api.routes.chat.get_provider", lambda **kw: FakeChatProvider()
+    )
+    r = client.post(
+        "/api/chat",
+        data={"message": "What is the latest CRO view on VRTX?", "history": "[]"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["answer"].startswith("VRTX")

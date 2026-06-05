@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
+from ...config import settings
 from ...db import connection
 from ...decision.schema import GRADE_VERDICT, VERDICT_COLOR
 from ...decision.store import latest_decision, latest_rating
@@ -25,6 +26,7 @@ from ...orchestrator.manual_recompute import (
     recompute_all_with_refresh,
     recompute_one_with_refresh,
 )
+from ...orchestrator.store import enqueue_runner_request
 from ...portfolio.delete import delete_holding_data
 from ...portfolio.ir_urls import populate_ir_urls_for_tickers
 from ...portfolio.joined import latest_joined
@@ -298,7 +300,7 @@ def add_manual_position(
     body: ManualPositionCreate,
     offline: bool = False,
 ) -> ManualPositionResponse:
-    from ..portfolio.store import latest_positions as _latest_positions_store
+    from ...portfolio.store import latest_positions as _latest_positions_store
 
     want = body.ticker.strip().upper()
 
@@ -323,11 +325,23 @@ def add_manual_position(
     )
     set_thesis(want, body.thesis)
     ir_state = _populate_ir_urls_best_effort(want, offline=offline)
-    state = recompute_one_with_refresh(
-        want,
-        offline=offline,
-        compute_source="manual_single",
-    )
+    if settings.is_dashboard_role():
+        state = {
+            "queued": enqueue_runner_request(
+                command="manual_recompute_one",
+                ticker=want,
+                payload={
+                    "offline": offline,
+                    "compute_source": "hermes_manual_single",
+                },
+            )
+        }
+    else:
+        state = recompute_one_with_refresh(
+            want,
+            offline=offline,
+            compute_source="manual_single",
+        )
     if ir_state is not None:
         state["ir_urls"] = ir_state
     return ManualPositionResponse(
@@ -461,6 +475,22 @@ def recompute(
 ) -> RecomputeResponse:
     want = ticker.strip().upper()
     _holding_or_404(want)  # 404 if not a current holding
+    if settings.is_dashboard_role():
+        req = enqueue_runner_request(
+            command="manual_recompute_one",
+            ticker=want,
+            payload={
+                "offline": offline,
+                "compute_source": compute_source or "hermes_manual_single",
+            },
+        )
+        return RecomputeResponse(
+            ticker=want,
+            scheduled=True,
+            request_id=req["request_id"],
+            queue_status=req["status"],
+            refresh={"queued": req},
+        )
     if wait:
         state = recompute_one_with_refresh(
             want,
@@ -496,6 +526,17 @@ def recompute_all(
     force: bool = True,
     offline: bool = False,
 ) -> RecomputeAllResponse:
+    if settings.is_dashboard_role():
+        req = enqueue_runner_request(
+            command="manual_recompute_all",
+            payload={"offline": offline, "force": force},
+        )
+        return RecomputeAllResponse(
+            scheduled=True,
+            request_id=req["request_id"],
+            queue_status=req["status"],
+            refresh={"queued": req},
+        )
     if wait:
         state = recompute_all_with_refresh(offline=offline, force=force)
         s = state.get("decisions", {})

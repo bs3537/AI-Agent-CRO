@@ -56,7 +56,7 @@ exposeLocalhost = true
 
 [deployment]
 deploymentTarget = "vm"
-run = ["bash", "-c", ".venv/bin/python -m sma_monitor.api --host 0.0.0.0 --port 5000"]
+run = ["bash", "-c", "SMA_DEPLOYMENT_ROLE=${SMA_DEPLOYMENT_ROLE:-dashboard} .venv/bin/python -m sma_monitor.api --host 0.0.0.0 --port 5000"]
 build = ["bash", "-c", "python -m venv .venv && .venv/bin/pip install --no-user -r requirements.txt -e . && cd frontend && npm install && npm run build"]
 
 [userenv]

@@ -35,6 +35,7 @@ def test_crontab_collect_is_daily():
     assert "0 18 * * *" in lines
     assert "0 6 * * *" in lines
     assert "15 9 * * *" in lines
+    assert "process-runner-requests --limit 5" in lines
 
 
 def test_morning_smart_recompute_runs_at_6am_et():

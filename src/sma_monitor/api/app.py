@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from datetime import time as dtime
 from pathlib import Path
@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from ..config import settings
 from ..db import init_db
 from ..paths import ensure_dirs
 from .routes import chat, portfolio, positions, status
@@ -59,7 +60,7 @@ async def _scheduler_loop() -> None:
     Firing times (Eastern, DST-aware):
       06:00  — morning thesis recompute (smart news/SEC/EMA/P&L gate)
       09:15  — morning thesis email delivery
-      20:00  — evening collect cycle (positions + news + score + decisions)
+      18:00  — evening collect cycle (positions + news + score + decisions)
       21:00  — evening dispatch cycle (digest assembly + delivery)
     """
     from ..orchestrator.pipeline import (
@@ -75,15 +76,20 @@ async def _scheduler_loop() -> None:
         MORNING_RECOMPUTE_TIME_ET,
         next_firing_at,
     )
-    from datetime import timezone
-
-    UTC = timezone.utc
 
     firings = [
-        (MORNING_RECOMPUTE_TIME_ET, "morning_thesis_recompute", run_morning_thesis_recompute_cycle),
-        (MORNING_EMAIL_TIME_ET,     "morning_thesis_email",    run_morning_thesis_delivery_cycle),
-        (COLLECT_TIME_ET,           "collect",                 run_collect_cycle),
-        (DISPATCH_TIME_ET,          "dispatch",                run_dispatch_cycle),
+        (
+            MORNING_RECOMPUTE_TIME_ET,
+            "morning_thesis_recompute",
+            run_morning_thesis_recompute_cycle,
+        ),
+        (
+            MORNING_EMAIL_TIME_ET,
+            "morning_thesis_email",
+            run_morning_thesis_delivery_cycle,
+        ),
+        (COLLECT_TIME_ET, "collect", run_collect_cycle),
+        (DISPATCH_TIME_ET, "dispatch", run_dispatch_cycle),
     ]
 
     _log.info("scheduler_loop_started")
@@ -206,17 +212,19 @@ async def _lifespan(app: FastAPI):
     ensure_dirs()
     init_db()
     _init_served_phase_schemas()
-    ibkr_task = asyncio.create_task(_ibkr_sync_loop())
-    scheduler_task = asyncio.create_task(_scheduler_loop())
+    tasks: list[asyncio.Task] = []
+    if settings.is_combined_role():
+        tasks.append(asyncio.create_task(_ibkr_sync_loop()))
+        tasks.append(asyncio.create_task(_scheduler_loop()))
+    else:
+        _log.info("api_background_loops_disabled", extra={"role": settings.deployment_role()})
     try:
         yield
     finally:
-        for t in (ibkr_task, scheduler_task):
+        for t in tasks:
             t.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await t
-            except asyncio.CancelledError:
-                pass
 
 
 def _init_served_phase_schemas() -> None:
@@ -226,12 +234,14 @@ def _init_served_phase_schemas() -> None:
     from ..news.fmp_client import init_fmp_schema
     from ..news.store import init_news_schema
     from ..orchestrator.store import init_orchestrator_schema
+    from ..portfolio.sidecar import init_sidecar_schema
     from ..portfolio.store import init_portfolio_schema
     from ..portfolio.uploads import init_uploads_schema
     from ..red_team.store import init_red_team_schema
     from ..scorer.store import init_scores_schema
 
     init_portfolio_schema()
+    init_sidecar_schema()
     init_uploads_schema()
     init_news_schema()
     init_fmp_schema()

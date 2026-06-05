@@ -189,6 +189,8 @@ class ManualPositionResponse(BaseModel):
 class RecomputeResponse(BaseModel):
     ticker: str
     scheduled: bool                    # True when run in the background
+    request_id: str | None = None       # populated when queued for Hermes/runner
+    queue_status: str | None = None
     rating: RatingOut | None = None
     decision: DecisionOut | None = None  # populated only when ?wait=true
     refresh: dict[str, Any] | None = None
@@ -197,6 +199,8 @@ class RecomputeResponse(BaseModel):
 # POST /api/positions/recompute response — summary of a whole-portfolio run.
 class RecomputeAllResponse(BaseModel):
     scheduled: bool                    # True when run in the background
+    request_id: str | None = None       # populated when queued for Hermes/runner
+    queue_status: str | None = None
     decided: int = 0                   # counts populated only when ?wait=true
     skipped: int = 0
     errors: int = 0
@@ -240,3 +244,5 @@ class StatusOut(BaseModel):
     flags: list[dict[str, Any]] = Field(default_factory=list)
     dead_letters: dict[str, Any] = Field(default_factory=dict)
     positions: dict[str, Any] = Field(default_factory=dict)
+    deployment: dict[str, Any] = Field(default_factory=dict)
+    runner_requests: list[dict[str, Any]] = Field(default_factory=list)

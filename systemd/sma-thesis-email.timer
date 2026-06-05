@@ -1,16 +1,16 @@
 # Install: copy sma-thesis-email.{service,timer} to /etc/systemd/system/
 # Then:    sudo systemctl daemon-reload && sudo systemctl enable --now sma-thesis-email.timer
 #
-# Fires the morning thesis-drift email at 9 AM ET, Mon-Fri. Requires
+# Fires the morning thesis-drift email at 9:15 AM ET daily. Requires
 # systemd >= 252 for the America/New_York suffix; otherwise use the
 # sma-monitor run-loop service. Persistent=true sends a missed firing once
 # after downtime (e.g. the box was asleep at 9 AM).
 
 [Unit]
-Description=SMA Monitor — thesis-drift email at 9 AM ET (Mon-Fri)
+Description=SMA Monitor — thesis-drift email at 9:15 AM ET
 
 [Timer]
-OnCalendar=Mon-Fri 09:00 America/New_York
+OnCalendar=09:15 America/New_York
 Persistent=true
 
 [Install]

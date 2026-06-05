@@ -37,7 +37,7 @@ StandardError=journal
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/sma-monitor/data
+ReadWritePaths=/opt/sma-monitor/data /opt/sma-monitor/.codex
 PrivateTmp=true
 
 [Install]
