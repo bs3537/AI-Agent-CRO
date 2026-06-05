@@ -6,9 +6,21 @@ decisions; edit theses; upload thesis documents; and trigger recomputes. The
 app factory lives in `app.py` (`create_app()` / module-level `app`); run it
 with `python -m sma_monitor.api` or `uvicorn sma_monitor.api.app:app`.
 
-Only `create_app` is re-exported here — re-exporting the `app` instance would
-shadow the `app` submodule name and break `sma_monitor.api.app` imports.
+Only `create_app` is re-exported lazily here — importing `app.py` at package
+initialization time pulls in routes, which can create circular imports for
+non-API modules that only need `sma_monitor.api.schemas`.
 """
-from .app import create_app
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = ["create_app"]
+
+
+# Lazily expose the application factory without importing route modules early.
+def __getattr__(name: str) -> Any:
+    if name == "create_app":
+        from .app import create_app
+
+        return create_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
