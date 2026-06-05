@@ -25,9 +25,13 @@ export default function StatusBar({ status }: { status: Status | null }) {
   // re-check `active` defensively). Dead-letter flags read as errors, rest warn.
   const flags = (status.flags ?? []).filter((f) => Boolean(f.active))
   const deadPending = status.dead_letters?.pending ?? 0
-  // Filter out dead_letter flags — they are surfaced through the dead_letters
-  // count separately and are not actionable from the status bar.
-  const visibleFlags = flags.filter((f) => !String(f.flag_name ?? '').includes('dead_letter'))
+  // Filter out dead_letter and budget_degraded flags — dead letters are surfaced
+  // through the dead_letters count separately; budget tracking uses codex cli,
+  // not an external LLM API, so the budget_degraded flag is not applicable.
+  const visibleFlags = flags.filter((f) => {
+    const name = String(f.flag_name ?? '')
+    return !name.includes('dead_letter') && name !== 'budget_degraded'
+  })
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
       <Chip size="small" variant="outlined" label={`${status.positions.count} positions`} />
