@@ -157,9 +157,40 @@ def test_assemble_risk_brief_detects_changes():
     from sma_monitor.decision.snapshots import upsert_snapshot
     from sma_monitor.decision.store import save_rating
     from sma_monitor.portfolio.joined import latest_joined
+    from sma_monitor.portfolio.schema import Position
+    from sma_monitor.portfolio.store import save_pull
 
-    # Drive the scenario off the live holdings (the shared sandbox's latest pull
-    # varies by test order) rather than hardcoding tickers.
+    seed_at = datetime(2098, 1, 1, tzinfo=UTC)
+    nav = 1_000_000.0
+    save_pull(
+        [
+            Position(
+                ticker="VRTX",
+                qty=500,
+                market_value=250_000.0,
+                pct_nav=0.25,
+                cost_basis=150_000.0,
+                pulled_at=seed_at,
+                nav=nav,
+            ),
+            Position(
+                ticker="MRNA",
+                qty=2_000,
+                market_value=75_000.0,
+                pct_nav=0.075,
+                cost_basis=90_000.0,
+                pulled_at=seed_at,
+                nav=nav,
+            ),
+        ],
+        nav=nav,
+        pulled_at=seed_at,
+        source="risk_brief_test_seed",
+        raw_xml=None,
+    )
+
+    # Drive the scenario off this test-owned latest pull rather than whatever
+    # earlier API/delete tests left in the shared sandbox.
     holdings, _missing, _ = latest_joined()
     tickers = [h.ticker for h in holdings]
     assert len(tickers) >= 2, f"need >=2 monitored holdings, got {tickers}"

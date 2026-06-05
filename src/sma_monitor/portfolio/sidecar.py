@@ -16,9 +16,14 @@ from ..db import connection
 from ..paths import PORTFOLIO_DIR
 from .schema import Sidecar
 
-# Directory holding one YAML file per ticker. Files starting with `_` are
-# skipped by the loader so example templates can live alongside real data.
+# Runtime directory for one YAML file per ticker. In production, DB rows are
+# authoritative; this directory is only used for optional local YAML writes.
 SIDECAR_DIR = PORTFOLIO_DIR / "sidecar"
+
+# Bundled seed sidecars committed with the repo. Replit can use an ephemeral
+# DATA_ROOT for scratch files, so schema bootstrap must not depend on runtime
+# DATA_ROOT containing the committed seed YAML.
+REPO_SIDECAR_DIR = Path(__file__).resolve().parents[3] / "data" / "portfolio" / "sidecar"
 
 SIDECAR_SCHEMA = """
 CREATE TABLE IF NOT EXISTS portfolio_sidecars (
@@ -50,7 +55,7 @@ def init_sidecar_schema(*, seed_from_yaml: bool = True) -> None:
         if not seed_from_yaml:
             return
         now = datetime.now(UTC).isoformat()
-        for sc in _load_yaml_sidecars().values():
+        for sc in _load_seed_sidecars().values():
             conn.execute(
                 """INSERT OR IGNORE INTO portfolio_sidecars
                    (ticker, payload_json, source, updated_at)
@@ -72,10 +77,18 @@ def _load_yaml_sidecar(ticker: str) -> Sidecar | None:
         return Sidecar.model_validate(yaml.safe_load(f))
 
 
-def _load_yaml_sidecars() -> dict[str, Sidecar]:
-    _ensure_dir()
+def _load_seed_sidecars() -> dict[str, Sidecar]:
+    out = _load_yaml_sidecars(REPO_SIDECAR_DIR)
+    if SIDECAR_DIR != REPO_SIDECAR_DIR:
+        out.update(_load_yaml_sidecars(SIDECAR_DIR))
+    return out
+
+
+def _load_yaml_sidecars(directory: Path) -> dict[str, Sidecar]:
+    if not directory.exists():
+        return {}
     out: dict[str, Sidecar] = {}
-    for p in sorted(SIDECAR_DIR.glob("*.yaml")):
+    for p in sorted(directory.glob("*.yaml")):
         if p.stem.startswith("_"):
             continue
         with p.open() as f:

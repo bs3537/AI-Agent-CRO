@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sma_monitor.db import connection
 from sma_monitor.paths import DATA_ROOT
 from sma_monitor.portfolio.sidecar import (
     init_sidecar_schema,
@@ -9,6 +10,41 @@ from sma_monitor.portfolio.sidecar import (
     sidecar_path,
 )
 from sma_monitor.portfolio.uploads import combined_text, list_files, save_upload
+
+
+def test_sidecar_seed_uses_repo_yaml_when_runtime_data_root_is_empty(monkeypatch, tmp_path):
+    import sma_monitor.portfolio.sidecar as sidecar_mod
+
+    empty_runtime_sidecars = tmp_path / "portfolio" / "sidecar"
+    monkeypatch.setattr(sidecar_mod, "SIDECAR_DIR", empty_runtime_sidecars)
+    init_sidecar_schema(seed_from_yaml=False)
+    with connection() as conn:
+        before = [dict(r) for r in conn.execute("SELECT * FROM portfolio_sidecars")]
+
+    try:
+        with connection() as conn:
+            conn.execute("DELETE FROM portfolio_sidecars")
+
+        init_sidecar_schema()
+
+        assert load_sidecar("AQST") is not None
+        assert load_sidecar("ABVX") is not None
+        assert not empty_runtime_sidecars.exists()
+    finally:
+        with connection() as conn:
+            conn.execute("DELETE FROM portfolio_sidecars")
+            for row in before:
+                conn.execute(
+                    """INSERT INTO portfolio_sidecars
+                       (ticker, payload_json, source, updated_at)
+                       VALUES (?, ?, ?, ?)""",
+                    (
+                        row["ticker"],
+                        row["payload_json"],
+                        row["source"],
+                        row["updated_at"],
+                    ),
+                )
 
 
 def test_sidecar_db_overrides_yaml_seed_without_rewriting_yaml():
