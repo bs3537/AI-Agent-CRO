@@ -85,12 +85,20 @@ def assemble_risk_brief(
 
     file_path = None
     sent_channels: list[str] = []
+    delivery_receipts: list[dict] = []
     for ch in channels:
         try:
             res = ch.send_risk_brief(date_iso, subject, html_body, text_body)
             sent_channels.append(ch.name)
+            receipt = {"channel": ch.name}
             if res is not None:
-                file_path = str(res)
+                receipt["result"] = str(res)
+                if ch.name == "file":
+                    file_path = str(res)
+            recipient_count = len(getattr(ch, "to_addrs", []) or [])
+            if recipient_count:
+                receipt["recipient_count"] = recipient_count
+            delivery_receipts.append(receipt)
         except Exception as e:
             log.error("risk_brief_channel_failed", extra={"channel": ch.name, "err": str(e)})
 
@@ -102,6 +110,7 @@ def assemble_risk_brief(
         "improvements": [r["ticker"] for r in buckets["improvements"]],
         "new_positions": [r["ticker"] for r in buckets["new_positions"]],
         "channels": sent_channels,
+        "delivery_receipts": delivery_receipts,
         "file_path": file_path,
         "subject": subject,
     }

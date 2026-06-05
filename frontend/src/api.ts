@@ -8,7 +8,8 @@ import type {
   PositionSummary,
   DeleteHoldingResponse,
   ChatHistoryMessage,
-  ChatResponse,
+  ChatStatusResponse,
+  ChatSubmitResponse,
   IBKRPullResponse,
   ManualPositionPayload,
   ManualPositionResponse,
@@ -149,6 +150,10 @@ export const api = {
     fd.append('include_portfolio', String(includePortfolio))
     if (ticker) fd.append('ticker', ticker)
     for (const file of files) fd.append('files', file)
-    return fetch('/api/chat', { method: 'POST', body: fd }).then(json<ChatResponse>)
+    return fetch('/api/chat', { method: 'POST', body: fd }).then(json<ChatSubmitResponse>)
   },
+
+  // Poll a dashboard-queued chat request completed by the VPS Codex runner.
+  chatStatus: (requestId: string) =>
+    fetch(`/api/chat/${requestId}`).then(json<ChatStatusResponse>),
 }

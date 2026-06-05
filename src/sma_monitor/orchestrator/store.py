@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS runner_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_runner_requests_status_requested
     ON runner_requests(status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_runner_requests_status_command_requested
+    ON runner_requests(status, command, requested_at);
 CREATE INDEX IF NOT EXISTS idx_runner_requests_ticker
     ON runner_requests(ticker);
 """
@@ -331,7 +333,13 @@ def claim_next_runner_request(*, claimed_at: datetime | None = None) -> dict | N
         row = conn.execute(
             """SELECT * FROM runner_requests
                WHERE status = 'queued'
-               ORDER BY requested_at ASC LIMIT 1"""
+               ORDER BY
+                 CASE command
+                   WHEN 'chat_complete' THEN 0
+                   ELSE 10
+                 END ASC,
+                 requested_at ASC
+               LIMIT 1"""
         ).fetchone()
         if row is None:
             return None
@@ -381,6 +389,16 @@ def recent_runner_requests(*, limit: int = 20) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_runner_request(request_id: str) -> dict | None:
+    init_orchestrator_schema()
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM runner_requests WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
 
 
 # List 'pending' dead-letter rows for retry-dead-letters. Optional filter

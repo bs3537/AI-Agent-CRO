@@ -57,6 +57,12 @@ CREATE INDEX IF NOT EXISTS idx_scores_inputs_hash    ON scores(inputs_hash);
 
 # Create the scores table. Safe to call repeatedly.
 def init_scores_schema() -> None:
+    from ..news.store import init_news_schema
+
+    # Scores join against articles for titles/sources, so create the news table
+    # first. This keeps isolated chat/runner tests and fresh databases from
+    # failing when no article ingestion has run yet.
+    init_news_schema()
     with connection() as conn:
         conn.executescript(SCORES_SCHEMA)
 

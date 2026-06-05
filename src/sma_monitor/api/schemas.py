@@ -123,6 +123,16 @@ class PositionSummary(BaseModel):
     nearest_catalyst_days: int | None
     has_overdue_catalyst: bool
     thesis: str
+    thesis_source: Literal["pm", "ai_generated", "system_stub"] = "pm"
+    thesis_status: Literal["active", "draft"] = "active"
+    is_ai_generated_thesis: bool = False
+    thesis_generated_by: str | None = None
+    thesis_generated_at: str | None = None
+    thesis_compute_source: str | None = None
+    draft_rating_grade: Grade | None = None
+    draft_rating_note: str | None = None
+    draft_rating_confidence: float | None = None
+    draft_rating_drivers: list[str] = Field(default_factory=list)
     n_files: int = 0
     spark: SparklineOut | None = None  # ~1yr daily EOD closes + EMA20 overlay
     rating: RatingOut | None = None
@@ -234,6 +244,23 @@ class ChatResponse(BaseModel):
     cited_context: list[dict[str, Any]] = Field(default_factory=list)
     data_freshness: dict[str, Any] = Field(default_factory=dict)
     attachments: list[ChatAttachmentOut] = Field(default_factory=list)
+
+
+class ChatQueuedResponse(BaseModel):
+    scheduled: bool = True
+    request_id: str
+    command: str
+    ticker: str | None = None
+    status: str = "queued"
+    requested_at: str
+    message: str = "Chat queued for VPS Codex runner."
+
+
+class ChatStatusResponse(BaseModel):
+    request_id: str
+    status: str
+    result: ChatResponse | None = None
+    error: str | None = None
 
 
 # GET /api/status: operational snapshot wrapped from the orchestrator helpers.

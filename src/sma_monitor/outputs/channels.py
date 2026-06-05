@@ -211,21 +211,21 @@ class ResendChannel(Channel):
         self.reply_to = reply_to
 
     # Send one alert as a plain-text email; subject from the first line.
-    def send_alert(self, ticker: str, rendered_text: str) -> None:
+    def send_alert(self, ticker: str, rendered_text: str) -> str | None:
         subject = rendered_text.split("\n", 1)[0][:120]
-        self._post(subject=subject, text=rendered_text)
+        return self._post(subject=subject, text=rendered_text)
 
     # Send the evening digest as a plain-text email.
-    def send_digest(self, date_iso: str, rendered_md: str) -> None:
-        self._post(subject=f"SMA digest — {date_iso}", text=rendered_md)
+    def send_digest(self, date_iso: str, rendered_md: str) -> str | None:
+        return self._post(subject=f"SMA digest — {date_iso}", text=rendered_md)
 
     # Send the morning thesis email (markdown body as text).
-    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> None:
-        self._post(subject=subject, text=rendered_md)
+    def send_thesis_email(self, date_iso: str, subject: str, rendered_md: str) -> str | None:
+        return self._post(subject=subject, text=rendered_md)
 
     # Send the daily HTML risk brief with a plain-text fallback.
-    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> None:
-        self._post(subject=subject, html=html, text=text)
+    def send_risk_brief(self, date_iso: str, subject: str, html: str, text: str) -> str | None:
+        return self._post(subject=subject, html=html, text=text)
 
     # POST one message to the Resend API. `client` is injectable so tests can run
     # fully offline. Raises ResendError on any non-2xx response.

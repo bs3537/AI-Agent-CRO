@@ -25,7 +25,7 @@ from .store import latest_ratings
 # dict(row) directly (both iterate as value tuples), but both expose keys().
 def _as_dict(row) -> dict:
     cols = row.keys()
-    return {col: row[col] for col in cols}
+    return {str(col).lower(): row[col] for col in cols}
 
 # DDL for the daily snapshot table. PRIMARY KEY (snapshot_date, ticker) gives one
 # immutable grade/action reading per ticker per day; the index speeds the

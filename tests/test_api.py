@@ -6,6 +6,8 @@ thesis edit round-trip, multipart upload, synchronous recompute, and status.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -251,6 +253,66 @@ def test_chat_upload_text_file(client, monkeypatch):
     assert body["attachments"][0]["filename"] == "note.md"
     assert body["attachments"][0]["parser"] == "local_text"
     assert "AQST thesis update" in captured["user"]
+
+
+def test_dashboard_chat_enqueues_vps_runner_request(client, monkeypatch):
+    from sma_monitor.config import settings
+    from sma_monitor.db import connection
+    from sma_monitor.orchestrator.store import init_orchestrator_schema, recent_runner_requests
+
+    init_orchestrator_schema()
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
+
+    r = client.post(
+        "/api/chat",
+        data={"message": "Use the VPS Codex runner for VRTX chat", "history": "[]"},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scheduled"] is True
+    assert body["command"] == "chat_complete"
+    req = recent_runner_requests(limit=1)[0]
+    assert req["request_id"] == body["request_id"]
+    assert req["command"] == "chat_complete"
+    payload = json.loads(req["payload_json"])
+    assert payload["message"] == "Use the VPS Codex runner for VRTX chat"
+    assert payload["include_portfolio"] is True
+
+
+def test_chat_status_returns_completed_runner_result(client):
+    from sma_monitor.db import connection
+    from sma_monitor.orchestrator.store import (
+        enqueue_runner_request,
+        finish_runner_request,
+        init_orchestrator_schema,
+    )
+
+    init_orchestrator_schema()
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    req = enqueue_runner_request(command="chat_complete", payload={"message": "hello"})
+    finish_runner_request(
+        req["request_id"],
+        summary={
+            "answer": "VPS Codex answered.",
+            "model_used": "codex-cli",
+            "used_tickers": ["VRTX"],
+            "cited_context": [],
+            "data_freshness": {},
+            "attachments": [],
+        },
+    )
+
+    r = client.get(f"/api/chat/{req['request_id']}")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "succeeded"
+    assert body["result"]["answer"] == "VPS Codex answered."
+    assert body["result"]["model_used"] == "codex-cli"
 
 
 def test_thesis_word_limit(client):

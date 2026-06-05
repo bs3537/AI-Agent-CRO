@@ -13,7 +13,7 @@ from .store import claim_next_runner_request, finish_runner_request
 
 log = logging.getLogger("sma_monitor.orchestrator.runner")
 
-DEFAULT_POLL_SECONDS = 30
+DEFAULT_POLL_SECONDS = 10
 
 
 def process_runner_requests(*, limit: int = 1, offline: bool = False) -> dict:
@@ -77,6 +77,19 @@ def _execute(row: dict, *, offline: bool) -> dict:
             ticker,
             offline=bool(payload.get("offline", offline)),
             compute_source=str(payload.get("compute_source") or "hermes_manual_single"),
+        )
+    if command == "chat_complete":
+        from ..chat.service import complete_chat_response
+
+        return complete_chat_response(
+            message=str(payload.get("message") or ""),
+            history=payload.get("history") or [],
+            ticker=payload.get("ticker") or row.get("ticker"),
+            include_portfolio=bool(payload.get("include_portfolio", True)),
+            attachment_context=str(
+                payload.get("attachment_context") or "(no uploaded files in this turn)"
+            ),
+            attachments=payload.get("attachments") or [],
         )
     if command == "manual_recompute_all":
         from .manual_recompute import recompute_all_with_refresh

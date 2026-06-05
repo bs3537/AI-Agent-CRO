@@ -33,7 +33,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "red_team": "medium",
     "decision": "high",
     "digest": "high",
-    "chat": "high",
+    "chat": "xhigh",
 }
 
 # Fallback concurrency when SMA_LLM_CONCURRENCY is unset/invalid, and the hard

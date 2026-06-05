@@ -85,9 +85,10 @@ def crontab_lines() -> list[str]:
         "0 21 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "dispatch >> data/logs/cron.log 2>&1",
         "",
-        "# Every 5 minutes — process queued Replit dashboard manual requests.",
-        "*/5 * * * *   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
-        "process-runner-requests --limit 5 >> data/logs/cron.log 2>&1",
+        "# Every minute — process one queued Replit dashboard request.",
+        "# Chat requests are prioritized in the runner claim query so sidebar AI stays responsive.",
+        "* * * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "process-runner-requests --limit 1 >> data/logs/cron.log 2>&1",
     ]
 
 

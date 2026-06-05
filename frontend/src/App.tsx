@@ -84,10 +84,14 @@ export default function App() {
       for (const file of files) {
         await api.uploadFile(ticker, file)
       }
-      await api.recompute(ticker, true)
+      const recompute = await api.recompute(ticker, true)
       await refresh()
       setThesisTicker(null)
-      setNotice(`${ticker} thesis package saved and analysis recomputed.`)
+      setNotice(
+        recompute.scheduled
+          ? `${ticker} thesis package saved and recompute queued for VPS runner.`
+          : `${ticker} thesis package saved and analysis recomputed.`,
+      )
     },
     [refresh],
   )
@@ -97,9 +101,13 @@ export default function App() {
   const onUpload = useCallback(
     async (ticker: string, file: File) => {
       await api.uploadFile(ticker, file)
-      await api.recompute(ticker, true)
+      const recompute = await api.recompute(ticker, true)
       await refresh()
-      setNotice(`${ticker} document uploaded and analysis recomputed.`)
+      setNotice(
+        recompute.scheduled
+          ? `${ticker} document uploaded and recompute queued for VPS runner.`
+          : `${ticker} document uploaded and analysis recomputed.`,
+      )
     },
     [refresh],
   )
@@ -108,9 +116,13 @@ export default function App() {
   const onRecompute = useCallback(
     async (ticker: string) => {
       try {
-        await api.recompute(ticker, true)
+        const recompute = await api.recompute(ticker, true)
         await refresh()
-        setNotice(`${ticker} analysis recomputed.`)
+        setNotice(
+          recompute.scheduled
+            ? `${ticker} recompute queued for VPS runner.`
+            : `${ticker} analysis recomputed.`,
+        )
       } catch (e) {
         setError(`${ticker} recompute failed: ${String(e)}`)
         await refresh().catch(() => undefined)

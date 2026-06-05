@@ -17,7 +17,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import SearchIcon from '@mui/icons-material/Search'
 import SendIcon from '@mui/icons-material/Send'
 import { api } from '../api'
-import type { ChatHistoryMessage } from '../types'
+import type { ChatHistoryMessage, ChatQueuedResponse, ChatResponse, ChatSubmitResponse } from '../types'
 
 const STORAGE_KEY = 'ai-cro-chat-history-v1'
 const ACCEPT = [
@@ -92,7 +92,13 @@ export default function ChatPanel({
     setSending(true)
     setError(null)
     try {
-      const res = await api.chat({ message: text, history: historyForApi, files })
+      const initial = await api.chat({ message: text, history: historyForApi, files })
+      let res: ChatResponse
+      if (isQueuedChatResponse(initial)) {
+        res = await waitForQueuedChat(initial.request_id)
+      } else {
+        res = initial
+      }
       const assistantMessage: StoredChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -256,6 +262,27 @@ export default function ChatPanel({
       </Box>
     </Box>
   )
+}
+
+function isQueuedChatResponse(res: ChatSubmitResponse): res is ChatQueuedResponse {
+  return 'scheduled' in res && res.scheduled === true
+}
+
+async function waitForQueuedChat(requestId: string): Promise<ChatResponse> {
+  const deadline = Date.now() + 4 * 60 * 1000
+  while (Date.now() < deadline) {
+    await sleep(1500)
+    const status = await api.chatStatus(requestId)
+    if (status.status === 'succeeded' && status.result) return status.result
+    if (status.status === 'failed') {
+      throw new Error(status.error || 'VPS Codex chat request failed')
+    }
+  }
+  throw new Error('VPS Codex chat request is still queued; try again in a minute.')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function MessageBubble({ message }: { message: StoredChatMessage }) {

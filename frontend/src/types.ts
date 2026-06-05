@@ -8,6 +8,8 @@ export type Grade = 'A' | 'B' | 'C' | 'D'
 export type RatingAction = 'hold' | 'sell'
 export type AttentionState = 'clean' | 'monitor' | 'watch' | 'broken'
 export type TechnicalState = 'above_ema20' | 'below_ema20' | 'extended_below_ema20' | 'no_price_data'
+export type ThesisSource = 'pm' | 'ai_generated' | 'system_stub'
+export type ThesisStatus = 'active' | 'draft'
 
 // Latest thesis-drift decision for a position.
 export interface Decision {
@@ -115,6 +117,16 @@ export interface PositionSummary {
   nearest_catalyst_days: number | null
   has_overdue_catalyst: boolean
   thesis: string
+  thesis_source: ThesisSource
+  thesis_status: ThesisStatus
+  is_ai_generated_thesis: boolean
+  thesis_generated_by: string | null
+  thesis_generated_at: string | null
+  thesis_compute_source: string | null
+  draft_rating_grade: Grade | null
+  draft_rating_note: string | null
+  draft_rating_confidence: number | null
+  draft_rating_drivers: string[]
   n_files: number
   spark: SparklineData | null
   rating: Rating | null
@@ -196,6 +208,25 @@ export interface ChatResponse {
   data_freshness: Record<string, unknown>
   attachments: ChatAttachmentMeta[]
 }
+
+export interface ChatQueuedResponse {
+  scheduled: true
+  request_id: string
+  command: string
+  ticker: string | null
+  status: 'queued'
+  requested_at: string
+  message: string
+}
+
+export interface ChatStatusResponse {
+  request_id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  result: ChatResponse | null
+  error: string | null
+}
+
+export type ChatSubmitResponse = ChatResponse | ChatQueuedResponse
 
 // POST /api/portfolio/pull response.
 export interface IBKRPullResponse {

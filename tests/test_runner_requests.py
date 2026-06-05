@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from sma_monitor.db import connection
 from sma_monitor.orchestrator.runner import process_runner_requests
@@ -39,6 +40,33 @@ def test_runner_request_lifecycle():
     assert rows[0]["request_id"] == req["request_id"]
     assert rows[0]["status"] == "succeeded"
     assert json.loads(rows[0]["summary_json"])["ok"] is True
+
+
+def test_runner_claim_prioritizes_chat_over_older_backend_jobs():
+    _clear_runner_requests()
+    base = datetime(2026, 6, 5, 12, 0, tzinfo=UTC)
+    enqueue_runner_request(
+        command="manual_recompute_all",
+        payload={"force": True},
+        requested_at=base,
+    )
+    enqueue_runner_request(
+        command="manual_recompute_one",
+        ticker="META",
+        payload={"compute_source": "test"},
+        requested_at=base + timedelta(seconds=1),
+    )
+    chat = enqueue_runner_request(
+        command="chat_complete",
+        payload={"message": "Prioritize my dashboard chat"},
+        requested_at=base + timedelta(minutes=5),
+    )
+
+    claimed = claim_next_runner_request()
+
+    assert claimed is not None
+    assert claimed["request_id"] == chat["request_id"]
+    assert claimed["command"] == "chat_complete"
 
 
 def test_runner_processor_dispatches_manual_recompute_one(monkeypatch):
@@ -85,3 +113,40 @@ def test_runner_processor_records_failure(monkeypatch):
     assert row["request_id"] == req["request_id"]
     assert row["status"] == "failed"
     assert "boom" in row["error"]
+
+
+def test_runner_processor_dispatches_chat_completion(monkeypatch):
+    _clear_runner_requests()
+    enqueue_runner_request(
+        command="chat_complete",
+        payload={
+            "message": "What changed for VRTX?",
+            "history": [],
+            "include_portfolio": True,
+            "attachment_context": "(no uploaded files in this turn)",
+            "attachments": [],
+        },
+    )
+
+    class FakeChatProvider:
+        model_label = "codex-cli"
+
+        def complete_text(self, *, system, user, max_tokens=600):
+            assert "USER QUESTION" in user
+            assert "What changed for VRTX?" in user
+            return "VPS Codex chat response."
+
+        def complete_json(self, **kwargs):
+            return {}
+
+    monkeypatch.setattr("sma_monitor.chat.service.get_provider", lambda **kw: FakeChatProvider())
+
+    summary = process_runner_requests(limit=1)
+
+    assert summary["succeeded"] == 1
+    row = recent_runner_requests(limit=1)[0]
+    assert row["command"] == "chat_complete"
+    assert row["status"] == "succeeded"
+    result = json.loads(row["summary_json"])
+    assert result["answer"] == "VPS Codex chat response."
+    assert result["model_used"] == "codex-cli"

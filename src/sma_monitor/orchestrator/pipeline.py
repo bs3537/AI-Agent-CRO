@@ -53,10 +53,24 @@ THESIS_EMAIL_WAIT_POLL_SECONDS = 60
 
 # Refresh the positions snapshot if it's older than POSITION_STALE_HOURS
 # (or `force`). Sets the stale_positions flag on failure rather than
-# crashing — downstream phases use the last known positions.
-def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None) -> dict:
-    """Return {'refreshed': bool, 'reason': str, 'pulled_at': iso|None}."""
+# crashing — downstream phases use the last known positions unless callers
+# explicitly hard-gate on refreshed=True.
+def maybe_refresh_positions(
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+    max_attempts: int = 1,
+    retry_sleep_seconds: float = 0.0,
+    populate_ir_urls: bool = True,
+) -> dict:
+    """Return {'refreshed': bool, 'reason': str, 'pulled_at': iso|None}.
+
+    max_attempts lets scheduled production wrappers retry transient IBKR/Flex
+    failures before allowing downstream phases to use last-known positions.
+    """
     now = now or datetime.now(UTC)
+    max_attempts = max(1, int(max_attempts or 1))
+    retry_sleep_seconds = max(0.0, float(retry_sleep_seconds or 0.0))
     last_pulled_at = latest_pull_at()
     if last_pulled_at is not None and not force:
         age = now - last_pulled_at
@@ -76,27 +90,53 @@ def maybe_refresh_positions(*, force: bool = False, now: datetime | None = None)
                 "pulled_at": last_pulled_at.isoformat() if last_pulled_at else None}
 
     assert settings.ibkr_flex_token and settings.ibkr_flex_query_id
-    try:
-        raw = fetch_statement(
-            token=settings.ibkr_flex_token,
-            query_id=settings.ibkr_flex_query_id,
-        )
-        positions, nav = parse_positions(raw.xml, pulled_at=raw.pulled_at)
-        save_pull(positions, nav=nav, pulled_at=raw.pulled_at,
-                  source="ibkr_flex", raw_xml=raw.xml)
-        ir_state = _populate_ir_urls_after_position_refresh(positions)
-        clear_flag("stale_positions")
-        return {"refreshed": True, "reason": "ok",
-                "pulled_at": raw.pulled_at.isoformat(),
-                "ir_urls": ir_state}
-    except (FlexError, Exception) as e:
-        set_flag("stale_positions",
-                 metadata={"reason": "flex_pull_failed", "err": str(e)[:200],
-                           "last_pulled_at": last_pulled_at.isoformat()
-                           if last_pulled_at else None})
-        log.error("flex_refresh_failed", extra={"err": str(e)})
-        return {"refreshed": False, "reason": "flex_failed",
-                "pulled_at": last_pulled_at.isoformat() if last_pulled_at else None}
+    for attempt in range(1, max_attempts + 1):
+        try:
+            raw = fetch_statement(
+                token=settings.ibkr_flex_token,
+                query_id=settings.ibkr_flex_query_id,
+            )
+            positions, nav = parse_positions(raw.xml, pulled_at=raw.pulled_at)
+            save_pull(positions, nav=nav, pulled_at=raw.pulled_at,
+                      source="ibkr_flex", raw_xml=raw.xml)
+            ir_state = (
+                _populate_ir_urls_after_position_refresh(positions)
+                if populate_ir_urls
+                else {"status": "skipped", "reason": "disabled"}
+            )
+            clear_flag("stale_positions")
+            return {"refreshed": True, "reason": "ok",
+                    "pulled_at": raw.pulled_at.isoformat(),
+                    "ir_urls": ir_state,
+                    "attempts": attempt,
+                    "max_attempts": max_attempts}
+        except Exception as e:
+            if attempt < max_attempts:
+                log.warning(
+                    "flex_refresh_failed_retrying",
+                    extra={
+                        "err": str(e),
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                    },
+                )
+                if retry_sleep_seconds > 0:
+                    time.sleep(retry_sleep_seconds)
+                continue
+            set_flag("stale_positions",
+                     metadata={"reason": "flex_pull_failed", "err": str(e)[:200],
+                               "attempts": attempt,
+                               "max_attempts": max_attempts,
+                               "last_pulled_at": last_pulled_at.isoformat()
+                               if last_pulled_at else None})
+            log.error(
+                "flex_refresh_failed",
+                extra={"err": str(e), "attempts": attempt, "max_attempts": max_attempts},
+            )
+            return {"refreshed": False, "reason": "flex_failed",
+                    "pulled_at": last_pulled_at.isoformat() if last_pulled_at else None,
+                    "attempts": attempt,
+                    "max_attempts": max_attempts}
 
 
 # Daily 6 PM ET collection — gather and process the day's data so the

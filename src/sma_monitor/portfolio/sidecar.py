@@ -179,6 +179,8 @@ def ensure_sidecar(
         stage="hybrid",
         thesis=thesis,
         company_name=company_name,
+        thesis_source="system_stub",
+        thesis_status="draft",
     )
     write_sidecar(sc)
     return sc
@@ -219,5 +221,14 @@ def set_thesis(ticker: str, thesis: str) -> Sidecar:
         sc = Sidecar(ticker=ticker, conviction_tier=3, stage="hybrid", thesis=thesis)
     else:
         sc.thesis = thesis
+    sc.thesis_source = "pm"
+    sc.thesis_status = "active"
+    sc.thesis_generated_by = None
+    sc.thesis_generated_at = None
+    sc.thesis_compute_source = None
+    sc.draft_rating_grade = None
+    sc.draft_rating_note = None
+    sc.draft_rating_confidence = None
+    sc.draft_rating_drivers = []
     write_sidecar(sc)
     return sc

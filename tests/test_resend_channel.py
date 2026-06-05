@@ -62,12 +62,14 @@ def test_resend_raises_on_error():
         ch._post(subject="S", text="hi", client=fake)
 
 
-# send_risk_brief routes both the HTML and text bodies into _post.
+# send_risk_brief routes both the HTML and text bodies into _post and returns
+# the Resend message id so cron wrappers can record a safe delivery receipt.
 def test_send_risk_brief_routes(monkeypatch):
     ch = ResendChannel(api_key="k", from_addr="f", to_addrs=["a@x.com"])
     captured: dict = {}
     monkeypatch.setattr(ch, "_post", lambda **kw: captured.update(kw) or "id")
-    ch.send_risk_brief("2026-06-02", "Subj", "<h1>x</h1>", "x")
+    message_id = ch.send_risk_brief("2026-06-02", "Subj", "<h1>x</h1>", "x")
+    assert message_id == "id"
     assert captured["subject"] == "Subj"
     assert captured["html"] == "<h1>x</h1>"
     assert captured["text"] == "x"

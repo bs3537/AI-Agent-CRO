@@ -75,27 +75,38 @@ def assemble_thesis_email(
     rendered = render_thesis_email_markdown(rows, date_iso=date_iso, pulled_at=pulled_at)
 
     file_path = None
+    sent_channels: list[str] = []
+    delivery_receipts: list[dict] = []
     for ch in channels:
         try:
             res = ch.send_thesis_email(date_iso, subject, rendered)
+            sent_channels.append(ch.name)
+            receipt = {"channel": ch.name}
             if res is not None:
-                file_path = str(res)
+                receipt["result"] = str(res)
+                if ch.name == "file":
+                    file_path = str(res)
+            recipient_count = len(getattr(ch, "to_addrs", []) or [])
+            if recipient_count:
+                receipt["recipient_count"] = recipient_count
+            delivery_receipts.append(receipt)
         except Exception as e:
             log.error("thesis_email_channel_failed", extra={"channel": ch.name, "err": str(e)})
 
     counts = _grade_counts(rows)
-    log.info("thesis_email_sent",
-             extra={"date": date_iso, "positions": len(rows),
-                    "by_grade": counts, "file": file_path})
-    return {
+    summary = {
         "date": date_iso,
         "positions": len(rows),
         "review_positions": len(_review_rows(rows)),
         "by_grade": counts,
         "by_verdict": _verdict_counts(rows),  # backward-compatible summary key
+        "channels": sent_channels,
+        "delivery_receipts": delivery_receipts,
         "file_path": file_path,
         "subject": subject,
     }
+    log.info("thesis_email_sent", extra={**summary, "file": file_path})
+    return summary
 
 
 # Build one render row from a holding + its (optional) latest rating row,

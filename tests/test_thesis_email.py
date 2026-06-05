@@ -130,3 +130,20 @@ def test_assemble_seeds_and_sends():
     assert "Review items:" in md
     # Grade counts in the result sum to the position count.
     assert sum(res["by_grade"].values()) == len(holdings)
+
+
+# Legacy thesis-email summaries also retain safe provider receipts without
+# confusing a Resend message id for the local file archive path.
+def test_assemble_thesis_email_reports_channel_receipts():
+    from sma_monitor.decision.engine import run_decisions
+
+    class _ReceiptCapture(_Capture):
+        def send_thesis_email(self, date_iso, subject, rendered_md):
+            super().send_thesis_email(date_iso, subject, rendered_md)
+            return "receipt_legacy_123"
+
+    run_decisions(offline=True, force=True)
+    res = assemble_thesis_email(channels=[_ReceiptCapture()])
+
+    assert res["delivery_receipts"] == [{"channel": "capture", "result": "receipt_legacy_123"}]
+    assert res["file_path"] is None

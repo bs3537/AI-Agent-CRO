@@ -149,6 +149,22 @@ def test_previous_snapshots_picks_latest_prior_day():
     assert "ZZZ" not in previous_snapshots("2026-05-28")
 
 
+# Snapshot rows may come back from libSQL/Turso with reserved identifiers (for
+# example action) upper-cased. Normalize keys so the renderer can use lowercase
+# DB field names consistently.
+def test_snapshot_row_keys_are_normalized_lowercase():
+    from sma_monitor.decision.snapshots import _as_dict
+
+    class _Row:
+        def keys(self):
+            return ["ticker", "ACTION", "grade"]
+
+        def __getitem__(self, key):
+            return {"ticker": "ZZZ", "ACTION": "hold", "grade": "B"}[key]
+
+    assert _as_dict(_Row()) == {"ticker": "ZZZ", "action": "hold", "grade": "B"}
+
+
 # End-to-end against the sandbox: stamp current ratings + a prior snapshot, then
 # assemble. A SELL flip and a HOLD grade deterioration are both detected and the
 # capture channel receives an HTML + text brief.
@@ -228,3 +244,40 @@ def test_assemble_risk_brief_detects_changes():
     assert t_sell in html and t_det in html
     assert "SELL D" in html
     assert t_sell in text
+
+
+# Assembly summaries retain safe per-channel delivery receipts, including the
+# provider result value, so cron runs can prove a Resend handoff occurred.
+def test_assemble_risk_brief_reports_channel_receipts():
+    class _ReceiptCapture(_Capture):
+        def send_risk_brief(self, date_iso, subject, html, text):
+            super().send_risk_brief(date_iso, subject, html, text)
+            return "receipt_123"
+
+    from sma_monitor.decision.schema import PositionRating
+    from sma_monitor.decision.store import save_rating
+    from sma_monitor.portfolio.schema import Position
+    from sma_monitor.portfolio.store import save_pull
+
+    seed_at = datetime(2098, 1, 2, tzinfo=UTC)
+    save_pull(
+        [Position(ticker="RCPT", qty=100, market_value=100_000.0,
+                  pct_nav=0.1, cost_basis=80_000.0, pulled_at=seed_at,
+                  nav=1_000_000.0)],
+        nav=1_000_000.0,
+        pulled_at=seed_at,
+        source="risk_brief_receipt_test_seed",
+        raw_xml=None,
+    )
+    save_rating(PositionRating(
+        ticker="RCPT", action="hold", grade="B", attention_state="monitor",
+        risk_score=20.0, risk_components={}, technical_state="above_ema20",
+        deterministic_grade="B", llm_grade=None, final_grade="B",
+        note="RCPT is stable.", drivers=["d1"], confidence=0.7,
+        thesis_hash="th_RCPT", inputs_hash="ih_RCPT", model_used="heuristic-test",
+        rating_version="vtest", decided_at=datetime(2099, 1, 2, tzinfo=UTC),
+    ))
+
+    res = assemble_risk_brief(date_iso="2026-06-03", channels=[_ReceiptCapture()])
+
+    assert res["delivery_receipts"] == [{"channel": "capture", "result": "receipt_123"}]

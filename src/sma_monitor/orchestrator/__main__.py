@@ -304,7 +304,7 @@ def main(argv=None):
         help="Hermes/VPS: poll and process queued dashboard runner requests",
     )
     p_runner_run.add_argument("--limit", type=int, default=1, help="Requests per poll")
-    p_runner_run.add_argument("--poll-seconds", type=int, default=30)
+    p_runner_run.add_argument("--poll-seconds", type=int, default=10)
     p_runner_run.add_argument("--offline", action="store_true")
 
     p_runner_list = sub.add_parser(

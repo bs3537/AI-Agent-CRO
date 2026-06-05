@@ -18,6 +18,9 @@ Stage = Literal["clinical_stage", "commercial_stage", "hybrid"]
 ConvictionTier = Literal[1, 2, 3, 4, 5]
 CatalystType = Literal["clinical", "regulatory", "commercial", "corporate", "other"]
 Confidence = Literal["high", "medium", "low"]
+ThesisSource = Literal["pm", "ai_generated", "system_stub"]
+ThesisStatus = Literal["active", "draft"]
+DraftGrade = Literal["A", "B", "C", "D"]
 
 
 # One row per ticker from an IBKR Flex pull. Output of the normalization
@@ -79,6 +82,20 @@ class Sidecar(BaseModel):
     press_release_rss_url: str | None = None
     catalysts: list[Catalyst] = Field(default_factory=list)
 
+    # Thesis provenance. Existing seed sidecars default to PM/active. Newly
+    # detected broker positions without a PM thesis are bootstrapped as
+    # ai_generated/draft so the dashboard can clearly flag them for review, and
+    # set_thesis() flips the record back to pm/active when the PM edits it.
+    thesis_source: ThesisSource = "pm"
+    thesis_status: ThesisStatus = "active"
+    thesis_generated_by: str | None = None
+    thesis_generated_at: datetime | None = None
+    thesis_compute_source: str | None = None
+    draft_rating_grade: DraftGrade | None = None
+    draft_rating_note: str | None = None
+    draft_rating_confidence: float | None = None
+    draft_rating_drivers: list[str] = Field(default_factory=list)
+
     # Match Position's ticker normalization so joins on ticker work.
     @field_validator("ticker")
     @classmethod
@@ -113,6 +130,15 @@ class Holding(BaseModel):
     press_releases_url: str | None = None
     press_release_rss_url: str | None = None
     catalysts: list[Catalyst]
+    thesis_source: ThesisSource = "pm"
+    thesis_status: ThesisStatus = "active"
+    thesis_generated_by: str | None = None
+    thesis_generated_at: datetime | None = None
+    thesis_compute_source: str | None = None
+    draft_rating_grade: DraftGrade | None = None
+    draft_rating_note: str | None = None
+    draft_rating_confidence: float | None = None
+    draft_rating_drivers: list[str] = Field(default_factory=list)
     # Derived — feeds Phase 3 catalyst_proximity_boost
     nearest_catalyst_days: int | None = None
     has_overdue_catalyst: bool = False

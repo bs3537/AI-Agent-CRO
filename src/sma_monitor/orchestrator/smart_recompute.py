@@ -57,6 +57,13 @@ def run_smart_morning_recompute(
 
     if refresh_positions_fn is not None and not offline:
         state["positions"] = _capture("positions", lambda: refresh_positions_fn(force=True))
+    if not offline:
+        from ..portfolio.draft_thesis import bootstrap_ai_draft_sidecars
+
+        state["new_position_drafts"] = _capture(
+            "new_position_drafts",
+            lambda: bootstrap_ai_draft_sidecars(compute_source="scheduler_new_position_draft"),
+        )
 
     holdings, missing, pulled_at = latest_joined()
     tickers = [h.ticker for h in holdings]
