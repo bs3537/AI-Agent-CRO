@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,9 +63,22 @@ class Settings(BaseSettings):
     # Runtime
     # combined = local/dev legacy behavior; dashboard = Replit UI/API only;
     # runner = Hermes/VPS CLI jobs, Codex, and email delivery.
-    sma_deployment_role: str = "combined"
-    data_root: str = "./data"
-    log_level: str = "INFO"
+    sma_deployment_role: str = Field(
+        "combined",
+        validation_alias=AliasChoices(
+            "SMA_DEPLOYMENT_ROLE",
+            "SMA-DEPLOYMENT-ROLE",
+            "sma_deployment_role",
+        ),
+    )
+    data_root: str = Field(
+        "./data",
+        validation_alias=AliasChoices("DATA_ROOT", "DATA-ROOT", "data_root"),
+    )
+    log_level: str = Field(
+        "INFO",
+        validation_alias=AliasChoices("LOG_LEVEL", "LOG-LEVEL", "log_level"),
+    )
     # Cloud SQLite / Turso. Runtime DB access requires both values. Tests use
     # an explicit test-only SQLite sandbox flag in db.py.
     turso_database_url: str | None = None

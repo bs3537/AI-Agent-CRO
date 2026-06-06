@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 
-from .store import claim_next_runner_request, finish_runner_request
+from .store import claim_next_runner_request, finish_runner_request, requeue_stale_runner_requests
 
 log = logging.getLogger("sma_monitor.orchestrator.runner")
 
@@ -24,11 +25,20 @@ class RunnerRequestError(RuntimeError):
         self.summary = summary or {}
 
 
-def process_runner_requests(*, limit: int = 1, offline: bool = False) -> dict:
+def process_runner_requests(
+    *,
+    limit: int = 1,
+    offline: bool = False,
+    commands: list[str] | tuple[str, ...] | None = None,
+) -> dict:
     processed = succeeded = failed = 0
+    requeued_stale = requeue_stale_runner_requests(
+        max_age_minutes=_stale_request_minutes(commands),
+        commands=commands,
+    )
     errors: list[dict] = []
     while processed < limit:
-        row = claim_next_runner_request()
+        row = claim_next_runner_request(commands=commands)
         if row is None:
             break
         processed += 1
@@ -63,8 +73,22 @@ def process_runner_requests(*, limit: int = 1, offline: bool = False) -> dict:
         "processed": processed,
         "succeeded": succeeded,
         "failed": failed,
+        "requeued_stale": requeued_stale,
         "errors": errors,
     }
+
+
+def _stale_request_minutes(commands: list[str] | tuple[str, ...] | None) -> int:
+    raw = os.environ.get("SMA_RUNNER_STALE_MINUTES", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            log.warning("invalid_SMA_RUNNER_STALE_MINUTES", extra={"value": raw})
+    command_set = {c.strip() for c in (commands or []) if c and c.strip()}
+    if command_set == {"chat_complete"}:
+        return 15
+    return 75
 
 
 def run_runner_loop(
@@ -73,9 +97,10 @@ def run_runner_loop(
     poll_seconds: int = DEFAULT_POLL_SECONDS,
     batch_limit: int = 1,
     one_iteration: bool = False,
+    commands: list[str] | tuple[str, ...] | None = None,
 ) -> None:
     while True:
-        summary = process_runner_requests(limit=batch_limit, offline=offline)
+        summary = process_runner_requests(limit=batch_limit, offline=offline, commands=commands)
         if one_iteration:
             return
         if summary["processed"] == 0:

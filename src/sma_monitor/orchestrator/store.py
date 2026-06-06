@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from ..db import connection
 from ..identity import event_id
@@ -326,20 +326,32 @@ def enqueue_runner_request(
     }
 
 
-def claim_next_runner_request(*, claimed_at: datetime | None = None) -> dict | None:
+def claim_next_runner_request(
+    *,
+    claimed_at: datetime | None = None,
+    commands: list[str] | tuple[str, ...] | None = None,
+) -> dict | None:
     init_orchestrator_schema()
     claimed_at = claimed_at or datetime.now(UTC)
+    command_filter = [c.strip() for c in (commands or []) if c and c.strip()]
+    where = "status = 'queued'"
+    params: list[str] = []
+    if command_filter:
+        placeholders = ",".join("?" for _ in command_filter)
+        where += f" AND command IN ({placeholders})"
+        params.extend(command_filter)
     with connection() as conn:
         row = conn.execute(
-            """SELECT * FROM runner_requests
-               WHERE status = 'queued'
+            f"""SELECT * FROM runner_requests
+               WHERE {where}
                ORDER BY
                  CASE command
                    WHEN 'chat_complete' THEN 0
                    ELSE 10
                  END ASC,
                  requested_at ASC
-               LIMIT 1"""
+               LIMIT 1""",
+            params,
         ).fetchone()
         if row is None:
             return None
@@ -378,6 +390,40 @@ def finish_runner_request(
                 request_id,
             ),
         )
+
+
+def requeue_stale_runner_requests(
+    *,
+    max_age_minutes: int,
+    commands: list[str] | tuple[str, ...] | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Move stale running rows back to queued so a later runner can retry them."""
+    init_orchestrator_schema()
+    if max_age_minutes <= 0:
+        return 0
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(minutes=max_age_minutes)
+    command_filter = [c.strip() for c in (commands or []) if c and c.strip()]
+    where = "status = 'running' AND claimed_at IS NOT NULL AND claimed_at < ?"
+    params: list[str] = [cutoff.isoformat()]
+    if command_filter:
+        placeholders = ",".join("?" for _ in command_filter)
+        where += f" AND command IN ({placeholders})"
+        params.extend(command_filter)
+    with connection() as conn:
+        cur = conn.execute(
+            f"""UPDATE runner_requests
+                SET status = 'queued',
+                    claimed_at = NULL,
+                    error = ?
+                WHERE {where}""",
+            [
+                f"requeued stale running request after {max_age_minutes} minutes",
+                *params,
+            ],
+        )
+        return int(cur.rowcount or 0)
 
 
 def recent_runner_requests(*, limit: int = 20) -> list[dict]:

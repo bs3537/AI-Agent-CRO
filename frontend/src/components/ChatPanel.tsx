@@ -269,16 +269,18 @@ function isQueuedChatResponse(res: ChatSubmitResponse): res is ChatQueuedRespons
 }
 
 async function waitForQueuedChat(requestId: string): Promise<ChatResponse> {
-  const deadline = Date.now() + 4 * 60 * 1000
+  const deadline = Date.now() + 10 * 60 * 1000
+  let lastStatus: string = 'queued'
   while (Date.now() < deadline) {
     await sleep(1500)
     const status = await api.chatStatus(requestId)
+    lastStatus = status.status
     if (status.status === 'succeeded' && status.result) return status.result
     if (status.status === 'failed') {
       throw new Error(status.error || 'VPS Codex chat request failed')
     }
   }
-  throw new Error('VPS Codex chat request is still queued; try again in a minute.')
+  throw new Error(`VPS Codex chat request is still ${lastStatus}; try again in a minute.`)
 }
 
 function sleep(ms: number): Promise<void> {

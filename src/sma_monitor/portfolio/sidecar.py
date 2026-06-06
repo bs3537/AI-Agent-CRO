@@ -54,6 +54,11 @@ def init_sidecar_schema(*, seed_from_yaml: bool = True) -> None:
         conn.executescript(SIDECAR_SCHEMA)
         if not seed_from_yaml:
             return
+        existing = conn.execute(
+            "SELECT 1 FROM portfolio_sidecars LIMIT 1"
+        ).fetchone()
+        if existing is not None:
+            return
         now = datetime.now(UTC).isoformat()
         for sc in _load_seed_sidecars().values():
             conn.execute(

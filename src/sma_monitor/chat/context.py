@@ -4,10 +4,15 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
-from ..decision.store import latest_decision, latest_rating
+import httpx
+
+from ..config import settings
+from ..decision.store import latest_decision, latest_rating, latest_ratings
 from ..decision.technicals import technical_state
+from ..news import brave_web_client
 from ..news.fmp_client import latest_fmp_metrics, latest_price_series
 from ..news.store import recent_articles
 from ..portfolio.joined import latest_joined
@@ -17,6 +22,20 @@ from ..scorer.store import recent_scores
 
 MAX_CONTEXT_CHARS = 42_000
 MAX_DETAIL_TICKERS = 6
+LIVE_WEB_TERMS = (
+    "catalyst",
+    "catalysts",
+    "latest",
+    "recent",
+    "news",
+    "filing",
+    "fda",
+    "pdufa",
+    "trial",
+    "data",
+    "approval",
+    "earnings",
+)
 
 
 @dataclass
@@ -50,6 +69,11 @@ def build_chat_context(
         sections.append(_ticker_detail(h))
         cited.append({"type": "holding_detail", "ticker": ticker, "label": f"{ticker} saved data"})
 
+    live_web = _live_web_context(message, [by_ticker[t] for t in tickers if t in by_ticker])
+    if live_web["text"]:
+        sections.append(live_web["text"])
+        cited.append({"type": "live_web_search", "label": "Brave live search"})
+
     text = "\n\n".join(sections) or "(No portfolio context is currently available.)"
     if len(text) > MAX_CONTEXT_CHARS:
         text = text[:MAX_CONTEXT_CHARS] + "\n\n[context truncated]"
@@ -60,6 +84,8 @@ def build_chat_context(
         data_freshness={
             "positions_pulled_at": pulled_at.isoformat() if pulled_at else None,
             "missing_sidecars": missing,
+            "live_web_search": live_web["status"],
+            "live_web_search_at": live_web["searched_at"],
         },
     )
 
@@ -79,6 +105,7 @@ def _detect_tickers(message: str, held: set[str], explicit_ticker: str | None) -
 
 def _portfolio_overview(holdings, missing: list[str], pulled_at) -> str:
     rows = sorted(holdings, key=lambda h: h.pct_nav, reverse=True)
+    rating_rows = {r["ticker"]: r for r in latest_ratings()}
     lines = [
         "CURRENT DASHBOARD PORTFOLIO SNAPSHOT",
         f"Positions pulled at: {pulled_at.isoformat() if pulled_at else 'unknown'}",
@@ -88,14 +115,14 @@ def _portfolio_overview(holdings, missing: list[str], pulled_at) -> str:
         lines.append(f"Positions missing sidecars: {', '.join(missing[:30])}")
     lines.append("Holdings sorted by % NAV:")
     for h in rows:
-        rating = latest_rating(h.ticker)
+        rating = rating_rows.get(h.ticker)
         grade = rating["grade"] if rating else "none"
         action = rating["action"] if rating else "none"
         conf = f"{float(rating['confidence']) * 100:.0f}%" if rating else "n/a"
         model = rating["model_used"] if rating else "n/a"
         decided = rating["decided_at"] if rating else "n/a"
         pnl = _fmt_pnl(h.market_value, h.cost_basis)
-        tech = _technical_summary(h.ticker)
+        tech = _rating_technical_summary(rating)
         lines.append(
             f"- {h.ticker}: {h.pct_nav * 100:.1f}% NAV, {action.upper()} {grade}, "
             f"conf {conf}, P&L {pnl}, {tech}, model {model}, computed {decided}; "
@@ -190,6 +217,17 @@ def _technical_summary(ticker: str) -> str:
     return f"technical {tech.technical_state}, close {tech.latest_close}, EMA20 {tech.latest_ema20}, vs EMA20 {pct}"
 
 
+def _rating_technical_summary(rating) -> str:
+    if rating is None:
+        return "technical n/a"
+    pct_raw = rating["price_vs_ema20_pct"] if "price_vs_ema20_pct" in rating.keys() else None
+    pct = f"{float(pct_raw) * 100:+.1f}%" if pct_raw is not None else "n/a"
+    return (
+        f"technical {rating['technical_state']}, close {rating['latest_close']}, "
+        f"EMA20 {rating['ema20']}, vs EMA20 {pct}"
+    )
+
+
 def _fmt_pnl(market_value: float, cost_basis: float | None) -> str:
     if cost_basis is None:
         return "n/a cost basis"
@@ -218,3 +256,64 @@ def _one_line(text: str, n: int) -> str:
 
 def _block(text: str, n: int) -> str:
     return text[: n - 1] + "…" if len(text) > n else text
+
+
+def _live_web_context(message: str, holdings) -> dict[str, str | None]:
+    searched_at = datetime.now(UTC).isoformat()
+    if not holdings:
+        return {"text": "", "status": "skipped_no_detected_ticker", "searched_at": None}
+    if not _wants_live_web(message):
+        return {"text": "", "status": "skipped_question_not_time_sensitive", "searched_at": None}
+    if not settings.brave_search_api_key:
+        return {"text": "", "status": "skipped_brave_key_missing", "searched_at": None}
+
+    lines = [
+        "LIVE WEB SEARCH CONTEXT",
+        f"Searched at: {searched_at}",
+        "Use these Brave search snippets as current leads only; verify against primary sources before treating them as decisive.",
+    ]
+    result_count = 0
+    errors: list[str] = []
+    for h in list(holdings)[:3]:
+        entity = h.company_name or h.ticker
+        queries = [f"{h.ticker} {entity} next catalyst FDA trial data stock latest news"]
+        lines.append("")
+        lines.append(f"Live search leads for {h.ticker}:")
+        seen: set[str] = set()
+        for query in queries:
+            try:
+                with httpx.Client(timeout=5.0) as client:
+                    web_hits = brave_web_client.search(
+                        query,
+                        api_key=settings.brave_search_api_key,  # type: ignore[arg-type]
+                        num_results=5,
+                        client=client,
+                    )
+                for hit in web_hits:
+                    if hit.url in seen:
+                        continue
+                    seen.add(hit.url)
+                    result_count += 1
+                    lines.append(
+                        f"- WEB: {_one_line(hit.title, 150)} | {hit.url} | "
+                        f"{_one_line(hit.description, 260)}"
+                    )
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{h.ticker} web search failed: {str(e)[:160]}")
+        if not seen:
+            lines.append("- No live Brave leads returned.")
+
+    if errors:
+        lines.append("")
+        lines.append("Live search errors:")
+        for err in errors[:6]:
+            lines.append(f"- {err}")
+    status = f"ok_{result_count}_results" if result_count else "no_results"
+    if errors and not result_count:
+        status = "failed"
+    return {"text": "\n".join(lines), "status": status, "searched_at": searched_at}
+
+
+def _wants_live_web(message: str) -> bool:
+    lowered = message.lower()
+    return any(term in lowered for term in LIVE_WEB_TERMS)

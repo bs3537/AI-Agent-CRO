@@ -29,15 +29,17 @@ const RECOMPUTE_STATUS_TIMEOUT_MS = 10 * 60 * 1000
 
 async function waitForQueuedRecompute(requestId: string): Promise<void> {
   const deadline = Date.now() + RECOMPUTE_STATUS_TIMEOUT_MS
+  let lastStatus: string = 'queued'
   while (Date.now() < deadline) {
     await sleep(RECOMPUTE_STATUS_POLL_MS)
     const status = await api.recomputeStatus(requestId)
+    lastStatus = status.status
     if (status.status === 'succeeded') return
     if (status.status === 'failed') {
       throw new Error(status.error || 'VPS Codex recompute request failed')
     }
   }
-  throw new Error('VPS Codex recompute request is still queued; try again in a minute.')
+  throw new Error(`VPS Codex recompute request is still ${lastStatus}; try again in a minute.`)
 }
 
 function sleep(ms: number): Promise<void> {
@@ -104,15 +106,11 @@ export default function App() {
         await api.uploadFile(ticker, file)
       }
       const recompute = await api.recompute(ticker, true)
-      if (recompute.scheduled && recompute.request_id) {
-        setNotice(`${ticker} thesis package saved and recompute queued for VPS runner; waiting for completion.`)
-        await waitForQueuedRecompute(recompute.request_id)
-      }
       await refresh()
       setThesisTicker(null)
       setNotice(
         recompute.scheduled
-          ? `${ticker} thesis package saved and analysis recomputed by VPS runner.`
+          ? `${ticker} thesis package saved; VPS Codex recompute queued.`
           : `${ticker} thesis package saved and analysis recomputed.`,
       )
     },

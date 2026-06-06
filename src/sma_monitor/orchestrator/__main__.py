@@ -154,7 +154,11 @@ def cmd_status(args, log):
 def cmd_process_runner_requests(args, log):
     from .runner import process_runner_requests
 
-    summary = process_runner_requests(limit=args.limit, offline=args.offline)
+    summary = process_runner_requests(
+        limit=args.limit,
+        offline=args.offline,
+        commands=args.command,
+    )
     log.info("runner_requests_processed", extra=summary)
     print(json.dumps(summary, indent=2, default=str))
     return 0
@@ -165,9 +169,19 @@ def cmd_runner_run(args, log):
 
     log.info(
         "runner_loop_starting",
-        extra={"offline": args.offline, "poll_seconds": args.poll_seconds, "limit": args.limit},
+        extra={
+            "offline": args.offline,
+            "poll_seconds": args.poll_seconds,
+            "limit": args.limit,
+            "commands": args.command,
+        },
     )
-    run_runner_loop(offline=args.offline, poll_seconds=args.poll_seconds, batch_limit=args.limit)
+    run_runner_loop(
+        offline=args.offline,
+        poll_seconds=args.poll_seconds,
+        batch_limit=args.limit,
+        commands=args.command,
+    )
     return 0
 
 
@@ -297,6 +311,11 @@ def main(argv=None):
     )
     p_runner_once.add_argument("--limit", type=int, default=1)
     p_runner_once.add_argument("--offline", action="store_true")
+    p_runner_once.add_argument(
+        "--command",
+        action="append",
+        help="Only claim queued requests with this command. May be repeated.",
+    )
 
     p_runner_run = sub.add_parser(
         "runner-run",
@@ -306,6 +325,11 @@ def main(argv=None):
     p_runner_run.add_argument("--limit", type=int, default=1, help="Requests per poll")
     p_runner_run.add_argument("--poll-seconds", type=int, default=10)
     p_runner_run.add_argument("--offline", action="store_true")
+    p_runner_run.add_argument(
+        "--command",
+        action="append",
+        help="Only claim queued requests with this command. May be repeated.",
+    )
 
     p_runner_list = sub.add_parser(
         "runner-requests",

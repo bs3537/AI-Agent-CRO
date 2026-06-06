@@ -65,6 +65,8 @@ _RATE_LIMIT_MARKERS = (
     "quota",
 )
 
+_CODEX_AVAILABLE_CACHE: dict[tuple[str, str], bool] = {}
+
 
 # Path to the codex binary, honoring the SMA_CODEX_BIN override used by tests.
 def _codex_bin() -> str:
@@ -79,12 +81,38 @@ def _codex_home() -> Path:
 # True when the Codex CLI is installed AND a login exists — the gate
 # get_provider() uses to decide between Codex and the heuristic fallback.
 def codex_available() -> bool:
-    if shutil.which(_codex_bin()) is None:
+    binary = _codex_bin()
+    resolved = shutil.which(binary)
+    if resolved is None:
         return False
-    # A stubbed binary (tests) signals readiness without a real auth.json.
-    if os.environ.get("SMA_CODEX_BIN"):
-        return True
-    return (_codex_home() / "auth.json").exists()
+    if not os.environ.get("SMA_CODEX_BIN") and not (_codex_home() / "auth.json").exists():
+        return False
+
+    # `SMA_CODEX_BIN` can point at a shim. Verify it can actually start under
+    # the current PATH/interpreter before selecting the live Codex provider.
+    cache_key = (resolved, os.environ.get("PATH", ""))
+    cached = _CODEX_AVAILABLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        proc = subprocess.run(
+            [resolved, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.warning("codex_availability_check_failed", extra={"error": str(e)[:200]})
+        _CODEX_AVAILABLE_CACHE[cache_key] = False
+        return False
+    available = proc.returncode == 0
+    if not available:
+        log.warning(
+            "codex_availability_check_failed",
+            extra={"stderr": (proc.stderr or "")[:300]},
+        )
+    _CODEX_AVAILABLE_CACHE[cache_key] = available
+    return available
 
 
 # Codex-backed provider. Stateless apart from the optional per-stage model +
