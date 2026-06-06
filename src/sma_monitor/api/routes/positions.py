@@ -12,6 +12,7 @@ Wraps the existing pipeline functions — no new business logic:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
@@ -26,7 +27,7 @@ from ...orchestrator.manual_recompute import (
     recompute_all_with_refresh,
     recompute_one_with_refresh,
 )
-from ...orchestrator.store import enqueue_runner_request
+from ...orchestrator.store import enqueue_runner_request, get_runner_request
 from ...portfolio.delete import delete_holding_data
 from ...portfolio.ir_urls import populate_ir_urls_for_tickers
 from ...portfolio.joined import latest_joined
@@ -54,6 +55,7 @@ from ..schemas import (
     RatingOut,
     RecomputeAllResponse,
     RecomputeResponse,
+    RecomputeStatusResponse,
     RedTeamOut,
     ScoreOut,
     SparklineOut,
@@ -62,6 +64,10 @@ from ..schemas import (
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
 UPLOAD_FILE = File(...)
+RECOMPUTE_COMMANDS = {"manual_recompute_one", "manual_recompute_all", "thesis_recompute"}
+SECRETISH_ERROR_RE = re.compile(
+    r"(?i)(api[_-]?key|auth[_-]?token|access[_-]?token|token|password|secret)=([^\s&]+)"
+)
 
 
 # Map a decision (+ its strongest red-team bear severity) to an A/B/C/D letter
@@ -273,6 +279,14 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         rating=rating,
         decision=_decision_out(dec_row, severity, rating),
     )
+
+
+def _safe_runner_error(value: str | None) -> str | None:
+    if not value:
+        return None
+    safe = SECRETISH_ERROR_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", str(value))
+    safe = re.sub(r"([?&])([^\s=&#/?]+)=([^\s&#]+)", r"\1\2=[REDACTED]", safe)
+    return safe[:1000]
 
 
 # Resolve one ticker to its current Holding, or raise 404.
@@ -524,6 +538,35 @@ def recompute(
         compute_source=compute_source,
     )
     return RecomputeResponse(ticker=want, scheduled=True, decision=None)
+
+
+# GET /api/positions/recompute/{request_id} — status for dashboard-queued
+# recompute requests completed by the trusted VPS runner.
+@router.get("/recompute/{request_id}", response_model=RecomputeStatusResponse)
+def recompute_status(request_id: str) -> RecomputeStatusResponse:
+    row = get_runner_request(request_id)
+    if row is None or row.get("command") not in RECOMPUTE_COMMANDS:
+        raise HTTPException(status_code=404, detail="recompute request not found")
+
+    refresh = None
+    if row.get("summary_json"):
+        try:
+            parsed = json.loads(row.get("summary_json") or "{}")
+        except (json.JSONDecodeError, TypeError) as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"recompute result unreadable: {str(e)[:200]}",
+            ) from e
+        refresh = parsed if isinstance(parsed, dict) else {"result": parsed}
+
+    return RecomputeStatusResponse(
+        request_id=row["request_id"],
+        command=row["command"],
+        ticker=row.get("ticker"),
+        status=row["status"],
+        refresh=refresh,
+        error=_safe_runner_error(row.get("error")),
+    )
 
 
 # POST /api/positions/recompute — refresh evidence and recompute EVERY holding

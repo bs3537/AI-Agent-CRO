@@ -206,6 +206,15 @@ class RecomputeResponse(BaseModel):
     refresh: dict[str, Any] | None = None
 
 
+class RecomputeStatusResponse(BaseModel):
+    request_id: str
+    command: str
+    ticker: str | None = None
+    status: Literal["queued", "running", "succeeded", "failed"]
+    refresh: dict[str, Any] | None = None
+    error: str | None = None
+
+
 # POST /api/positions/recompute response — summary of a whole-portfolio run.
 class RecomputeAllResponse(BaseModel):
     scheduled: bool                    # True when run in the background

@@ -153,14 +153,27 @@ export interface PositionDetail extends PositionSummary {
 export interface RecomputeResponse {
   ticker: string
   scheduled: boolean
+  request_id: string | null
+  queue_status: string | null
   rating: Rating | null
   decision: Decision | null
   refresh?: Record<string, unknown> | null
 }
 
+export interface RecomputeStatusResponse {
+  request_id: string
+  command: string
+  ticker: string | null
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  refresh: Record<string, unknown> | null
+  error: string | null
+}
+
 // POST /api/positions/recompute (whole-portfolio) response.
 export interface RecomputeAllResponse {
   scheduled: boolean
+  request_id: string | null
+  queue_status: string | null
   decided: number
   skipped: number
   errors: number

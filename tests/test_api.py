@@ -315,6 +315,62 @@ def test_chat_status_returns_completed_runner_result(client):
     assert body["result"]["model_used"] == "codex-cli"
 
 
+# Dashboard recompute is queued to the VPS runner. The frontend needs a safe
+# status endpoint so it can wait until the LLM rating has actually landed (or
+# surface a runner failure) before telling the PM the tile is updated.
+def test_recompute_status_returns_completed_runner_summary(client):
+    from sma_monitor.db import connection
+    from sma_monitor.orchestrator.store import (
+        enqueue_runner_request,
+        finish_runner_request,
+        init_orchestrator_schema,
+    )
+
+    init_orchestrator_schema()
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    req = enqueue_runner_request(command="manual_recompute_one", ticker=HELD, payload={})
+    finish_runner_request(
+        req["request_id"],
+        summary={
+            "tickers": [HELD],
+            "decisions": {"decided": 1, "skipped": 0, "errors": 0, "holdings": 1},
+        },
+    )
+
+    r = client.get(f"/api/positions/recompute/{req['request_id']}")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["request_id"] == req["request_id"]
+    assert body["status"] == "succeeded"
+    assert body["ticker"] == HELD
+    assert body["refresh"]["decisions"]["decided"] == 1
+    assert body["error"] is None
+
+
+def test_recompute_status_returns_failed_runner_error(client):
+    from sma_monitor.db import connection
+    from sma_monitor.orchestrator.store import (
+        enqueue_runner_request,
+        finish_runner_request,
+        init_orchestrator_schema,
+    )
+
+    init_orchestrator_schema()
+    with connection() as conn:
+        conn.execute("DELETE FROM runner_requests")
+    req = enqueue_runner_request(command="manual_recompute_one", ticker=HELD, payload={})
+    finish_runner_request(req["request_id"], error="decision stage failed: 1 error")
+
+    r = client.get(f"/api/positions/recompute/{req['request_id']}")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "failed"
+    assert "decision stage failed" in body["error"]
+
+
 def test_thesis_word_limit(client):
     too_long = "word " * 2001
     r = client.put(f"/api/positions/{HELD}/thesis", json={"thesis": too_long})

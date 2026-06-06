@@ -115,6 +115,39 @@ def test_runner_processor_records_failure(monkeypatch):
     assert "boom" in row["error"]
 
 
+# A dashboard recompute can return a summary with internal decision errors when
+# the LLM/rating stage failed for the ticker. That must not be marked as a
+# successful runner request, because the tile would keep showing the old rating.
+def test_runner_processor_fails_manual_recompute_when_decision_stage_errors(monkeypatch):
+    _clear_runner_requests()
+    req = enqueue_runner_request(
+        command="manual_recompute_one",
+        ticker="PRAX",
+        payload={"compute_source": "hermes_test", "offline": False},
+    )
+
+    def fake_recompute(ticker, *, offline, compute_source):
+        return {
+            "tickers": [ticker],
+            "scoring": {"scored": 0, "errors": 0, "skipped": 0},
+            "decisions": {"decided": 0, "skipped": 0, "errors": 1, "holdings": 1},
+        }
+
+    monkeypatch.setattr(
+        "sma_monitor.orchestrator.manual_recompute.recompute_one_with_refresh",
+        fake_recompute,
+    )
+
+    summary = process_runner_requests(limit=1)
+
+    assert summary["succeeded"] == 0
+    assert summary["failed"] == 1
+    row = recent_runner_requests(limit=1)[0]
+    assert row["request_id"] == req["request_id"]
+    assert row["status"] == "failed"
+    assert "decision" in row["error"].lower()
+
+
 def test_runner_processor_dispatches_chat_completion(monkeypatch):
     _clear_runner_requests()
     enqueue_runner_request(

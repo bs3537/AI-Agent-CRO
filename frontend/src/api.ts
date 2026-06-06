@@ -15,6 +15,7 @@ import type {
   ManualPositionResponse,
   RecomputeAllResponse,
   RecomputeResponse,
+  RecomputeStatusResponse,
   Status,
 } from './types'
 
@@ -108,6 +109,10 @@ export const api = {
       10 * 60 * 1000,
     )
   },
+
+  // Poll a dashboard-queued recompute request completed by the VPS runner.
+  recomputeStatus: (requestId: string) =>
+    fetch(`/api/positions/recompute/${requestId}`).then(json<RecomputeStatusResponse>),
 
   // Recompute every holding's decision in one call. Defaults to background
   // (wait=false) so the request returns immediately; the grid poll surfaces

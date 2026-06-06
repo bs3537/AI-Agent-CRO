@@ -24,6 +24,25 @@ import StatusBar from './components/StatusBar'
 
 // Poll cadence for the grid + status (decisions refresh after batch runs).
 const POLL_MS = 30_000
+const RECOMPUTE_STATUS_POLL_MS = 1_500
+const RECOMPUTE_STATUS_TIMEOUT_MS = 10 * 60 * 1000
+
+async function waitForQueuedRecompute(requestId: string): Promise<void> {
+  const deadline = Date.now() + RECOMPUTE_STATUS_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    await sleep(RECOMPUTE_STATUS_POLL_MS)
+    const status = await api.recomputeStatus(requestId)
+    if (status.status === 'succeeded') return
+    if (status.status === 'failed') {
+      throw new Error(status.error || 'VPS Codex recompute request failed')
+    }
+  }
+  throw new Error('VPS Codex recompute request is still queued; try again in a minute.')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
 
 // Dashboard root: loads positions + status, polls on an interval, and wires
 // the per-card mutations (thesis edit, upload, recompute) back to the API,
@@ -85,11 +104,15 @@ export default function App() {
         await api.uploadFile(ticker, file)
       }
       const recompute = await api.recompute(ticker, true)
+      if (recompute.scheduled && recompute.request_id) {
+        setNotice(`${ticker} thesis package saved and recompute queued for VPS runner; waiting for completion.`)
+        await waitForQueuedRecompute(recompute.request_id)
+      }
       await refresh()
       setThesisTicker(null)
       setNotice(
         recompute.scheduled
-          ? `${ticker} thesis package saved and recompute queued for VPS runner.`
+          ? `${ticker} thesis package saved and analysis recomputed by VPS runner.`
           : `${ticker} thesis package saved and analysis recomputed.`,
       )
     },
@@ -102,10 +125,14 @@ export default function App() {
     async (ticker: string, file: File) => {
       await api.uploadFile(ticker, file)
       const recompute = await api.recompute(ticker, true)
+      if (recompute.scheduled && recompute.request_id) {
+        setNotice(`${ticker} document uploaded and recompute queued for VPS runner; waiting for completion.`)
+        await waitForQueuedRecompute(recompute.request_id)
+      }
       await refresh()
       setNotice(
         recompute.scheduled
-          ? `${ticker} document uploaded and recompute queued for VPS runner.`
+          ? `${ticker} document uploaded and analysis recomputed by VPS runner.`
           : `${ticker} document uploaded and analysis recomputed.`,
       )
     },
@@ -117,10 +144,14 @@ export default function App() {
     async (ticker: string) => {
       try {
         const recompute = await api.recompute(ticker, true)
+        if (recompute.scheduled && recompute.request_id) {
+          setNotice(`${ticker} recompute queued for VPS runner; waiting for completion.`)
+          await waitForQueuedRecompute(recompute.request_id)
+        }
         await refresh()
         setNotice(
           recompute.scheduled
-            ? `${ticker} recompute queued for VPS runner.`
+            ? `${ticker} analysis recomputed by VPS runner.`
             : `${ticker} analysis recomputed.`,
         )
       } catch (e) {
@@ -165,7 +196,11 @@ export default function App() {
         const pos = queue[i]
         setRecomputeQueue({ ticker: pos.ticker, index: i + 1, total: queue.length })
         setNotice(`Recomputing ${i + 1}/${queue.length}: ${pos.ticker}`)
-        await api.recompute(pos.ticker, true, 'manual_all')
+        const recompute = await api.recompute(pos.ticker, true, 'manual_all')
+        if (recompute.scheduled && recompute.request_id) {
+          setNotice(`Recompute queued for ${pos.ticker}; waiting for VPS runner (${i + 1}/${queue.length}).`)
+          await waitForQueuedRecompute(recompute.request_id)
+        }
         await refresh()
       }
       setNotice(`Evidence refresh + recompute finished for ${queue.length} position${queue.length === 1 ? '' : 's'}.`)

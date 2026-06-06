@@ -16,6 +16,14 @@ log = logging.getLogger("sma_monitor.orchestrator.runner")
 DEFAULT_POLL_SECONDS = 10
 
 
+class RunnerRequestError(RuntimeError):
+    """Runner failure that can still persist a safe structured summary."""
+
+    def __init__(self, message: str, *, summary: dict | None = None) -> None:
+        super().__init__(message)
+        self.summary = summary or {}
+
+
 def process_runner_requests(*, limit: int = 1, offline: bool = False) -> dict:
     processed = succeeded = failed = 0
     errors: list[dict] = []
@@ -26,11 +34,21 @@ def process_runner_requests(*, limit: int = 1, offline: bool = False) -> dict:
         processed += 1
         try:
             summary = _execute(row, offline=offline)
+            _raise_for_failed_recompute_summary(row, summary)
             finish_runner_request(row["request_id"], summary=summary)
             succeeded += 1
             log.info(
                 "runner_request_succeeded",
                 extra={"request_id": row["request_id"], "command": row["command"]},
+            )
+        except RunnerRequestError as e:
+            err = str(e)[:1000]
+            finish_runner_request(row["request_id"], summary=e.summary, error=err)
+            failed += 1
+            errors.append({"request_id": row["request_id"], "error": err})
+            log.error(
+                "runner_request_failed",
+                extra={"request_id": row["request_id"], "command": row["command"], "err": err},
             )
         except Exception as e:  # noqa: BLE001 - queue failures must be captured.
             err = str(e)[:1000]
@@ -121,6 +139,26 @@ def _execute(row: dict, *, offline: bool) -> dict:
 
         return run_dispatch_cycle(offline=bool(payload.get("offline", offline)))
     raise RuntimeError(f"unknown runner command: {command}")
+
+
+def _raise_for_failed_recompute_summary(row: dict, summary: dict) -> None:
+    command = row.get("command")
+    if command not in {"manual_recompute_one", "manual_recompute_all", "thesis_recompute"}:
+        return
+    decisions = summary.get("decisions") if isinstance(summary, dict) else None
+    if not isinstance(decisions, dict):
+        return
+    decision_errors = int(decisions.get("errors") or 0)
+    if decision_errors <= 0:
+        return
+    decided = int(decisions.get("decided") or 0)
+    skipped = int(decisions.get("skipped") or 0)
+    ticker = (row.get("ticker") or "portfolio").strip().upper()
+    raise RunnerRequestError(
+        f"decision stage failed for {ticker}: "
+        f"{decision_errors} error(s), {decided} decided, {skipped} skipped",
+        summary=summary,
+    )
 
 
 def _payload(row: dict) -> dict:
