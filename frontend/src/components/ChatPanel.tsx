@@ -5,8 +5,12 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
+import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
@@ -14,17 +18,23 @@ import Typography from '@mui/material/Typography'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import AddCommentIcon from '@mui/icons-material/AddComment'
+import HistoryIcon from '@mui/icons-material/History'
 import SearchIcon from '@mui/icons-material/Search'
 import SendIcon from '@mui/icons-material/Send'
 import { api } from '../api'
 import type { ChatHistoryMessage, ChatQueuedResponse, ChatResponse, ChatSubmitResponse } from '../types'
 
-const STORAGE_KEY = 'ai-cro-chat-history-v1'
+// ── Storage keys ──────────────────────────────────────────────────────────────
+const LEGACY_KEY = 'ai-cro-chat-history-v1'
+const SESSIONS_KEY = 'ai-cro-chat-sessions-v2'
+
 const ACCEPT = [
   '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.jsonl',
   '.pdf', '.docx', '.xlsx', '.xlsm', '.xls', '.png', '.jpg', '.jpeg', '.webp', '.gif',
 ].join(',')
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface StoredChatMessage extends ChatHistoryMessage {
   id: string
   created_at: string
@@ -32,6 +42,58 @@ interface StoredChatMessage extends ChatHistoryMessage {
   attachments?: string[]
 }
 
+interface ChatSession {
+  id: string
+  name: string
+  created_at: string
+  messages: StoredChatMessage[]
+}
+
+interface SessionStore {
+  sessions: ChatSession[]
+  currentId: string
+}
+
+// ── Persistence helpers ───────────────────────────────────────────────────────
+function makeSessionName(messages: StoredChatMessage[], created_at: string): string {
+  const first = messages.find((m) => m.role === 'user')
+  const snippet = first ? first.content.slice(0, 48) + (first.content.length > 48 ? '…' : '') : 'New chat'
+  const date = new Date(created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return `${date} — ${snippet}`
+}
+
+function newSession(): ChatSession {
+  return { id: crypto.randomUUID(), name: 'New chat', created_at: new Date().toISOString(), messages: [] }
+}
+
+function loadStore(): SessionStore {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as SessionStore
+      if (parsed.sessions?.length && parsed.currentId) return parsed
+    }
+    // Migrate legacy single-history to session store
+    const legacyRaw = localStorage.getItem(LEGACY_KEY)
+    const legacy: StoredChatMessage[] = legacyRaw ? JSON.parse(legacyRaw) : []
+    const seed = newSession()
+    if (Array.isArray(legacy) && legacy.length) {
+      seed.messages = legacy
+      seed.created_at = legacy[0].created_at ?? seed.created_at
+      seed.name = makeSessionName(legacy, seed.created_at)
+    }
+    return { sessions: [seed], currentId: seed.id }
+  } catch {
+    const seed = newSession()
+    return { sessions: [seed], currentId: seed.id }
+  }
+}
+
+function saveStore(store: SessionStore) {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(store))
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function ChatPanel({
   width,
   onWidthChange,
@@ -41,24 +103,30 @@ export default function ChatPanel({
   onWidthChange: (width: number) => void
   onClose: () => void
 }) {
-  const [messages, setMessages] = useState<StoredChatMessage[]>(loadHistory)
+  const [store, setStore] = useState<SessionStore>(loadStore)
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
   const [thinkingSecs, setThinkingSecs] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historySearch, setHistorySearch] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-200)))
-  }, [messages])
+  const currentSession = store.sessions.find((s) => s.id === store.currentId) ?? store.sessions[0]
+  const messages = currentSession?.messages ?? []
 
+  // Persist on every store change
+  useEffect(() => { saveStore(store) }, [store])
+
+  // Scroll to bottom on new message
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight })
   }, [messages, sending])
 
+  // Thinking timer
   useEffect(() => {
     if (!sending) { setThinkingSecs(0); return }
     setThinkingSecs(0)
@@ -66,6 +134,7 @@ export default function ChatPanel({
     return () => clearInterval(id)
   }, [sending])
 
+  // Filtered messages in current session
   const visibleMessages = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return messages
@@ -75,6 +144,74 @@ export default function ChatPanel({
         (m.attachments ?? []).some((name) => name.toLowerCase().includes(q)),
     )
   }, [messages, search])
+
+  // Sessions list filtered by history search
+  const visibleSessions = useMemo(() => {
+    const q = historySearch.trim().toLowerCase()
+    if (!q) return [...store.sessions].sort((a, b) => b.created_at.localeCompare(a.created_at))
+    return [...store.sessions]
+      .filter((s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.messages.some((m) => m.content.toLowerCase().includes(q)),
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+  }, [store.sessions, historySearch])
+
+  // Update the current session's messages
+  const updateCurrentMessages = (updater: (prev: StoredChatMessage[]) => StoredChatMessage[]) => {
+    setStore((prev) => {
+      const sessions = prev.sessions.map((s) => {
+        if (s.id !== prev.currentId) return s
+        const next = updater(s.messages)
+        return {
+          ...s,
+          messages: next,
+          name: next.length ? makeSessionName(next, s.created_at) : 'New chat',
+        }
+      })
+      return { ...prev, sessions }
+    })
+  }
+
+  const startNewChat = () => {
+    const session = newSession()
+    setStore((prev) => ({
+      sessions: [session, ...prev.sessions],
+      currentId: session.id,
+    }))
+    setSearch('')
+    setDraft('')
+    setFiles([])
+    setError(null)
+    setHistoryOpen(false)
+  }
+
+  const switchSession = (id: string) => {
+    setStore((prev) => ({ ...prev, currentId: id }))
+    setSearch('')
+    setDraft('')
+    setFiles([])
+    setError(null)
+    setHistoryOpen(false)
+  }
+
+  const deleteSession = (id: string) => {
+    setStore((prev) => {
+      const sessions = prev.sessions.filter((s) => s.id !== id)
+      if (sessions.length === 0) {
+        const seed = newSession()
+        return { sessions: [seed], currentId: seed.id }
+      }
+      const currentId = prev.currentId === id
+        ? sessions[0].id
+        : prev.currentId
+      return { sessions, currentId }
+    })
+  }
+
+  const clearCurrentChat = () => {
+    updateCurrentMessages(() => [])
+  }
 
   const send = async () => {
     const text = draft.trim()
@@ -87,7 +224,7 @@ export default function ChatPanel({
       attachments: files.map((f) => f.name),
     }
     const historyForApi = messages.map(({ role, content }) => ({ role, content })).slice(-24)
-    setMessages((prev) => [...prev, userMessage])
+    updateCurrentMessages((prev) => [...prev, userMessage])
     setDraft('')
     setSending(true)
     setError(null)
@@ -107,7 +244,7 @@ export default function ChatPanel({
         model_used: res.model_used,
         attachments: res.attachments.map((a) => `${a.filename} (${a.parser})`),
       }
-      setMessages((prev) => [...prev, assistantMessage])
+      updateCurrentMessages((prev) => [...prev, assistantMessage])
       setFiles([])
     } catch (e) {
       setError(String(e))
@@ -120,11 +257,6 @@ export default function ChatPanel({
     if (!picked) return
     setFiles((prev) => [...prev, ...Array.from(picked)])
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  const clearHistory = () => {
-    setMessages([])
-    localStorage.removeItem(STORAGE_KEY)
   }
 
   return (
@@ -143,17 +275,29 @@ export default function ChatPanel({
       }}
     >
       <ResizeHandle width={width} onWidthChange={onWidthChange} />
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1.5, py: 1 }}>
+
+      {/* ── Header ── */}
+      <Stack direction="row" alignItems="center" spacing={0.5} sx={{ px: 1.5, py: 1 }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             AI CRO Chat
           </Typography>
-          <Typography variant="caption" sx={{ opacity: 0.6 }}>
-            Saved dashboard data + uploaded files
+          <Typography variant="caption" sx={{ opacity: 0.6 }} noWrap>
+            {currentSession?.name ?? 'New chat'}
           </Typography>
         </Box>
-        <Tooltip title="Clear chat history">
-          <IconButton size="small" onClick={clearHistory}>
+        <Tooltip title="New chat">
+          <IconButton size="small" onClick={startNewChat}>
+            <AddCommentIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Chat history">
+          <IconButton size="small" onClick={() => setHistoryOpen(true)}>
+            <HistoryIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Clear current chat">
+          <IconButton size="small" onClick={clearCurrentChat}>
             <DeleteOutlineIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -161,13 +305,15 @@ export default function ChatPanel({
           <CloseIcon fontSize="small" />
         </IconButton>
       </Stack>
+
+      {/* ── In-chat search ── */}
       <Box sx={{ px: 1.5, pb: 1 }}>
         <TextField
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           size="small"
           fullWidth
-          placeholder="Search chat history"
+          placeholder="Search this chat"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -178,6 +324,8 @@ export default function ChatPanel({
         />
       </Box>
       <Divider />
+
+      {/* ── Messages ── */}
       <Box ref={scrollerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 1.5 }}>
         {visibleMessages.length === 0 && (
           <Typography variant="body2" sx={{ opacity: 0.55, mt: 2 }}>
@@ -196,6 +344,8 @@ export default function ChatPanel({
         </Stack>
       </Box>
       <Divider />
+
+      {/* ── Compose area ── */}
       <Box sx={{ p: 1.5 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 1 }}>
@@ -260,10 +410,91 @@ export default function ChatPanel({
           </Button>
         </Stack>
       </Box>
+
+      {/* ── History Drawer ── */}
+      <Drawer
+        anchor="right"
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        PaperProps={{ sx: { width: 320, display: 'flex', flexDirection: 'column' } }}
+      >
+        <Stack direction="row" alignItems="center" sx={{ px: 2, pt: 2, pb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, flexGrow: 1 }}>
+            Chat History
+          </Typography>
+          <IconButton size="small" onClick={() => setHistoryOpen(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+        <Box sx={{ px: 2, pb: 1.5 }}>
+          <TextField
+            value={historySearch}
+            onChange={(e) => setHistorySearch(e.target.value)}
+            size="small"
+            fullWidth
+            placeholder="Search sessions…"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Box>
+        <Divider />
+        <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+          {visibleSessions.length === 0 && (
+            <Typography variant="body2" sx={{ opacity: 0.55, p: 2 }}>
+              No sessions match.
+            </Typography>
+          )}
+          <List dense disablePadding>
+            {visibleSessions.map((s) => (
+              <Box key={s.id}>
+                <ListItemButton
+                  selected={s.id === store.currentId}
+                  onClick={() => switchSession(s.id)}
+                  sx={{ pr: 1 }}
+                >
+                  <ListItemText
+                    primary={s.name}
+                    secondary={`${s.messages.length} messages · ${new Date(s.created_at).toLocaleDateString()}`}
+                    primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
+                    secondaryTypographyProps={{ variant: 'caption' }}
+                  />
+                  <Tooltip title="Delete session">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => { e.stopPropagation(); deleteSession(s.id) }}
+                      sx={{ ml: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </ListItemButton>
+                <Divider component="li" />
+              </Box>
+            ))}
+          </List>
+        </Box>
+        <Divider />
+        <Box sx={{ p: 2 }}>
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<AddCommentIcon />}
+            onClick={startNewChat}
+          >
+            New Chat
+          </Button>
+        </Box>
+      </Drawer>
     </Box>
   )
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function isQueuedChatResponse(res: ChatSubmitResponse): res is ChatQueuedResponse {
   return 'scheduled' in res && res.scheduled === true
 }
@@ -359,14 +590,4 @@ function ResizeHandle({
       }}
     />
   )
-}
-
-function loadHistory(): StoredChatMessage[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
 }
