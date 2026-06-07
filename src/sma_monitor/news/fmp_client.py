@@ -217,6 +217,36 @@ def refresh_for_holdings(
     return {"tickers": len(tickers), "updated": updated, "errors": errors, "source": "fmp"}
 
 
+# Fetch real-time/delayed quotes for multiple tickers in one FMP /stable/quote
+# call. Returns {TICKER: price}; tickers with no data are silently skipped so a
+# partial result is always returned rather than raising.
+def fetch_quotes(
+    tickers: list[str], *, api_key: str, client: httpx.Client | None = None
+) -> dict[str, float]:
+    if not tickers:
+        return {}
+    owns = client is None
+    client = client or httpx.Client(timeout=15.0)
+    result: dict[str, float] = {}
+    try:
+        symbols = ",".join(t.upper() for t in tickers)
+        resp = client.get(f"{FMP_BASE}/quote", params={"symbol": symbols, "apikey": api_key})
+        if resp.status_code != 200:
+            raise FmpError(f"FMP quote {symbols} failed: {resp.status_code} {resp.text[:200]}")
+        rows = resp.json()
+        if not isinstance(rows, list):
+            rows = [rows] if isinstance(rows, dict) else []
+        for row in rows:
+            symbol = (row.get("symbol") or row.get("ticker") or "").upper()
+            price = row.get("price")
+            if symbol and price is not None:
+                result[symbol] = float(price)
+    finally:
+        if owns:
+            client.close()
+    return result
+
+
 # Fetch ~1 year of daily EOD closes for one ticker (oldest→newest). Uses FMP's
 # /stable/historical-price-eod/full endpoint, which returns a newest-first array
 # of daily OHLC rows; we keep the closes and reverse them. Returns [] on any failure.

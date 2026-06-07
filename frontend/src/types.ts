@@ -241,6 +241,13 @@ export interface ChatStatusResponse {
 
 export type ChatSubmitResponse = ChatResponse | ChatQueuedResponse
 
+// GET /api/quotes — intraday price quotes during trading hours.
+export interface QuotesResponse {
+  quotes: Record<string, number>
+  is_market_open: boolean
+  source: string
+}
+
 // POST /api/portfolio/pull response.
 export interface IBKRPullResponse {
   pull_id: string

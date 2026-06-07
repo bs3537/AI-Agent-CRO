@@ -13,6 +13,7 @@ import type {
   IBKRPullResponse,
   ManualPositionPayload,
   ManualPositionResponse,
+  QuotesResponse,
   RecomputeAllResponse,
   RecomputeResponse,
   RecomputeStatusResponse,
@@ -133,6 +134,9 @@ export const api = {
 
   // Operational snapshot for the status bar.
   status: () => fetch('/api/status').then(json<Status>),
+
+  // Intraday quotes for all held tickers (+ is_market_open flag).
+  quotes: () => fetch('/api/quotes').then(json<QuotesResponse>),
 
   // Portfolio chatbot. Uses multipart even with no files so uploads share the
   // same endpoint.

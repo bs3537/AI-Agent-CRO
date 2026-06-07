@@ -31,6 +31,7 @@ import FileUpload from './FileUpload'
 // (upload, recompute, details). All mutations call back up to App.
 export default function PositionCard({
   pos,
+  livePrice = null,
   stale = false,
   onUpload,
   onRecompute,
@@ -39,6 +40,7 @@ export default function PositionCard({
   onOpenDetail,
 }: {
   pos: PositionSummary
+  livePrice?: number | null
   stale?: boolean
   onUpload: (ticker: string, file: File) => Promise<void>
   onRecompute: (ticker: string) => Promise<void>
@@ -51,6 +53,15 @@ export default function PositionCard({
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
+
+  // Compute intraday P/L from live price when available (display-only overlay;
+  // stored EOD values are never mutated).
+  const intradayMv = livePrice != null && pos.qty != null ? livePrice * pos.qty : null
+  const intradayPnl = intradayMv != null && pos.cost_basis != null ? intradayMv - pos.cost_basis : null
+  const intradayPnlPct = intradayPnl != null && pos.cost_basis ? intradayPnl / pos.cost_basis : null
+  const isLive = intradayPnl !== null
+  const displayPnl = isLive ? intradayPnl : pos.open_pnl
+  const displayPnlPct = isLive ? intradayPnlPct : pos.pnl_pct
   const signal = pos.rating ?? pos.decision
   const note = signal?.note
   const drivers = signal?.drivers ?? []
@@ -114,7 +125,7 @@ export default function PositionCard({
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-          <PnL openPnl={pos.open_pnl} pnlPct={pos.pnl_pct} />
+          <PnL openPnl={displayPnl} pnlPct={displayPnlPct} live={isLive} />
           <Chip size="small" variant="outlined" label={`${(pos.pct_nav * 100).toFixed(1)}% NAV`} />
           {/* Per-tile operational flags: stale pull (book-wide) + un-filled thesis. */}
           {stale && <Chip size="small" color="warning" label="STALE DATA" />}

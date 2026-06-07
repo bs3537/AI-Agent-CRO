@@ -3,6 +3,7 @@ import AppBar from '@mui/material/AppBar'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Container from '@mui/material/Container'
 import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -13,7 +14,7 @@ import AddIcon from '@mui/icons-material/Add'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from './api'
-import type { ManualPositionPayload, PositionsResponse, Status } from './types'
+import type { ManualPositionPayload, PositionsResponse, QuotesResponse, Status } from './types'
 import AddPositionDrawer from './components/AddPositionDrawer'
 import BrandLogo from './components/BrandLogo'
 import ChatPanel from './components/ChatPanel'
@@ -24,6 +25,8 @@ import StatusBar from './components/StatusBar'
 
 // Poll cadence for the grid + status (decisions refresh after batch runs).
 const POLL_MS = 30_000
+// Intraday quotes refresh every 30 min during trading hours.
+const QUOTES_POLL_MS = 30 * 60 * 1_000
 const RECOMPUTE_STATUS_POLL_MS = 1_500
 const RECOMPUTE_STATUS_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -66,6 +69,8 @@ export default function App() {
     total: number
   } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [quotes, setQuotes] = useState<QuotesResponse | null>(null)
+  const [quotesAt, setQuotesAt] = useState<Date | null>(null)
 
   useEffect(() => {
     if (!recomputingAll) { setRecomputeAllSecs(0); return }
@@ -73,6 +78,24 @@ export default function App() {
     const id = setInterval(() => setRecomputeAllSecs((s) => s + 1), 1000)
     return () => clearInterval(id)
   }, [recomputingAll])
+
+  // Fetch intraday quotes from FMP; non-fatal (falls back to EOD on failure).
+  const fetchQuotes = useCallback(async () => {
+    try {
+      const q = await api.quotes()
+      setQuotes(q)
+      setQuotesAt(new Date())
+    } catch {
+      // silently ignore — EOD data is shown as fallback
+    }
+  }, [])
+
+  // Fetch quotes on mount, then re-fetch every 30 min.
+  useEffect(() => {
+    void fetchQuotes()
+    const id = setInterval(() => void fetchQuotes(), QUOTES_POLL_MS)
+    return () => clearInterval(id)
+  }, [fetchQuotes])
 
   // Refetch the grid + status snapshot.
   const refresh = useCallback(async () => {
@@ -215,6 +238,8 @@ export default function App() {
   const stale = (status?.flags ?? []).some(
     (f) => f.flag_name === 'stale_positions' && Boolean(f.active),
   )
+  const isMarketOpen = quotes?.is_market_open ?? false
+  const liveQuotes = quotes?.quotes ?? {}
   const thesisPosition =
     data?.positions.find((p) => p.ticker === thesisTicker) ?? null
 
@@ -285,6 +310,33 @@ export default function App() {
           </Alert>
         )}
 
+        {isMarketOpen && Object.keys(liveQuotes).length > 0 && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: 'success.main',
+                flexShrink: 0,
+                '@keyframes pulse': {
+                  '0%': { opacity: 1 },
+                  '50%': { opacity: 0.3 },
+                  '100%': { opacity: 1 },
+                },
+                animation: 'pulse 2s ease-in-out infinite',
+              }}
+            />
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              Live intraday prices · {Object.keys(liveQuotes).length} tickers · refreshes every 30 min
+              {quotesAt ? ` · last updated ${quotesAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+            </Typography>
+            <Tooltip title="Prices from FMP, refreshed every 30 min during 9:30am–4pm ET. P/L figures on each card reflect the current price.">
+              <Chip size="small" label="LIVE" color="success" variant="outlined" sx={{ fontWeight: 700 }} />
+            </Tooltip>
+          </Box>
+        )}
+
         <Box
           sx={{
             display: 'grid',
@@ -296,6 +348,7 @@ export default function App() {
             <PositionCard
               key={pos.ticker}
               pos={pos}
+              livePrice={liveQuotes[pos.ticker] ?? null}
               stale={stale}
               onUpload={onUpload}
               onRecompute={onRecompute}

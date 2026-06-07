@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from ..config import settings
 from ..db import init_db
 from ..paths import ensure_dirs
-from .routes import chat, portfolio, positions, status
+from .routes import chat, portfolio, positions, quotes, status
 
 _log = logging.getLogger(__name__)
 
@@ -273,6 +273,7 @@ def create_app() -> FastAPI:
     app.include_router(portfolio.router)
     app.include_router(chat.router)
     app.include_router(status.router)
+    app.include_router(quotes.router)
 
     # Serve the built SPA at the root when it exists (production). html=True
     # makes client-side routing fall back to index.html.
