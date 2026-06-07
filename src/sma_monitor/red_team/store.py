@@ -7,6 +7,7 @@ remain in the DB for audit.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime
 
 from ..db import connection
@@ -108,9 +109,13 @@ def pick_candidates(
     catalog_version: str,
     limit: int | None = None,
     ticker: str | None = None,
+    article_event_ids: Sequence[str] | None = None,
 ):
     """Scores above T₂ that have no red-team pass at this catalog_version."""
     init_red_team_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return []
     sql = """
         SELECT s.event_id        AS score_event_id,
                s.article_event_id, s.ticker, s.primary_bucket_id,
@@ -132,6 +137,10 @@ def pick_candidates(
     if ticker:
         sql += " AND s.ticker = ?"
         args.append(ticker.upper())
+    if article_ids is not None:
+        placeholders = ",".join("?" for _ in article_ids)
+        sql += f" AND s.article_event_id IN ({placeholders})"
+        args.extend(article_ids)
     sql += " ORDER BY s.composite DESC"
     if limit:
         sql += " LIMIT ?"
@@ -146,9 +155,13 @@ def recent_passes(
     *,
     ticker: str | None = None,
     min_severity: int | None = None,
+    article_event_ids: Sequence[str] | None = None,
     limit: int = 30,
 ):
     init_red_team_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return []
     sql = """
         SELECT r.*, s.composite, s.threshold_band, s.primary_bucket_id,
                a.title, a.url
@@ -164,10 +177,20 @@ def recent_passes(
     if min_severity is not None:
         sql += " AND r.severity_of_concern >= ?"
         args.append(min_severity)
+    if article_ids is not None:
+        placeholders = ",".join("?" for _ in article_ids)
+        sql += f" AND r.article_event_id IN ({placeholders})"
+        args.extend(article_ids)
     sql += " ORDER BY r.severity_of_concern DESC, s.composite DESC, r.ran_at DESC LIMIT ?"
     args.append(limit)
     with connection() as conn:
         return conn.execute(sql, args).fetchall()
+
+
+def _normalize_article_ids(article_event_ids: Sequence[str] | None) -> list[str] | None:
+    if article_event_ids is None:
+        return None
+    return list(dict.fromkeys(str(eid).strip() for eid in article_event_ids if str(eid).strip()))
 
 
 # Count citations per warning_sign id at a given catalog_version. Feeds

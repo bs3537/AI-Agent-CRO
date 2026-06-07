@@ -15,6 +15,7 @@ edges to article_tickers / article_buckets — never a duplicate top-level row.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime
 
 from ..db import connection
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS articles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_published   ON articles(published_at);
+CREATE INDEX IF NOT EXISTS idx_articles_fetched     ON articles(fetched_at);
 CREATE INDEX IF NOT EXISTS idx_articles_source_tier ON articles(source_tier);
 
 CREATE TABLE IF NOT EXISTS article_tickers (
@@ -221,6 +223,40 @@ def recent_articles(
     args.append(limit)
     with connection() as conn:
         return conn.execute(sql, args).fetchall()
+
+
+def article_ids_by_ticker_since(
+    *,
+    tickers: Sequence[str],
+    since: datetime | str,
+) -> dict[str, list[str]]:
+    """Article event ids fetched for each ticker at/after `since`.
+
+    The morning drift monitor uses this as the fresh-evidence allow-list for
+    Codex-backed scoring, red-team, and decision prompts. It intentionally
+    keys off fetched_at, not published_at, so the scheduled job spends model
+    time only on evidence ingested by that run.
+    """
+    init_news_schema()
+    wanted = list(dict.fromkeys(t.strip().upper() for t in tickers if t and t.strip()))
+    out: dict[str, list[str]] = {t: [] for t in wanted}
+    if not wanted:
+        return out
+    since_iso = since.isoformat() if isinstance(since, datetime) else str(since)
+    placeholders = ",".join("?" for _ in wanted)
+    sql = f"""
+        SELECT t.ticker, a.event_id
+        FROM articles a
+        JOIN article_tickers t ON t.event_id = a.event_id
+        WHERE t.ticker IN ({placeholders})
+          AND a.fetched_at >= ?
+        ORDER BY t.ticker, COALESCE(a.published_at, a.fetched_at) DESC, a.event_id
+    """
+    with connection() as conn:
+        rows = conn.execute(sql, [*wanted, since_iso]).fetchall()
+    for row in rows:
+        out.setdefault(row["ticker"], []).append(row["event_id"])
+    return out
 
 
 # Count distinct articles per bucket over the last N days. Feeds the Phase 5

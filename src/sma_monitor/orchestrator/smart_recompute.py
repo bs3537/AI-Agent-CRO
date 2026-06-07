@@ -7,7 +7,7 @@ override that force-runs a full refresh for one or all holdings.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,11 +20,12 @@ from ..news.fmp_client import (
     refresh_prices_for_holdings,
 )
 from ..news.pipeline import poll_company_news, poll_sec
+from ..news.store import article_ids_by_ticker_since
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..red_team.pipeline import run_red_team
 from ..scorer.pipeline import score_unscored
-from .manual_recompute import _capture, _refresh_evidence
+from .manual_recompute import _capture
 
 log = logging.getLogger("sma_monitor.orchestrator.smart_recompute")
 
@@ -85,6 +86,15 @@ def run_smart_morning_recompute(
         state["refresh"] = refresh
         news_new = _new_counts(refresh.get("company_news", {}))
         sec_new = _new_counts(refresh.get("sec", {}))
+        fresh_article_ids_by_ticker = article_ids_by_ticker_since(
+            tickers=tickers,
+            since=started_at,
+        )
+        state["fresh_evidence"] = {
+            "since": started_at.isoformat(),
+            "by_ticker": {t: len(ids) for t, ids in fresh_article_ids_by_ticker.items()},
+            "total": sum(len(ids) for ids in fresh_article_ids_by_ticker.values()),
+        }
 
     # Re-read holdings after the broker refresh so pct_nav/open P&L reflect the
     # latest snapshot, then triage using the freshly cached price series.
@@ -103,6 +113,9 @@ def run_smart_morning_recompute(
             ticker,
             offline=offline,
             compute_source=compute_source,
+            fresh_article_ids=(
+                [] if offline else fresh_article_ids_by_ticker.get(ticker, [])
+            ),
         )
         decision = per_ticker[ticker].get("decision", {})
         decisions["decided"] += int(decision.get("decided", 0) or 0)
@@ -155,21 +168,23 @@ def triage_holding(
     """Classify one holding for the morning smart-recompute gate."""
     pnl_pct = _open_pnl_pct(holding)
     tech = technical_state(price_series)
-    reasons: list[str] = []
+    recompute_reasons: list[str] = []
+    monitor_reasons: list[str] = []
 
     if fresh_news_count > 0:
-        reasons.append("fresh_company_or_yahoo_news")
+        recompute_reasons.append("fresh_company_or_yahoo_news")
     if fresh_sec_count > 0:
-        reasons.append("fresh_sec_filing")
+        recompute_reasons.append("fresh_sec_filing")
     if pnl_pct is not None and pnl_pct <= OPEN_LOSS_TRIGGER_PCT:
-        reasons.append("open_loss_ge_10pct")
+        monitor_reasons.append("open_loss_ge_10pct")
     if tech.technical_state in BELOW_EMA20_STATES:
-        reasons.append(tech.technical_state)
+        monitor_reasons.append(tech.technical_state)
 
     return {
         "ticker": holding.ticker,
-        "recompute": bool(reasons),
-        "reasons": reasons,
+        "recompute": bool(recompute_reasons),
+        "reasons": recompute_reasons,
+        "monitor_reasons": monitor_reasons,
         "fresh_news_count": fresh_news_count,
         "fresh_sec_count": fresh_sec_count,
         "pct_nav": holding.pct_nav,
@@ -212,6 +227,7 @@ def _poll_sec_by_ticker(tickers: list[str]) -> dict[str, Any]:
                 user_agent=settings.sec_edgar_user_agent,
                 filter_ticker=ticker,
                 num_results=MORNING_SEC_RESULTS,
+                lookback_hours=MORNING_NEWS_LOOKBACK_HOURS,
             ),
         )
         by_ticker[ticker] = res
@@ -226,27 +242,51 @@ def _recompute_triggered_ticker(
     *,
     offline: bool,
     compute_source: str,
+    fresh_article_ids: Sequence[str],
 ) -> dict[str, Any]:
-    state: dict[str, Any] = {"started_at": datetime.now(UTC).isoformat()}
-    state["refresh"] = _refresh_evidence([ticker], offline=offline)
+    article_ids = _normalize_article_ids(fresh_article_ids)
+    state: dict[str, Any] = {
+        "started_at": datetime.now(UTC).isoformat(),
+        "fresh_article_count": len(article_ids),
+        "fresh_article_event_ids": article_ids,
+    }
+    if not article_ids:
+        state["scoring"] = {"scored": 0, "errors": 0, "skipped": 0}
+        state["red_team"] = {"ran": 0, "errors": 0, "skipped": 0}
+        state["decision"] = {
+            "decided": 0,
+            "skipped": 1,
+            "errors": 0,
+            "holdings": 1,
+            "reason": "no_fresh_evidence_article_ids",
+        }
+        state["finished_at"] = datetime.now(UTC).isoformat()
+        return state
     state["scoring"] = score_unscored(
         api_key=settings.anthropic_api_key,
         offline=offline,
         ticker=ticker,
+        article_event_ids=article_ids,
     )
     state["red_team"] = run_red_team(
         api_key=settings.anthropic_api_key,
         offline=offline,
         ticker=ticker,
+        article_event_ids=article_ids,
     )
     state["decision"] = run_decisions(
         only_ticker=ticker,
         force=True,
         offline=offline,
         compute_source=compute_source,
+        evidence_article_event_ids=article_ids,
     )
     state["finished_at"] = datetime.now(UTC).isoformat()
     return state
+
+
+def _normalize_article_ids(article_event_ids: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(str(eid).strip() for eid in article_event_ids if str(eid).strip()))
 
 
 def _new_counts(summary: dict[str, Any]) -> dict[str, int]:

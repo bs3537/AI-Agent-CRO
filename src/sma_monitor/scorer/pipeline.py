@@ -9,7 +9,7 @@ Don't crash the batch.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from ..llm import get_provider
@@ -55,9 +55,13 @@ def score_unscored(
     model: str = DEFAULT_MODEL,
     limit: int | None = None,
     ticker: str | None = None,
+    article_event_ids: Sequence[str] | None = None,
 ) -> dict:
     """Score every (article, ticker) pair lacking a score at MULTIPLIERS_VERSION."""
     init_scores_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return {"scored": 0, "errors": 0, "skipped": 0}
     holdings, _missing, _ = latest_joined()
     holdings_by_ticker: dict[str, Holding] = {h.ticker: h for h in holdings}
     if not holdings_by_ticker:
@@ -81,7 +85,12 @@ def score_unscored(
 
         scorer_label = provider.model_label
 
-    rows = unscored_pairs(MULTIPLIERS_VERSION, limit=limit, ticker=ticker)
+    rows = unscored_pairs(
+        MULTIPLIERS_VERSION,
+        limit=limit,
+        ticker=ticker,
+        article_event_ids=article_ids,
+    )
 
     # Phase 1 (sequential reads): build a candidate per scorable pair; tally the
     # pairs we can't score (ticker no longer held, or missing/unknown bucket).
@@ -152,8 +161,15 @@ def score_unscored(
     log.info("scoring_done",
              extra={"scored": scored, "errors": errors, "skipped": skipped,
                     "model": scorer_label, "version": MULTIPLIERS_VERSION,
-                    "ticker": ticker.upper() if ticker else None})
+                    "ticker": ticker.upper() if ticker else None,
+                    "article_filter_count": len(article_ids) if article_ids is not None else None})
     return {"scored": scored, "errors": errors, "skipped": skipped}
+
+
+def _normalize_article_ids(article_event_ids: Sequence[str] | None) -> list[str] | None:
+    if article_event_ids is None:
+        return None
+    return list(dict.fromkeys(str(eid).strip() for eid in article_event_ids if str(eid).strip()))
 
 
 # Record a failed scoring attempt to the dead-letter table (best-effort) and

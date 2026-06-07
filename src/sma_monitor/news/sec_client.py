@@ -14,7 +14,7 @@ submissions JSON. Offline replay via load_response_file mirrors the other adapte
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +77,7 @@ def search(
     user_agent: str,
     num_results: int = 5,
     forms: tuple[str, ...] = DEFAULT_FORMS,
+    filed_after: date | None = None,
     client: httpx.Client | None = None,
 ) -> list[ExaResult]:
     """One holding's recent SEC filings -> list[ExaResult] (financials primary)."""
@@ -94,7 +95,12 @@ def search(
             raise SecError(
                 f"EDGAR submissions failed for {ticker} (CIK {cik}): {resp.status_code}"
             )
-        return _parse_response(resp.json(), num_results=num_results, forms=forms)
+        return _parse_response(
+            resp.json(),
+            num_results=num_results,
+            forms=forms,
+            filed_after=filed_after,
+        )
     finally:
         if owns:
             client.close()
@@ -102,16 +108,29 @@ def search(
 
 # Load a saved EDGAR submissions JSON from disk — offline replay.
 def load_response_file(
-    path: Path, *, num_results: int = 5, forms: tuple[str, ...] = DEFAULT_FORMS
+    path: Path,
+    *,
+    num_results: int = 5,
+    forms: tuple[str, ...] = DEFAULT_FORMS,
+    filed_after: date | None = None,
 ) -> list[ExaResult]:
-    return _parse_response(json.loads(path.read_text()), num_results=num_results, forms=forms)
+    return _parse_response(
+        json.loads(path.read_text()),
+        num_results=num_results,
+        forms=forms,
+        filed_after=filed_after,
+    )
 
 
 # Parse an EDGAR submissions JSON into ExaResults. filings.recent stores parallel
 # arrays (newest-first); zip them, keep material forms, build the canonical
 # Archives URL (sec.gov -> tier 1), and cap at num_results.
 def _parse_response(
-    body: dict[str, Any], *, num_results: int, forms: tuple[str, ...]
+    body: dict[str, Any],
+    *,
+    num_results: int,
+    forms: tuple[str, ...],
+    filed_after: date | None = None,
 ) -> list[ExaResult]:
     cik = int(body.get("cik") or 0)
     name = (body.get("name") or "").strip()
@@ -130,6 +149,10 @@ def _parse_response(
         acc = (accession[i] or "").replace("-", "")
         doc = primary[i] if i < len(primary) else ""
         filed = fdate[i] if i < len(fdate) else None
+        filed_dt = _parse_date(filed)
+        if filed_after is not None:
+            if filed_dt is None or filed_dt.date() < filed_after:
+                continue
         d = desc[i] if i < len(desc) else ""
         url = (
             SEC_ARCHIVE.format(cik=cik, accession=acc, doc=doc)
@@ -140,7 +163,7 @@ def _parse_response(
             ExaResult(
                 title=f"{f} — {name}" if name else f,
                 url=url,
-                published_at=_parse_date(filed),
+                published_at=filed_dt,
                 excerpt=f"{f} filed {filed or '?'}. {d}".strip(),
                 score=None,
                 raw={

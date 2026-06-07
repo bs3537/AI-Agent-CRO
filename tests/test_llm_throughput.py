@@ -29,8 +29,8 @@ def test_stage_effort_defaults_and_overrides(monkeypatch):
         monkeypatch.delenv(f"SMA_CODEX_EFFORT_{s.upper()}", raising=False)
     monkeypatch.delenv("SMA_CODEX_EFFORT", raising=False)
     assert stage_effort("scorer") == "medium"
-    assert stage_effort("decision") == "high"
-    assert stage_effort("chat") == "xhigh"
+    assert stage_effort("decision") == "medium"
+    assert stage_effort("chat") == "medium"
     monkeypatch.setenv("SMA_CODEX_EFFORT", "low")  # global
     assert stage_effort("decision") == "low"
     monkeypatch.setenv("SMA_CODEX_EFFORT_DECISION", "high")  # stage-specific wins

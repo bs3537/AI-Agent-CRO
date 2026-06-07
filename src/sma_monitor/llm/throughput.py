@@ -24,16 +24,16 @@ from typing import Any
 # argument each pipeline passes to get_provider().
 STAGES = ("scorer", "red_team", "decision", "digest", "chat")
 
-# Default reasoning effort per stage when no env override is set. Triage stages
-# run "medium" (faster/cheaper, high call volume); synthesis stages run "high"
-# (few calls, depth matters). Raise to your account's max (e.g. "high"/"xhigh")
-# via SMA_CODEX_EFFORT_<STAGE> once you've confirmed the CLI accepts it.
+# Default reasoning effort per stage when no env override is set. Keep every
+# Codex-backed AI-CRO stage at "medium" by default so thesis save, daily drift,
+# and AI chat do not burn time on high/xhigh reasoning unless explicitly raised
+# via SMA_CODEX_EFFORT_<STAGE>.
 DEFAULT_EFFORT: dict[str, str] = {
     "scorer": "medium",
     "red_team": "medium",
-    "decision": "high",
-    "digest": "high",
-    "chat": "xhigh",
+    "decision": "medium",
+    "digest": "medium",
+    "chat": "medium",
 }
 
 # Fallback concurrency when SMA_LLM_CONCURRENCY is unset/invalid, and the hard

@@ -32,7 +32,7 @@ def _holding(
     )
 
 
-def test_triage_triggers_on_fresh_news_sec_loss_and_below_ema():
+def test_triage_triggers_only_on_fresh_news_or_sec():
     fresh_news = smart_recompute.triage_holding(
         _holding("NEWS"),
         fresh_news_count=1,
@@ -57,8 +57,9 @@ def test_triage_triggers_on_fresh_news_sec_loss_and_below_ema():
         fresh_sec_count=0,
         price_series=[100.0] * 25 + [110.0],
     )
-    assert loss["recompute"] is True
-    assert "open_loss_ge_10pct" in loss["reasons"]
+    assert loss["recompute"] is False
+    assert loss["reasons"] == []
+    assert "open_loss_ge_10pct" in loss["monitor_reasons"]
     assert loss["open_pnl_pct"] == pytest.approx(-0.10)
 
     below = smart_recompute.triage_holding(
@@ -67,8 +68,10 @@ def test_triage_triggers_on_fresh_news_sec_loss_and_below_ema():
         fresh_sec_count=0,
         price_series=[100.0] * 25 + [90.0],
     )
-    assert below["recompute"] is True
+    assert below["recompute"] is False
+    assert below["reasons"] == []
     assert below["technical_state"] in {"below_ema20", "extended_below_ema20"}
+    assert below["technical_state"] in below["monitor_reasons"]
 
 
 def test_triage_preserves_quiet_prior_rating():
@@ -84,6 +87,7 @@ def test_triage_preserves_quiet_prior_rating():
 
 def test_smart_morning_recompute_only_runs_triggered(monkeypatch):
     holdings = [
+        _holding("NEWS"),
         _holding("LOSS", market_value=90.0, cost_basis=100.0),
         _holding("QUIET"),
     ]
@@ -97,7 +101,12 @@ def test_smart_morning_recompute_only_runs_triggered(monkeypatch):
         smart_recompute,
         "_refresh_all_daily_signals",
         lambda tickers: {
-            "company_news": {"by_ticker": {ticker: {"new": 0} for ticker in tickers}},
+            "company_news": {
+                "by_ticker": {
+                    ticker: {"new": 1 if ticker == "NEWS" else 0}
+                    for ticker in tickers
+                }
+            },
             "sec": {"by_ticker": {ticker: {"articles_new": 0} for ticker in tickers}},
             "financials": {"updated": len(tickers)},
             "prices": {"updated": len(tickers)},
@@ -108,11 +117,17 @@ def test_smart_morning_recompute_only_runs_triggered(monkeypatch):
         "latest_price_series",
         lambda ticker: [100.0] * 25 + ([90.0] if ticker == "LOSS" else [110.0]),
     )
+    monkeypatch.setattr(
+        smart_recompute,
+        "article_ids_by_ticker_since",
+        lambda *, tickers, since: {ticker: (["fresh-news-1"] if ticker == "NEWS" else [])
+                                  for ticker in tickers},
+    )
 
-    calls: list[str] = []
+    calls: list[tuple[str, list[str]]] = []
 
-    def fake_recompute(ticker, *, offline, compute_source):
-        calls.append(ticker)
+    def fake_recompute(ticker, *, offline, compute_source, fresh_article_ids):
+        calls.append((ticker, list(fresh_article_ids)))
         return {"decision": {"decided": 1, "skipped": 0, "errors": 0}}
 
     monkeypatch.setattr(smart_recompute, "_recompute_triggered_ticker", fake_recompute)
@@ -121,7 +136,7 @@ def test_smart_morning_recompute_only_runs_triggered(monkeypatch):
         refresh_positions_fn=lambda force: {"refreshed": force},
     )
 
-    assert calls == ["LOSS"]
-    assert res["recomputed_tickers"] == ["LOSS"]
-    assert [r["ticker"] for r in res["quiet"]] == ["QUIET"]
+    assert calls == [("NEWS", ["fresh-news-1"])]
+    assert res["recomputed_tickers"] == ["NEWS"]
+    assert [r["ticker"] for r in res["quiet"]] == ["LOSS", "QUIET"]
     assert res["decisions"]["decided"] == 1

@@ -608,6 +608,7 @@ def poll_sec(
     filter_ticker: str | None = None,
     num_results: int = 5,
     from_file: Path | None = None,
+    lookback_hours: int | None = None,
 ) -> dict:
     """SEC filings poll -> bucket #7 (Capital Structure & Liquidity). Summary dict."""
     from . import sec_client
@@ -623,6 +624,11 @@ def poll_sec(
 
     all_buckets = load_buckets()
     holdings_entities = {h.ticker: entity_terms(h) for h in holdings}
+    filed_after = (
+        (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).date()
+        if lookback_hours is not None
+        else None
+    )
 
     queries = articles_new = 0
     for h in holdings:
@@ -630,9 +636,18 @@ def poll_sec(
         started_at = datetime.now(timezone.utc)
         try:
             if from_file is not None:
-                results = sec_client.load_response_file(from_file, num_results=num_results)
+                results = sec_client.load_response_file(
+                    from_file,
+                    num_results=num_results,
+                    filed_after=filed_after,
+                )
             else:
-                results = sec_client.search(h.ticker, user_agent=user_agent, num_results=num_results)
+                results = sec_client.search(
+                    h.ticker,
+                    user_agent=user_agent,
+                    num_results=num_results,
+                    filed_after=filed_after,
+                )
         except Exception as e:  # an EDGAR hiccup on one name must not sink the cycle
             log.error("sec_query_failed", extra={"ticker": h.ticker, "err": str(e)})
             save_poll_record(ticker=h.ticker, bucket_id=7, query_text=f"sec:{h.ticker}",
@@ -654,7 +669,9 @@ def poll_sec(
                  extra={"ticker": h.ticker, "n_results": len(results), "n_new": n_new})
 
     return {"holdings": len(holdings), "missing_sidecars": missing,
-            "queries": queries, "articles_new": articles_new}
+            "queries": queries, "articles_new": articles_new,
+            "lookback_hours": lookback_hours,
+            "filed_after": filed_after.isoformat() if filed_after else None}
 
 
 # Extract the lede (first sentence) from a longer excerpt, with a hard

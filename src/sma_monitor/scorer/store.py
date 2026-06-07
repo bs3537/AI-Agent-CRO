@@ -12,6 +12,7 @@ hash changes and the pipeline emits a fresh score row.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from ..db import connection
 from ..identity import event_id
@@ -152,12 +153,16 @@ def unscored_pairs(
     multipliers_version: str,
     limit: int | None = None,
     ticker: str | None = None,
+    article_event_ids: Sequence[str] | None = None,
 ):
     """Article × ticker pairs that lack a score row at the current multipliers_version.
 
     Returns rows with the primary bucket precomputed (highest-confidence tag).
     """
     init_scores_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return []
     sql = """
         SELECT a.event_id        AS article_event_id,
                a.url, a.title, a.excerpt, a.source, a.source_tier,
@@ -185,6 +190,10 @@ def unscored_pairs(
     if ticker:
         sql += " AND t.ticker = ?"
         args.append(ticker.upper())
+    if article_ids is not None:
+        placeholders = ",".join("?" for _ in article_ids)
+        sql += f" AND a.event_id IN ({placeholders})"
+        args.extend(article_ids)
     sql += " ORDER BY COALESCE(a.published_at, a.fetched_at) DESC"
     if limit:
         sql += " LIMIT ?"
@@ -212,9 +221,13 @@ def recent_scores(
     ticker: str | None = None,
     band: str | None = None,
     min_composite: float | None = None,
+    article_event_ids: Sequence[str] | None = None,
     limit: int = 50,
 ):
     init_scores_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return []
     sql = """
         SELECT s.*, a.title, a.url, a.source_tier
         FROM scores s
@@ -231,7 +244,17 @@ def recent_scores(
     if min_composite is not None:
         sql += " AND s.composite >= ?"
         args.append(min_composite)
+    if article_ids is not None:
+        placeholders = ",".join("?" for _ in article_ids)
+        sql += f" AND s.article_event_id IN ({placeholders})"
+        args.extend(article_ids)
     sql += " ORDER BY s.composite DESC, s.scored_at DESC LIMIT ?"
     args.append(limit)
     with connection() as conn:
         return conn.execute(sql, args).fetchall()
+
+
+def _normalize_article_ids(article_event_ids: Sequence[str] | None) -> list[str] | None:
+    if article_event_ids is None:
+        return None
+    return list(dict.fromkeys(str(eid).strip() for eid in article_event_ids if str(eid).strip()))

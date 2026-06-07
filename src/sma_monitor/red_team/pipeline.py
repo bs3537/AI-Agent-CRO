@@ -11,7 +11,7 @@ red-team pass row.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from ..llm import get_provider
@@ -45,11 +45,15 @@ def run_red_team(
     limit: int | None = None,
     min_composite_override: float | None = None,
     ticker: str | None = None,
+    article_event_ids: Sequence[str] | None = None,
 ) -> dict:
     """min_composite_override raises the effective floor from T₂. Phase 6
     degrade cascade passes T here when budget pressure is on, so only the
     real-time-alert band (composite ≥ T) gets red-teamed."""
     init_red_team_schema()
+    article_ids = _normalize_article_ids(article_event_ids)
+    if article_event_ids is not None and not article_ids:
+        return {"ran": 0, "errors": 0, "skipped": 0}
     catalog = load_catalog()
     buckets = load_buckets()
     holdings, _missing, _ = latest_joined()
@@ -74,7 +78,13 @@ def run_red_team(
         runner_label = provider.model_label
 
     floor = T2 if min_composite_override is None else max(T2, min_composite_override)
-    rows = pick_candidates(floor, catalog.catalog_version, limit=limit, ticker=ticker)
+    rows = pick_candidates(
+        floor,
+        catalog.catalog_version,
+        limit=limit,
+        ticker=ticker,
+        article_event_ids=article_ids,
+    )
 
     # Phase 1 (sequential reads): build a candidate per eligible score; tally
     # the ones we can't run (ticker no longer held, or unknown bucket).
@@ -160,8 +170,15 @@ def run_red_team(
     log.info("red_team_summary",
              extra={"ran": ran, "errors": errors, "skipped": skipped,
                     "model": runner_label, "catalog": catalog.catalog_version,
-                    "ticker": ticker.upper() if ticker else None})
+                    "ticker": ticker.upper() if ticker else None,
+                    "article_filter_count": len(article_ids) if article_ids is not None else None})
     return {"ran": ran, "errors": errors, "skipped": skipped}
+
+
+def _normalize_article_ids(article_event_ids: Sequence[str] | None) -> list[str] | None:
+    if article_event_ids is None:
+        return None
+    return list(dict.fromkeys(str(eid).strip() for eid in article_event_ids if str(eid).strip()))
 
 
 # Lenient ISO-8601 parser; returns None for missing/unparseable input.

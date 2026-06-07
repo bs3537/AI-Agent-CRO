@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from ..config import settings
@@ -179,15 +180,27 @@ def decision_inputs_hash(
 
 # Assemble a DecisionCandidate for one holding from the joined view plus the
 # top scored articles and red-team passes on that ticker.
-def build_candidate(holding: Holding) -> DecisionCandidate:
+def build_candidate(
+    holding: Holding,
+    *,
+    evidence_article_event_ids: Sequence[str] | None = None,
+) -> DecisionCandidate:
     _init_read_side_schemas()
     scores = [
         _to_score_evidence(r)
-        for r in recent_scores(ticker=holding.ticker, limit=EVIDENCE_LIMIT)
+        for r in recent_scores(
+            ticker=holding.ticker,
+            limit=EVIDENCE_LIMIT,
+            article_event_ids=evidence_article_event_ids,
+        )
     ]
     bears = [
         _to_bear_evidence(r)
-        for r in recent_passes(ticker=holding.ticker, limit=EVIDENCE_LIMIT)
+        for r in recent_passes(
+            ticker=holding.ticker,
+            limit=EVIDENCE_LIMIT,
+            article_event_ids=evidence_article_event_ids,
+        )
     ]
 
     open_pnl = pnl_pct = None
@@ -439,6 +452,7 @@ def run_decisions(
     only_ticker: str | None = None,
     force: bool = False,
     compute_source: str = "scheduler",
+    evidence_article_event_ids: Sequence[str] | None = None,
 ) -> dict:
     _init_read_side_schemas()
     init_decision_schema()
@@ -464,7 +478,7 @@ def run_decisions(
     work: list[tuple[Holding, DecisionCandidate, str, str]] = []
     skipped = 0
     for h in holdings:
-        candidate = build_candidate(h)
+        candidate = build_candidate(h, evidence_article_event_ids=evidence_article_event_ids)
         th = thesis_hash(h.ticker, candidate.thesis)
         # Hash the uploaded-doc text + FMP metrics so a doc change or a fresh
         # financial snapshot re-computes this holding's decision.
@@ -566,7 +580,12 @@ def run_decisions(
     log.info(
         "decision_summary",
         extra={"decided": decided, "skipped": skipped, "errors": errors,
-               "holdings": len(holdings), "model": model_label},
+               "holdings": len(holdings), "model": model_label,
+               "article_filter_count": (
+                   len(evidence_article_event_ids)
+                   if evidence_article_event_ids is not None
+                   else None
+               )},
     )
     return {"decided": decided, "skipped": skipped, "errors": errors, "holdings": len(holdings)}
 
