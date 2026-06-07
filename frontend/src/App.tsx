@@ -93,27 +93,55 @@ export default function App() {
     }
   }, [])
 
+  // Returns milliseconds from now until 16:00 ET (market close).
+  // Uses Intl.DateTimeFormat to read the current ET clock, then computes the
+  // remaining ms. Returns 0 if close is already past.
+  const msUntilClose = (): number => {
+    const now = new Date()
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+    }).formatToParts(now)
+    const get = (t: string) => parseInt(parts.find(p => p.type === t)?.value ?? '0')
+    const etSecondsNow = get('hour') * 3600 + get('minute') * 60 + get('second')
+    const etSecondsClose = 16 * 3600
+    return Math.max(0, (etSecondsClose - etSecondsNow) * 1000)
+  }
+
   // Market-state driven polling: fetch once on mount to check status, then
-  // start a 30-min interval only when the market is open. On each tick, if
-  // the backend reports the market has closed, the interval is torn down.
-  // The interval is also cleared on component unmount.
+  // start a 30-min interval only when the market is open. A hard-stop timeout
+  // fires at exactly 16:00 ET to clear the interval without waiting for the
+  // next 30-min tick. Interval also stops on any tick where backend reports
+  // market closed, and is cleared on component unmount.
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null
+    let closeId: ReturnType<typeof setTimeout> | null = null
+
+    const stopPolling = () => {
+      if (intervalId !== null) { clearInterval(intervalId); intervalId = null }
+      if (closeId !== null) { clearTimeout(closeId); closeId = null }
+    }
 
     const start = async () => {
       const isOpen = await fetchQuotes()
       if (!isOpen) return
+
+      // Schedule hard-stop at 16:00 ET.
+      const msToClose = msUntilClose()
+      closeId = setTimeout(stopPolling, msToClose)
+
       intervalId = setInterval(async () => {
         const stillOpen = await fetchQuotes()
-        if (!stillOpen && intervalId !== null) {
-          clearInterval(intervalId)
-          intervalId = null
-        }
+        if (!stillOpen) stopPolling()
       }, QUOTES_POLL_MS)
     }
 
     void start()
-    return () => { if (intervalId !== null) clearInterval(intervalId) }
+    return stopPolling
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchQuotes])
 
   // Refetch the grid + status snapshot.
@@ -367,7 +395,7 @@ export default function App() {
             <PositionCard
               key={pos.ticker}
               pos={pos}
-              livePrice={liveQuotes[pos.ticker] ?? null}
+              livePrice={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
               stale={stale}
               onUpload={onUpload}
               onRecompute={onRecompute}
