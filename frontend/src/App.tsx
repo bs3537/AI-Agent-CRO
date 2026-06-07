@@ -79,9 +79,15 @@ export default function App() {
     return () => clearInterval(id)
   }, [recomputingAll])
 
+  // Resets intraday state so the UI reverts to EOD data immediately.
+  // Called on market close, fetch error, or unmount.
+  const clearLiveMode = useCallback(() => {
+    setQuotes(prev => prev ? { ...prev, is_market_open: false, quotes: {} } : null)
+  }, [])
+
   // Fetch intraday quotes from FMP. Returns true when the market is open so
-  // the polling effect knows whether to continue. Non-fatal — falls back to
-  // EOD data on any error.
+  // the polling effect knows whether to continue. On any error the live state
+  // is cleared so the UI falls back to EOD data instead of showing stale prices.
   const fetchQuotes = useCallback(async (): Promise<boolean> => {
     try {
       const q = await api.quotes()
@@ -89,9 +95,10 @@ export default function App() {
       if (Object.keys(q.quotes).length > 0) setQuotesAt(new Date())
       return q.is_market_open
     } catch {
+      clearLiveMode()
       return false
     }
-  }, [])
+  }, [clearLiveMode])
 
   // Returns milliseconds from now until 16:00 ET (market close).
   // Uses Intl.DateTimeFormat to read the current ET clock, then computes the
@@ -114,8 +121,9 @@ export default function App() {
   // Market-state driven polling: fetch once on mount to check status, then
   // start a 30-min interval only when the market is open. A hard-stop timeout
   // fires at exactly 16:00 ET to clear the interval without waiting for the
-  // next 30-min tick. Interval also stops on any tick where backend reports
-  // market closed, and is cleared on component unmount.
+  // next 30-min tick. Whenever polling stops (close timeout, tick returning
+  // closed, error, or unmount) clearLiveMode() is called so the UI reverts to
+  // EOD data immediately without requiring a page reload.
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null
     let closeId: ReturnType<typeof setTimeout> | null = null
@@ -123,6 +131,7 @@ export default function App() {
     const stopPolling = () => {
       if (intervalId !== null) { clearInterval(intervalId); intervalId = null }
       if (closeId !== null) { clearTimeout(closeId); closeId = null }
+      clearLiveMode()
     }
 
     const start = async () => {
@@ -141,8 +150,7 @@ export default function App() {
 
     void start()
     return stopPolling
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchQuotes])
+  }, [fetchQuotes, clearLiveMode])
 
   // Refetch the grid + status snapshot.
   const refresh = useCallback(async () => {
