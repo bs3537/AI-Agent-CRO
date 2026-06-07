@@ -217,9 +217,10 @@ def refresh_for_holdings(
     return {"tickers": len(tickers), "updated": updated, "errors": errors, "source": "fmp"}
 
 
-# Fetch real-time/delayed quotes for multiple tickers in one FMP /stable/quote
-# call. Returns {TICKER: price}; tickers with no data are silently skipped so a
-# partial result is always returned rather than raising.
+# Fetch real-time/delayed quotes from FMP /stable/quote. The stable endpoint
+# works reliably one symbol at a time on the current FMP key; a comma-separated
+# batch request can return an empty 200 response. We try the batch call first
+# and fall back to one-symbol calls if needed.
 def fetch_quotes(
     tickers: list[str], *, api_key: str, client: httpx.Client | None = None
 ) -> dict[str, dict]:
@@ -239,25 +240,40 @@ def fetch_quotes(
         resp = client.get(f"{FMP_BASE}/quote", params={"symbol": symbols, "apikey": api_key})
         if resp.status_code != 200:
             raise FmpError(f"FMP quote {symbols} failed: {resp.status_code} {resp.text[:200]}")
-        rows = resp.json()
-        if not isinstance(rows, list):
-            rows = [rows] if isinstance(rows, dict) else []
-        for row in rows:
-            symbol = (row.get("symbol") or row.get("ticker") or "").upper()
-            price = row.get("price")
-            change_pct = row.get("changesPercentage")
-            if symbol and price is not None:
-                try:
-                    result[symbol] = {
-                        "price": float(price),
-                        "change_pct": float(change_pct) if change_pct is not None else 0.0,
-                    }
-                except (TypeError, ValueError):
-                    pass  # skip malformed rows silently
+        _merge_quote_rows(result, resp.json())
+        if not result and len(tickers) > 1:
+            for ticker in tickers:
+                symbol = ticker.upper()
+                resp = client.get(
+                    f"{FMP_BASE}/quote",
+                    params={"symbol": symbol, "apikey": api_key},
+                )
+                if resp.status_code != 200:
+                    continue
+                _merge_quote_rows(result, resp.json())
     finally:
         if owns:
             client.close()
     return result
+
+
+# Merge an FMP quote payload into the caller-owned result map.
+def _merge_quote_rows(result: dict[str, dict], payload) -> None:
+    rows = payload
+    if not isinstance(rows, list):
+        rows = [rows] if isinstance(rows, dict) else []
+    for row in rows:
+        symbol = (row.get("symbol") or row.get("ticker") or "").upper()
+        price = row.get("price")
+        change_pct = row.get("changesPercentage")
+        if symbol and price is not None:
+            try:
+                result[symbol] = {
+                    "price": float(price),
+                    "change_pct": float(change_pct) if change_pct is not None else 0.0,
+                }
+            except (TypeError, ValueError):
+                pass  # skip malformed rows silently
 
 
 # Fetch ~1 year of daily EOD closes for one ticker (oldest→newest). Uses FMP's

@@ -8,6 +8,7 @@ the decision candidate. Runs against the conftest sandbox DB.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -200,6 +201,37 @@ def test_fmp_refresh_from_fixture():
     )
     assert res["updated"] == 2 and res["source"] == "fixture"
     assert fmp_client.latest_fmp_metrics("VRTX")["company"].startswith("Vertex")
+
+
+# FMP quote fetch falls back to per-symbol requests when batch returns no rows.
+def test_fetch_quotes_falls_back_to_single_symbol_calls():
+    calls: list[str] = []
+
+    def get(_url, *, params):
+        symbol = params["symbol"]
+        calls.append(symbol)
+        payloads = {
+            "VRTX,MRNA": [],
+            "VRTX": [{"symbol": "VRTX", "price": 465.25, "changesPercentage": 1.2}],
+            "MRNA": [{"symbol": "MRNA", "price": 28.5, "changesPercentage": -0.8}],
+        }
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: payloads[symbol],
+        )
+
+    quotes = fmp_client.fetch_quotes(
+        ["VRTX", "MRNA"],
+        api_key="fake",
+        client=SimpleNamespace(get=get),
+    )
+
+    assert calls == ["VRTX,MRNA", "VRTX", "MRNA"]
+    assert quotes == {
+        "VRTX": {"price": 465.25, "change_pct": 1.2},
+        "MRNA": {"price": 28.5, "change_pct": -0.8},
+    }
 
 
 # FMP /stable price history is a flat newest-first array; parse oldest→newest.
