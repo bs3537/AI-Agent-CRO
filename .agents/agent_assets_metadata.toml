@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "izf97JFXyCcFPKEWyWc4x"
+uri = "file://HERMES_INSTRUCTIONS_JUNE7.MD"
+type = "text"
+title = "Hermes Agent Instructions — June 7 2026"
