@@ -242,8 +242,14 @@ export interface ChatStatusResponse {
 export type ChatSubmitResponse = ChatResponse | ChatQueuedResponse
 
 // GET /api/quotes — intraday price quotes during trading hours.
+export interface QuoteInfo {
+  price: number
+  change_pct: number    // day's % change (e.g. -0.8 means -0.8%)
+  verified: boolean     // true when FMP and Yahoo prices agree within 1%
+}
+
 export interface QuotesResponse {
-  quotes: Record<string, number>
+  quotes: Record<string, QuoteInfo>
   is_market_open: boolean
   source: string
 }

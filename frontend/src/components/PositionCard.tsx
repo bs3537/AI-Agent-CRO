@@ -19,7 +19,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import type { PositionSummary } from '../types'
+import type { PositionSummary, QuoteInfo } from '../types'
 import { GRADE_HEX, VERDICT_HEX } from '../theme'
 import DecisionChip from './DecisionChip'
 import PnL from './PnL'
@@ -39,7 +39,7 @@ function fmtMv(v: number): string {
 // (upload, recompute, details). All mutations call back up to App.
 export default function PositionCard({
   pos,
-  livePrice = null,
+  liveQuote = null,
   stale = false,
   onUpload,
   onRecompute,
@@ -48,7 +48,7 @@ export default function PositionCard({
   onOpenDetail,
 }: {
   pos: PositionSummary
-  livePrice?: number | null
+  liveQuote?: QuoteInfo | null
   stale?: boolean
   onUpload: (ticker: string, file: File) => Promise<void>
   onRecompute: (ticker: string) => Promise<void>
@@ -62,16 +62,20 @@ export default function PositionCard({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  // Compute intraday P/L and market value from live price when available.
+  // Compute intraday P/L and market value from live quote when available.
   // Display-only overlay — stored EOD values are never mutated.
+  const livePrice = liveQuote?.price ?? null
   const intradayMv = livePrice != null && pos.qty != null ? livePrice * pos.qty : null
   const intradayPnl = intradayMv != null && pos.cost_basis != null ? intradayMv - pos.cost_basis : null
   const intradayPnlPct = intradayPnl != null && pos.cost_basis ? intradayPnl / pos.cost_basis : null
-  const isLive = intradayPnl !== null
-  const displayPnl = isLive ? intradayPnl : pos.open_pnl
-  const displayPnlPct = isLive ? intradayPnlPct : pos.pnl_pct
+  const isLive = intradayMv !== null   // live MV available whenever qty + price exist
+  const displayPnl = intradayPnl !== null ? intradayPnl : pos.open_pnl
+  const displayPnlPct = intradayPnlPct !== null ? intradayPnlPct : pos.pnl_pct
   // Live market value shown when intraday quote available, else EOD stored value.
   const displayMv = isLive ? intradayMv : pos.market_value
+  // Daily % change for the stock (equals position's daily P/L %).
+  const dayChangePct = liveQuote?.change_pct ?? null
+  const isVerified = liveQuote?.verified ?? false
   const signal = pos.rating ?? pos.decision
   const note = signal?.note
   const drivers = signal?.drivers ?? []
@@ -138,12 +142,28 @@ export default function PositionCard({
           <PnL openPnl={displayPnl} pnlPct={displayPnlPct} live={isLive} />
           <Chip size="small" variant="outlined" label={`${(pos.pct_nav * 100).toFixed(1)}% NAV`} />
           {displayMv != null && (
-            <Tooltip title={isLive ? 'Intraday market value (live quote)' : 'EOD market value'}>
+            <Tooltip title={
+              isLive
+                ? isVerified
+                  ? 'Intraday market value — FMP and Yahoo agree'
+                  : 'Intraday market value — price unverified (FMP/Yahoo diverge or Yahoo unavailable)'
+                : 'EOD market value'
+            }>
               <Chip
                 size="small"
                 variant={isLive ? 'filled' : 'outlined'}
-                color={isLive ? 'success' : 'default'}
-                label={`MV ${fmtMv(displayMv)}${isLive ? ' ●' : ''}`}
+                color={isLive ? (isVerified ? 'success' : 'warning') : 'default'}
+                label={`MV ${fmtMv(displayMv)}${isLive ? (isVerified ? ' ✓' : ' ~') : ''}`}
+              />
+            </Tooltip>
+          )}
+          {dayChangePct != null && (
+            <Tooltip title="Today's price change % (from FMP, ~30 min refresh)">
+              <Chip
+                size="small"
+                variant="outlined"
+                color={dayChangePct >= 0 ? 'success' : 'error'}
+                label={`${dayChangePct >= 0 ? '+' : ''}${dayChangePct.toFixed(2)}% today`}
               />
             </Tooltip>
           )}

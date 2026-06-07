@@ -386,7 +386,7 @@ export default function App() {
               Live intraday prices · {Object.keys(liveQuotes).length} tickers · refreshes every 30 min
               {quotesAt ? ` · last updated ${quotesAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
             </Typography>
-            <Tooltip title="Prices from FMP, refreshed every 30 min during 9:30am–4pm ET. P/L figures on each card reflect the current price.">
+            <Tooltip title="Prices from FMP, cross-checked against Yahoo Finance. Refreshed every 30 min during 9:30am–4pm ET. Open P/L, daily change %, and market value on each card reflect the current price.">
               <Chip size="small" label="LIVE" color="success" variant="outlined" sx={{ fontWeight: 700 }} />
             </Tooltip>
           </Box>
@@ -403,7 +403,7 @@ export default function App() {
             <PositionCard
               key={pos.ticker}
               pos={pos}
-              livePrice={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
+              liveQuote={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
               stale={stale}
               onUpload={onUpload}
               onRecompute={onRecompute}

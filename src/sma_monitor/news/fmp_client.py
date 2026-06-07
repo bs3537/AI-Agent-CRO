@@ -222,12 +222,18 @@ def refresh_for_holdings(
 # partial result is always returned rather than raising.
 def fetch_quotes(
     tickers: list[str], *, api_key: str, client: httpx.Client | None = None
-) -> dict[str, float]:
+) -> dict[str, dict]:
+    """Returns {TICKER: {price, change_pct}} from FMP /stable/quote.
+
+    ``change_pct`` is the day's percentage change (e.g. -0.8 means -0.8%).
+    Skips tickers with missing or malformed data rather than failing the
+    whole call.  Raises :class:`FmpError` on a non-200 HTTP response.
+    """
     if not tickers:
         return {}
     owns = client is None
     client = client or httpx.Client(timeout=15.0)
-    result: dict[str, float] = {}
+    result: dict[str, dict] = {}
     try:
         symbols = ",".join(t.upper() for t in tickers)
         resp = client.get(f"{FMP_BASE}/quote", params={"symbol": symbols, "apikey": api_key})
@@ -239,8 +245,15 @@ def fetch_quotes(
         for row in rows:
             symbol = (row.get("symbol") or row.get("ticker") or "").upper()
             price = row.get("price")
+            change_pct = row.get("changesPercentage")
             if symbol and price is not None:
-                result[symbol] = float(price)
+                try:
+                    result[symbol] = {
+                        "price": float(price),
+                        "change_pct": float(change_pct) if change_pct is not None else 0.0,
+                    }
+                except (TypeError, ValueError):
+                    pass  # skip malformed rows silently
     finally:
         if owns:
             client.close()
