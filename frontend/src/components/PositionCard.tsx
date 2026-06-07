@@ -26,6 +26,14 @@ import PnL from './PnL'
 import Sparkline from './Sparkline'
 import FileUpload from './FileUpload'
 
+// Compact dollar formatter: $1.23M, $450K, $12.3K, $999
+function fmtMv(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
+  if (abs >= 1_000) return `$${(v / 1_000).toFixed(1)}K`
+  return `$${v.toFixed(0)}`
+}
+
 // One position tile: header (ticker + decision chip), economics row, the
 // decision note + drivers, the inline thesis editor, and the action row
 // (upload, recompute, details). All mutations call back up to App.
@@ -54,14 +62,16 @@ export default function PositionCard({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  // Compute intraday P/L from live price when available (display-only overlay;
-  // stored EOD values are never mutated).
+  // Compute intraday P/L and market value from live price when available.
+  // Display-only overlay — stored EOD values are never mutated.
   const intradayMv = livePrice != null && pos.qty != null ? livePrice * pos.qty : null
   const intradayPnl = intradayMv != null && pos.cost_basis != null ? intradayMv - pos.cost_basis : null
   const intradayPnlPct = intradayPnl != null && pos.cost_basis ? intradayPnl / pos.cost_basis : null
   const isLive = intradayPnl !== null
   const displayPnl = isLive ? intradayPnl : pos.open_pnl
   const displayPnlPct = isLive ? intradayPnlPct : pos.pnl_pct
+  // Live market value shown when intraday quote available, else EOD stored value.
+  const displayMv = isLive ? intradayMv : pos.market_value
   const signal = pos.rating ?? pos.decision
   const note = signal?.note
   const drivers = signal?.drivers ?? []
@@ -127,6 +137,16 @@ export default function PositionCard({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
           <PnL openPnl={displayPnl} pnlPct={displayPnlPct} live={isLive} />
           <Chip size="small" variant="outlined" label={`${(pos.pct_nav * 100).toFixed(1)}% NAV`} />
+          {displayMv != null && (
+            <Tooltip title={isLive ? 'Intraday market value (live quote)' : 'EOD market value'}>
+              <Chip
+                size="small"
+                variant={isLive ? 'filled' : 'outlined'}
+                color={isLive ? 'success' : 'default'}
+                label={`MV ${fmtMv(displayMv)}${isLive ? ' ●' : ''}`}
+              />
+            </Tooltip>
+          )}
           {/* Per-tile operational flags: stale pull (book-wide) + un-filled thesis. */}
           {stale && <Chip size="small" color="warning" label="STALE DATA" />}
           {isAiDraft && (
