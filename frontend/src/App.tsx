@@ -79,22 +79,41 @@ export default function App() {
     return () => clearInterval(id)
   }, [recomputingAll])
 
-  // Fetch intraday quotes from FMP; non-fatal (falls back to EOD on failure).
-  const fetchQuotes = useCallback(async () => {
+  // Fetch intraday quotes from FMP. Returns true when the market is open so
+  // the polling effect knows whether to continue. Non-fatal — falls back to
+  // EOD data on any error.
+  const fetchQuotes = useCallback(async (): Promise<boolean> => {
     try {
       const q = await api.quotes()
       setQuotes(q)
-      setQuotesAt(new Date())
+      if (Object.keys(q.quotes).length > 0) setQuotesAt(new Date())
+      return q.is_market_open
     } catch {
-      // silently ignore — EOD data is shown as fallback
+      return false
     }
   }, [])
 
-  // Fetch quotes on mount, then re-fetch every 30 min.
+  // Market-state driven polling: fetch once on mount to check status, then
+  // start a 30-min interval only when the market is open. On each tick, if
+  // the backend reports the market has closed, the interval is torn down.
+  // The interval is also cleared on component unmount.
   useEffect(() => {
-    void fetchQuotes()
-    const id = setInterval(() => void fetchQuotes(), QUOTES_POLL_MS)
-    return () => clearInterval(id)
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const start = async () => {
+      const isOpen = await fetchQuotes()
+      if (!isOpen) return
+      intervalId = setInterval(async () => {
+        const stillOpen = await fetchQuotes()
+        if (!stillOpen && intervalId !== null) {
+          clearInterval(intervalId)
+          intervalId = null
+        }
+      }, QUOTES_POLL_MS)
+    }
+
+    void start()
+    return () => { if (intervalId !== null) clearInterval(intervalId) }
   }, [fetchQuotes])
 
   // Refetch the grid + status snapshot.
