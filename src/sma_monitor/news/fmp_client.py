@@ -265,7 +265,7 @@ def _merge_quote_rows(result: dict[str, dict], payload) -> None:
     for row in rows:
         symbol = (row.get("symbol") or row.get("ticker") or "").upper()
         price = row.get("price")
-        change_pct = row.get("changesPercentage")
+        change_pct = row.get("changePercentage") or row.get("changesPercentage")
         if symbol and price is not None:
             try:
                 result[symbol] = {
