@@ -39,17 +39,24 @@ The function now returns `dict[str, dict]` instead of `dict[str, float]`.
 `change_pct` is today's percentage move (e.g. `-0.83` means −0.83%).
 It comes from FMP's `changesPercentage` field in the `/stable/quote` response.
 
-### 2b. `src/sma_monitor/api/routes/quotes.py` — rewritten
+### 2b. `src/sma_monitor/api/routes/quotes.py` — rewritten (Yahoo primary)
 
-`GET /api/quotes` now:
-1. Calls FMP `/stable/quote` for all held tickers → gets `price` + `change_pct`.
-2. Calls Yahoo Finance v7 API (no key, ~15-20 min delayed) for the same tickers
-   to cross-verify prices.
-3. If FMP and Yahoo agree within 1% → `verified: true`.
-4. If they diverge by >1% → Yahoo price wins, `verified: false`, warning logged.
-5. If Yahoo is unreachable → falls back to FMP-only, `verified: false`.
+`GET /api/quotes` now uses **Yahoo Finance as the primary source** with FMP
+as a cross-verification fallback. Source fallback order:
 
-**New HTTP response shape:**
+| Condition | `source` value |
+|-----------|---------------|
+| Yahoo succeeds + FMP succeeds (prices agree ≤1%) | `"yahoo+fmp"`, `verified: true` |
+| Yahoo succeeds + FMP succeeds (prices diverge >1%) | `"yahoo+fmp"`, `verified: false` |
+| Yahoo succeeds, FMP unreachable | `"yahoo_only"`, `verified: false` |
+| Yahoo fails, FMP succeeds | `"fmp_only"`, `verified: false` |
+| Both fail | `"error"`, empty quotes |
+
+Yahoo Finance supplies both `price` (`regularMarketPrice`) and `change_pct`
+(`regularMarketChangePercent`) directly. FMP is only used to cross-check the
+price; if it agrees, `verified` is set to `true`.
+
+**HTTP response shape (unchanged from previous update):**
 ```json
 {
   "quotes": {
@@ -57,12 +64,18 @@ It comes from FMP's `changesPercentage` field in the `/stable/quote` response.
     "MSFT": {"price": 420.5, "change_pct": 1.24, "verified": false}
   },
   "is_market_open": true,
-  "source": "fmp+yahoo"
+  "source": "yahoo+fmp"
 }
 ```
 
-Possible `source` values: `"fmp+yahoo"`, `"fmp_only"`, `"no_key"`,
-`"no_holdings"`, `"fmp_error"`, `"error"`.
+Possible `source` values: `"yahoo+fmp"`, `"yahoo_only"`, `"fmp_only"`,
+`"no_key"`, `"no_holdings"`, `"error"`.
+
+### 2c. Frontend — MV chip removed
+
+The market-value chip has been removed from each holding tile. Only the
+`+X.XX% today` daily-change chip remains as the intraday overlay. No backend
+change is required for this.
 
 ---
 
@@ -76,6 +89,7 @@ grep -r "fetch_quotes"       /path/to/vps/code   # Python callers
 grep -r "/api/quotes"        /path/to/vps/code   # HTTP clients hitting the endpoint
 grep -r "quotes\["           /path/to/vps/code   # dict accesses that may assume float
 grep -r "changesPercentage"  /path/to/vps/code   # any existing FMP field reads
+grep -r '"source"'           /path/to/vps/code   # source string checks
 ```
 
 ### 3a. Python code that calls `fetch_quotes()` directly
@@ -110,19 +124,22 @@ price = data["quotes"]["AAPL"]                   # was float
 # NEW
 price      = data["quotes"]["AAPL"]["price"]
 change_pct = data["quotes"]["AAPL"]["change_pct"]
-verified   = data["quotes"]["AAPL"]["verified"]  # True = FMP + Yahoo agree
+verified   = data["quotes"]["AAPL"]["verified"]  # True = Yahoo + FMP agree within 1%
 ```
 
-### 3c. Any code that checks `source == "fmp"`
+### 3c. Any code that checks the `source` field
 
-The success source string changed. Update equality checks:
+Source strings have changed. Update any equality checks:
 
 ```python
 # OLD
 if data["source"] == "fmp":
+if data["source"] == "fmp+yahoo":
+if data["source"] == "fmp_only":
 
-# NEW — source is now "fmp+yahoo" when Yahoo succeeds, "fmp_only" when it fails
-if data["source"] in ("fmp+yahoo", "fmp_only"):
+# NEW — Yahoo is now primary; check for any successful source:
+if data["source"] in ("yahoo+fmp", "yahoo_only", "fmp_only"):
+    # quotes are available
 ```
 
 ---
@@ -153,10 +170,13 @@ Verify with:
 curl http://localhost:8000/api/quotes | python3 -m json.tool
 ```
 
-Expected output when market is closed (no quotes, but new source strings):
+Expected output when market is closed:
 ```json
-{"quotes": {}, "is_market_open": false, "source": "fmp_only"}
+{"quotes": {}, "is_market_open": false, "source": "yahoo_only"}
 ```
+(Yahoo still returns quotes when market is closed; the frontend ignores them
+because `is_market_open` is false. If Yahoo is also unavailable after hours,
+`source` will be `"error"` with empty quotes — that is also fine.)
 
 Expected output during market hours with holdings:
 ```json
@@ -165,22 +185,24 @@ Expected output during market hours with holdings:
     "AAPL": {"price": 195.0, "change_pct": -0.83, "verified": true}
   },
   "is_market_open": true,
-  "source": "fmp+yahoo"
+  "source": "yahoo+fmp"
 }
 ```
 
-If `source` is `"fmp+yahoo"` and all `verified` are `true`, everything is working
-correctly. If `source` is `"fmp_only"`, Yahoo Finance is unreachable from the VPS
-(unlikely but possible — check outbound HTTP to `query1.finance.yahoo.com`).
+If `source` is `"yahoo+fmp"` and most `verified` are `true`, everything is
+working correctly. If `source` is `"yahoo_only"`, FMP is unreachable (check
+the FMP API key). If `source` is `"fmp_only"`, Yahoo is being rate-limited
+(rare at this polling frequency — retry in a few minutes).
 
 ---
 
 ## 6. Summary of interface contract
 
-| Item | Before | After |
-|------|--------|-------|
+| Item | Before (original) | After (this update) |
+|------|------------------|---------------------|
 | `fetch_quotes()` return | `dict[str, float]` | `dict[str, dict]` with `price`, `change_pct` |
 | `/api/quotes` quotes value | `float` | `{price, change_pct, verified}` |
-| `/api/quotes` source (success) | `"fmp"` | `"fmp+yahoo"` or `"fmp_only"` |
-| Yahoo verification | not present | cross-checks FMP, overrides on >1% divergence |
-| Daily change % | not available | `change_pct` field on every quote |
+| Primary quote source | FMP | Yahoo Finance |
+| `/api/quotes` source (success) | `"fmp"` | `"yahoo+fmp"`, `"yahoo_only"`, or `"fmp_only"` |
+| `change_pct` origin | FMP `changesPercentage` | Yahoo `regularMarketChangePercent` (FMP fallback) |
+| MV chip on tiles | present | removed |
