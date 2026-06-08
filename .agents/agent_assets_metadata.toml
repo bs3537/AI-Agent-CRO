@@ -6,3 +6,9 @@ id = "izf97JFXyCcFPKEWyWc4x"
 uri = "file://HERMES_INSTRUCTIONS_JUNE7.MD"
 type = "text"
 title = "Hermes Agent Instructions — June 7 2026"
+
+[[outputs]]
+id = "a-aJosLpi0_f1V6CBwdTV"
+uri = "file://HERMES_INSTRUCTIONS_JUNE8.MD"
+type = "text"
+title = "Hermes Agent Instructions — June 8 2026"
