@@ -120,6 +120,8 @@ def _cross_verify(
 @router.get("/quotes")
 def get_quotes() -> dict:
     is_open = _is_market_open()
+    if not is_open:
+        return {"quotes": {}, "is_market_open": False, "source": "market_closed"}
     api_key = settings.fmp_api_key
     try:
         holdings, _missing, _ = latest_joined()

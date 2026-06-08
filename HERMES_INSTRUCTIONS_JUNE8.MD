@@ -54,10 +54,15 @@ set. Yahoo is attempted unconditionally — no FMP key required for quotes to wo
 | Yahoo ✗, FMP ✓ | `"fmp_only"` | `false` |
 | Yahoo ✗ + FMP ✗ (or both error) | `"error"` | — (empty quotes) |
 | No holdings in DB | `"no_holdings"` | — (empty quotes) |
+| Market is closed (outside Mon–Fri 09:30–16:00 ET) | `"market_closed"` | — (empty quotes, no external calls made) |
 
 **Note:** `"no_key"` is no longer a possible `source` value. Yahoo runs
 regardless of whether `FMP_API_KEY` is set. Any VPS code that checks for
 `source == "no_key"` should treat `"error"` as the fully-degraded fallback instead.
+
+When `source == "market_closed"`, no Yahoo or FMP requests are made — the
+early return fires immediately. This prevents stale after-hours Yahoo prices
+(which return `regularMarketChangePercent: null` → 0.0) from leaking into the UI.
 
 **HTTP response shape:**
 ```json

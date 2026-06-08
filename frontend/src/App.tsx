@@ -136,7 +136,7 @@ export default function App() {
 
     const start = async () => {
       const isOpen = await fetchQuotes()
-      if (!isOpen) return
+      if (!isOpen) { clearLiveMode(); return }
 
       // Schedule hard-stop at 16:00 ET.
       const msToClose = msUntilClose()
