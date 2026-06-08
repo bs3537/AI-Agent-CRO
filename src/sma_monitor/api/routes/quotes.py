@@ -11,9 +11,9 @@ Source fallback order:
   3. FMP only (Yahoo unreachable)      → source="fmp_only"
   4. Both fail                         → empty quotes, source="error"
 
-Returns empty quotes (never an error response) when the FMP key is absent,
-when there are no holdings, or when all sources fail — the frontend falls
-back to EOD data cleanly in all these cases.
+Returns empty quotes (never an error response) when there are no holdings
+or when all sources fail — the frontend falls back to EOD data cleanly.
+Yahoo is attempted even when the FMP key is absent.
 
 Market-open window: Mon–Fri, 09:30–16:00 US/Eastern (weekday + time-of-day
 check; no holiday calendar).
@@ -121,8 +121,6 @@ def _cross_verify(
 def get_quotes() -> dict:
     is_open = _is_market_open()
     api_key = settings.fmp_api_key
-    if not api_key:
-        return {"quotes": {}, "is_market_open": is_open, "source": "no_key"}
     try:
         holdings, _missing, _ = latest_joined()
         tickers = [h.ticker for h in holdings]
@@ -130,19 +128,20 @@ def get_quotes() -> dict:
             return {"quotes": {}, "is_market_open": is_open, "source": "no_holdings"}
 
         with httpx.Client(timeout=15.0) as client:
-            # --- Try Yahoo Finance as primary source ---
+            # --- Try Yahoo Finance as primary source (no API key required) ---
             yahoo_quotes: dict[str, dict] | None = None
             try:
                 yahoo_quotes = _fetch_yahoo_quotes(tickers, client)
             except Exception as exc:
                 _log.warning("yahoo_fetch_failed", extra={"err": str(exc)[:200]})
 
-            # --- Try FMP as cross-verification layer ---
+            # --- Try FMP as cross-verification layer (only when key is present) ---
             fmp_quotes: dict[str, dict] | None = None
-            try:
-                fmp_quotes = fetch_quotes(tickers, api_key=api_key, client=client)
-            except FmpError as exc:
-                _log.warning("fmp_fetch_failed", extra={"err": str(exc)[:200]})
+            if api_key:
+                try:
+                    fmp_quotes = fetch_quotes(tickers, api_key=api_key, client=client)
+                except FmpError as exc:
+                    _log.warning("fmp_fetch_failed", extra={"err": str(exc)[:200]})
 
             # --- Merge: Yahoo primary, FMP secondary ---
             if yahoo_quotes and fmp_quotes:

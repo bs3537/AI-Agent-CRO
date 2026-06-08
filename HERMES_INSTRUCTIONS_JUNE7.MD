@@ -69,7 +69,8 @@ price; if it agrees, `verified` is set to `true`.
 ```
 
 Possible `source` values: `"yahoo+fmp"`, `"yahoo_only"`, `"fmp_only"`,
-`"no_key"`, `"no_holdings"`, `"error"`.
+`"no_holdings"`, `"error"`. Note: `"no_key"` is no longer returned — Yahoo
+is now attempted even when the FMP key is absent.
 
 ### 2c. Frontend — MV chip removed
 
