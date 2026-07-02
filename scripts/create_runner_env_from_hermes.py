@@ -68,6 +68,8 @@ vals = {
     'SMA_LLM_MAX_RETRIES': choose('SMA_LLM_MAX_RETRIES', default='4'),
     'SMA_LLM_BACKOFF_BASE_S': choose('SMA_LLM_BACKOFF_BASE_S', default='2.0'),
     # External services. Blank values mean not available in this Hermes env yet.
+    # Generic current-web research uses Codex GPT-5.5 native web search; do not
+    # copy a Brave Search API key into the runner env.
     'TURSO_DATABASE_URL': choose('TURSO_DATABASE_URL'),
     'TURSO_AUTH_TOKEN': choose('TURSO_AUTH_TOKEN'),
     'RESEND_API_KEY': choose('RESEND_API_KEY'),
@@ -75,7 +77,6 @@ vals = {
     'RESEND_EMAIL_TO': choose('RESEND_EMAIL_TO'),
     'IBKR_FLEX_TOKEN': choose('IBKR_FLEX_TOKEN'),
     'IBKR_FLEX_QUERY_ID': choose('IBKR_FLEX_QUERY_ID'),
-    'BRAVE_SEARCH_API_KEY': choose('BRAVE_SEARCH_API_KEY', 'BRAVE_SEARCH_API_KEY', 'BRAVE_API_KEY'),
     'SEMANTIC_SCHOLAR_API_KEY': choose('SEMANTIC_SCHOLAR_API_KEY'),
     'FMP_API_KEY': choose('FMP_API_KEY'),
     'SEC_EDGAR_USER_AGENT': choose('SEC_EDGAR_USER_AGENT', default='AI CRO monitor'),

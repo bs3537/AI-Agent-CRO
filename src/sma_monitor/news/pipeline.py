@@ -344,13 +344,10 @@ def _company_news_queries(holding: Holding, *, skip_company_ir: bool = False) ->
     return queries
 
 
-# Pick the right search provider, in priority order:
-#   1. fixture replay when from_file is set (offline);
-#   2. Brave when BRAVE_SEARCH_API_KEY is set (W2 — the primary source);
-#   3. Exa when EXA_API_KEY is set (legacy fallback);
-#   4. otherwise error loudly.
-# `api_key` is the Exa key passed by callers; Brave/Semantic Scholar/FMP keys are read
-# from settings so the existing poll() signature stays unchanged.
+# Pick the right generic search provider: fixture replay for offline tests, then
+# the legacy Exa adapter when explicitly configured. Codex GPT-5.5 native web
+# search lives in the agent/runner prompt layer; this Python pipeline no longer
+# calls Brave Search API.
 def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
     if fixture:
         cached = load_response_file(fixture)
@@ -360,15 +357,6 @@ def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
 
         return provider
 
-    if settings.brave_search_api_key:
-        from .brave_client import search as brave_search
-
-        def brave_provider(q: str, n: int, since: datetime | None) -> list[ExaResult]:
-            return brave_search(q, api_key=settings.brave_search_api_key,  # type: ignore[arg-type]
-                                num_results=n, start_published_date=since)
-
-        return brave_provider
-
     if api_key:
         def exa_provider(q: str, n: int, since: datetime | None) -> list[ExaResult]:
             return exa_search(q, api_key=api_key, num_results=n, start_published_date=since)
@@ -376,8 +364,9 @@ def _make_provider(api_key: str | None, fixture: Path | None) -> Provider:
         return exa_provider
 
     raise RuntimeError(
-        "No news source configured: set BRAVE_SEARCH_API_KEY (preferred) or "
-        "EXA_API_KEY in .env, or pass --from-file for an offline fixture."
+        "No generic news source configured: set EXA_API_KEY in .env, or pass "
+        "--from-file for an offline fixture. Current cron/runner research should "
+        "use Codex GPT-5.5 native web search instead of Brave Search API."
     )
 
 
@@ -515,7 +504,7 @@ def poll_literature(
         if not term:
             continue
         sources = _literature_sources(
-            h, s2_key=api_key, brave_key=settings.brave_search_api_key,
+            h, s2_key=api_key,
             ncbi_key=settings.ncbi_api_key, fixture=from_file,
         )
         for source_name, fetch in sources:
@@ -552,23 +541,19 @@ def poll_literature(
 
 
 # Build the ordered (source_name, fetch) list for a holding's literature poll,
-# following source_policy precedence (biomed: PubMed/CT.gov/web → S2; general:
-# web → S2) and including only sources whose key is available. PubMed and
-# ClinicalTrials.gov are keyless; web needs Brave, Semantic Scholar its key.
-# Keys are passed in (not read from settings) so the ordering is unit-testable.
-def _literature_sources(h, *, s2_key, brave_key, ncbi_key, fixture):
+# following source_policy precedence while omitting generic web search from
+# Python. PubMed and ClinicalTrials.gov are keyless; Semantic Scholar uses its
+# own key. Codex native web search is handled by agent prompts when needed.
+def _literature_sources(h, *, s2_key, ncbi_key, fixture):
     # Offline replay: a single Semantic Scholar fixture (tests / --from-file).
     if fixture:
         return [("semantic_scholar", _make_literature_provider(s2_key, fixture))]
-    from . import brave_client, clinicaltrials_client, pubmed_client, semantic_scholar_client
+    from . import clinicaltrials_client, pubmed_client, semantic_scholar_client
 
     available = {
         "pubmed": lambda term, n: pubmed_client.search(term, api_key=ncbi_key, num_results=n),
         "clinicaltrials_gov": lambda term, n: clinicaltrials_client.search(term, num_results=n),
     }
-    if brave_key:
-        available["web_search"] = lambda term, n: brave_client.search(
-            term, api_key=brave_key, num_results=n)
     if s2_key:
         available["semantic_scholar"] = lambda term, n: semantic_scholar_client.search(
             term, api_key=s2_key, num_results=n)

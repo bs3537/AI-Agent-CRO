@@ -26,9 +26,7 @@ from ..identity import event_id
 from ..llm import get_provider
 from ..llm.throughput import llm_concurrency, map_concurrent
 from ..news.fmp_client import latest_fmp_metrics, latest_price_series
-from ..news.source_tiers import source_tier
 from ..news.store import init_news_schema
-from ..news.verification import verify_fmp
 from ..portfolio.joined import latest_joined
 from ..portfolio.schema import Holding
 from ..portfolio.uploads import combined_text
@@ -509,25 +507,13 @@ def run_decisions(
             continue
         work.append((h, candidate, th, ih))
 
-    # Per-holding compute (runs in the worker pool): corroborate the FMP
-    # financials against the web (Brave) so the LLM can weigh them per the source
-    # policy — display-only, deliberately NOT in inputs_hash — then ask for the
-    # verdict. Live Brave call is skipped offline / keyless.
+    # Per-holding compute (runs in the worker pool): ask Codex for the verdict.
+    # FMP/aggregator corroboration is now handled by the Codex native web-search
+    # instructions in the prompt instead of a Python Brave REST call.
     def _compute(
         item: tuple[Holding, DecisionCandidate, str, str],
     ) -> tuple[PositionDecision, PositionRating]:
         h, candidate, th, ih = item
-        if not offline and candidate.fmp_metrics and settings.brave_search_api_key:
-            try:
-                ver = verify_fmp(candidate.company_name or candidate.ticker,
-                                 api_key=settings.brave_search_api_key)
-                candidate.fmp_corroboration = {
-                    "corroborated": ver.corroborated,
-                    "sources": [{"title": s.title, "url": s.url, "tier": source_tier(s.url)}
-                                for s in ver.sources[:3]],
-                }
-            except Exception as e:
-                log.warning("fmp_verification_skipped", extra={"ticker": h.ticker, "err": str(e)})
         decision, llm_grade = decide_with_grade(
             candidate,
             th,

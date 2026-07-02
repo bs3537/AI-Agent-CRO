@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sma_monitor.news.brave_web_client import BraveWebResult
+from sma_monitor.news.ir_discovery import WebResult
 from sma_monitor.news.ir_discovery import IrDiscoveryResult, _candidate
 from sma_monitor.portfolio.ir_urls import populate_ir_urls_for_tickers
 from sma_monitor.portfolio.schema import Position
@@ -94,13 +94,13 @@ def test_position_refresh_populates_ir_urls(monkeypatch):
 
 
 def test_ir_candidate_rejects_aggregators_and_pdfs():
-    aggregator = BraveWebResult(
+    aggregator = WebResult(
         title="Press release",
         url="https://www.theglobeandmail.com/investing/markets/stocks/NBIS/pressreleases/x",
         description="Nebius press release copy",
         raw={},
     )
-    pdf = BraveWebResult(
+    pdf = WebResult(
         title="X-FAB press release PDF",
         url="https://www.xfab.com/fileadmin/X-FAB/Investor_Relations/release.pdf",
         description="Investor Relations",
@@ -112,7 +112,7 @@ def test_ir_candidate_rejects_aggregators_and_pdfs():
 
 
 def test_ir_candidate_allows_exact_ticker_host_without_company_name():
-    row = BraveWebResult(
+    row = WebResult(
         title="Investor Relations: X-FAB",
         url="https://www.xfab.com/investors/",
         description="X-FAB Silicon Foundries investor news",
@@ -120,3 +120,23 @@ def test_ir_candidate_allows_exact_ticker_host_without_company_name():
     )
 
     assert _candidate(row, ticker="XFAB", company_name=None).score > 0
+
+
+def test_discover_ir_urls_uses_deterministic_guesses_without_search_key(monkeypatch):
+    from sma_monitor.news.ir_discovery import discover_ir_urls
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+        def get(self, url):
+            raise RuntimeError("network disabled in test")
+
+    monkeypatch.setattr("sma_monitor.news.ir_discovery.httpx.Client", _Client)
+    result = discover_ir_urls(ticker="VRTX", company_name="Vertex Pharmaceuticals", api_key=None)
+
+    assert result.status == "not_found"
+    assert result.reason == "validation_failed"

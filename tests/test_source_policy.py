@@ -10,13 +10,13 @@ from sma_monitor.news import source_policy as sp
 from sma_monitor.portfolio.schema import Sidecar
 
 
-# Financials precede SEC->FMP; literature branches PubMed-first vs web-first;
+# Financials precede SEC->FMP; literature branches PubMed-first vs direct-literature-only;
 # the verification set is exactly the two external APIs (FMP + Semantic Scholar).
 def test_precedence_constants():
     assert sp.FINANCIAL_SOURCE_ORDER == ("sec_filings", "fmp")
     assert sp.BIOMED_LITERATURE_ORDER[0] == "pubmed"
     assert sp.BIOMED_LITERATURE_ORDER[-1] == "semantic_scholar"
-    assert sp.GENERAL_LITERATURE_ORDER == ("web_search", "semantic_scholar")
+    assert sp.GENERAL_LITERATURE_ORDER == ("semantic_scholar",)
     assert set(sp.API_SOURCES_REQUIRING_VERIFICATION) == {"fmp", "semantic_scholar"}
 
 
@@ -30,7 +30,7 @@ def test_is_biomed_keys_on_indications():
     assert sp.is_biomed(gen) is False
 
 
-# Literature precedence follows the biomed branch: PubMed-first vs web-first.
+# Literature precedence follows the biomed branch: PubMed-first vs Semantic-Scholar-only for non-biomed holdings.
 def test_literature_order_branches():
     bio = Sidecar(ticker="VRTX", conviction_tier=5, stage="commercial_stage",
                   thesis="x", indications=["sickle cell disease"])
@@ -57,11 +57,8 @@ def test_literature_sources_honor_policy_order():
                   thesis="x", indications=["cystic fibrosis"])
     gen = Sidecar(ticker="KTOS", conviction_tier=3, stage="commercial_stage", thesis="x")
     names = lambda srcs: [n for n, _ in srcs]  # noqa: E731
-    assert names(_literature_sources(bio, s2_key="k", brave_key="b", ncbi_key=None,
-                                     fixture=None)) == \
-        ["pubmed", "clinicaltrials_gov", "web_search", "semantic_scholar"]
-    assert names(_literature_sources(gen, s2_key="k", brave_key="b", ncbi_key=None,
-                                     fixture=None)) == ["web_search", "semantic_scholar"]
+    assert names(_literature_sources(bio, s2_key="k", ncbi_key=None, fixture=None)) == \
+        ["pubmed", "clinicaltrials_gov", "semantic_scholar"]
+    assert names(_literature_sources(gen, s2_key="k", ncbi_key=None, fixture=None)) == ["semantic_scholar"]
     # Missing keys drop the keyed sources; keyless primaries remain.
-    assert names(_literature_sources(bio, s2_key=None, brave_key=None, ncbi_key=None,
-                                     fixture=None)) == ["pubmed", "clinicaltrials_gov"]
+    assert names(_literature_sources(bio, s2_key=None, ncbi_key=None, fixture=None)) == ["pubmed", "clinicaltrials_gov"]

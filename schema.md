@@ -100,7 +100,6 @@ This document is the structural map of the project. It captures:
 │  buckets.py      load 12-bucket taxonomy YAML                    │
 │  query.py        per-holding / sector / literature query strings │
 │  exa_client.py   Exa /search adapter (legacy fallback)           │
-│  brave_client.py W2: Brave News Search → ExaResult (primary)     │
 │  scite_client.py W2: Scite literature → ExaResult (bucket #10)   │
 │  fmp_client.py   W2: FMP financials → fmp_snapshots (#4/#7/#12)  │
 │  tagger.py       deterministic keyword → bucket tagger           │
@@ -205,7 +204,7 @@ drawer (scores, red-team, files, **financials**, catalysts). `npm run build` →
 |---|---|
 | 1 portfolio | Phase 0 only |
 | 2 news | Phase 0 + Phase 1 (`portfolio.joined.latest_joined`) |
-| 2 news (W2) | Brave (primary) / Exa (fallback) / Scite (#10 literature) / FMP (financials), provider-selected by which key is set; `--from-file` fixtures offline |
+| 2 news (W2) | Exa fixture/legacy fallback + Scite (#10 literature) / FMP (financials); generic current web research is delegated to Codex native web search; `--from-file` fixtures offline |
 | 3 scorer | Phase 0 + Phase 1 + Phase 2 (`news.buckets.load_buckets`) |
 | 4 red team | Phase 0 + Phase 1 + Phase 2 + Phase 3 (`scorer.multipliers.T2`) |
 | 5 outputs | All earlier phases (joins scores ⨝ red_team_passes) |

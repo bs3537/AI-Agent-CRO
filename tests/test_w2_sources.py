@@ -1,4 +1,4 @@
-"""W2 tests — Brave / Scite / FMP source adapters (no live keys).
+"""W2 tests — direct-source/FMP source adapters (no live Brave keys).
 
 Covers the response parsers (fixture → ExaResult / metrics shapes), the
 missing-key guards (offline → RuntimeError, never a crash), the FMP snapshot
@@ -8,12 +8,12 @@ the decision candidate. Runs against the conftest sandbox DB.
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from sma_monitor.news import (
-    brave_client,
     clinicaltrials_client,
     fmp_client,
     ir_client,
@@ -26,23 +26,50 @@ from sma_monitor.news import (
 FIXTURES = Path(__file__).resolve().parents[1] / "data" / "news_cache"
 
 
-# Brave fixture parses into ExaResults with publisher URLs + ISO dates.
-def test_brave_parse_fixture():
-    results = brave_client.load_response_file(FIXTURES / "_sample_brave_response.json")
-    assert len(results) == 2
-    r = results[0]
-    assert r.title and r.url.startswith("https://") and r.excerpt
-    assert r.published_at is not None and r.published_at.year == 2026
+# Phase 2 no longer treats Brave as a configured news provider; only fixtures or
+# the legacy Exa key can drive this generic search path.
+def test_news_provider_ignores_brave_key(monkeypatch):
+    from sma_monitor import config
+    from sma_monitor.news.pipeline import _make_provider
+
+    assert not hasattr(config.settings, "brave_search_api_key")
+    monkeypatch.setattr(config.settings, "exa_api_key", None)
+
+    with pytest.raises(RuntimeError, match="EXA_API_KEY"):
+        _make_provider(None, None)
 
 
-# Brave freshness maps a start/end window to the YYYY-MM-DDtoYYYY-MM-DD form.
-def test_brave_freshness_range():
-    from datetime import datetime, timezone
-    f = brave_client._freshness(
-        datetime(2026, 5, 20, tzinfo=timezone.utc), datetime(2026, 5, 27, tzinfo=timezone.utc)
+# Literature polling should use direct primary/literature sources and must not
+# add a generic web_search source.
+def test_literature_sources_do_not_include_generic_web_search(monkeypatch):
+    from sma_monitor.news.pipeline import _literature_sources
+    from sma_monitor.portfolio.schema import Holding
+
+    h = Holding(
+        ticker="VRTX",
+        company_name="Vertex",
+        qty=1,
+        market_value=1.0,
+        pct_nav=0.01,
+        cost_basis=None,
+        pulled_at=datetime(2035, 1, 1, tzinfo=UTC),
+        nav=100.0,
+        thesis="test",
+        stage="commercial_stage",
+        conviction_tier=3,
+        indications=["sickle cell disease"],
+        catalysts=[],
     )
-    assert f == "2026-05-20to2026-05-27"
-    assert brave_client._freshness(None, None) is None
+
+    names = [
+        name
+        for name, _ in _literature_sources(
+            h, s2_key="s2", ncbi_key=None, fixture=None
+        )
+    ]
+
+    assert "web_search" not in names
+    assert names == ["pubmed", "clinicaltrials_gov", "semantic_scholar"]
 
 
 def test_ir_client_parses_rss_and_html_links():
@@ -172,8 +199,8 @@ def test_missing_key_guards():
     from sma_monitor.news.pipeline import _make_provider, _make_literature_provider
     from sma_monitor import config
 
-    for attr in ("brave_search_api_key", "exa_api_key", "scite_api_key",
-                 "semantic_scholar_api_key", "fmp_api_key"):
+    assert not hasattr(config.settings, "brave_search_api_key")
+    for attr in ("exa_api_key", "scite_api_key", "semantic_scholar_api_key", "fmp_api_key"):
         setattr(config.settings, attr, None)
     with pytest.raises(RuntimeError):
         _make_provider(None, None)

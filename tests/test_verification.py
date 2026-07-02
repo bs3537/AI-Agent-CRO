@@ -1,8 +1,8 @@
-"""Brave-verification tests — corroboration classification + graceful degrade.
+"""Verification tests — corroboration classification + native-search handoff.
 
 Tests the pure classifier (_classify) against canned results so no network is
-touched, plus the no-key degrade path. The live Brave cross-check is exercised
-by smoke tests, not the suite.
+touched, plus the API path that now degrades to a native-search handoff rather
+than calling Brave Search API from Python.
 """
 from __future__ import annotations
 
@@ -36,7 +36,9 @@ def test_classify_empty():
     assert _classify("subj", [], min_tier=5).corroborated is False
 
 
-# With no Brave key, verify degrades to uncorroborated rather than crashing.
-def test_verify_no_key_degrades():
-    v = verify("anything", api_key=None)
+# Verification no longer performs a Brave REST call; it returns a native-search
+# handoff marker so Codex can corroborate using its own web-search capability.
+def test_verify_returns_native_search_handoff_even_with_legacy_key():
+    v = verify("anything", api_key="legacy-brave-key")
     assert v.corroborated is False and v.sources == []
+    assert v.provider == "codex_native_web_search"

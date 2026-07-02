@@ -71,8 +71,8 @@ observation that would change your grade. Neutral and specific — no \
 """
 
 # Source-provenance policy injected into the system prompt: how the LLM must weigh
-# evidence by where it came from, plus the rule that API-derived data needs Brave
-# corroboration. Mirrors news/source_policy.py (the single source of truth).
+# evidence by where it came from, plus the rule that API-derived data needs
+# Codex native web-search corroboration when no primary source is supplied.
 _SOURCE_POLICY = """\
 SOURCE POLICY — weigh evidence by where it came from:
 - Financials: trust SEC filings (primary/regulatory) over FMP (a third-party \
@@ -81,10 +81,10 @@ data API). A financial claim resting only on FMP is provisional.
 sources over Semantic Scholar (an aggregator API). For non-biomedical names, \
 trust reputable web sources over Semantic Scholar.
 - VERIFICATION: data from external APIs (FMP, Semantic Scholar) is reliable only \
-when an independent web source corroborates it. Treat uncorroborated API-derived \
-figures or claims as LOW CONFIDENCE — you may report them, but do NOT downgrade \
-the grade on uncorroborated API data alone, and name the missing \
-corroboration in the note.
+when a primary source or Codex native web search corroborates it. Treat \
+uncorroborated API-derived figures or claims as LOW CONFIDENCE — you may report \
+them, but do NOT downgrade the grade on uncorroborated API data alone, and name \
+the missing corroboration in the note.
 """
 
 # Output shape echoed in the system prompt so the model emits exactly the JSON
@@ -181,7 +181,7 @@ RED-TEAM BEAR CASES (Phase 4 — peak severity {c.max_severity}/5)
 TECHNICAL TREND (daily close vs 20-day EMA)
 {technical}
 
-FINANCIAL METRICS (FMP — third-party API; corroborate before trusting)
+FINANCIAL METRICS (FMP — third-party API; corroborate with primary sources or native web search before trusting)
 {fmp}
 {fmp_check}
 
@@ -241,15 +241,14 @@ def _fmt_fmp(metrics: dict | None) -> str:
     return "\n".join(f"  - {k}: {v}" for k, v in metrics.items())
 
 
-# Render the Brave web-corroboration of the FMP data (the source-policy
-# verification): whether an independent source backs the API figures, plus the
-# top corroborating sources with their credibility tiers, for the LLM to weigh.
+# Render independent corroboration status for FMP data, asking Codex to use
+# native web search when no Python-side primary-source check is attached.
 def _fmt_fmp_corroboration(corr: dict | None) -> str:
     if not corr:
-        return "  Web corroboration (Brave): not checked."
+        return "  Web corroboration (Codex native web search): not checked; use native web search or primary sources before trusting FMP-only figures."
     status = "corroborated" if corr.get("corroborated") else \
         "NOT corroborated by an independent source"
-    lines = [f"  Web corroboration (Brave): {status}."]
+    lines = [f"  Web corroboration (primary/native web search): {status}."]
     for s in corr.get("sources", []):
         title = (s.get("title") or "")[:70]
         lines.append(f"    - [tier {s.get('tier')}] {title} — {s.get('url', '')}")

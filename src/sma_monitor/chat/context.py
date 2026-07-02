@@ -7,12 +7,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
-from ..config import settings
 from ..decision.store import latest_decision, latest_rating, latest_ratings
 from ..decision.technicals import technical_state
-from ..news import brave_web_client
 from ..news.fmp_client import latest_fmp_metrics, latest_price_series
 from ..news.store import recent_articles
 from ..portfolio.joined import latest_joined
@@ -72,7 +68,7 @@ def build_chat_context(
     live_web = _live_web_context(message, [by_ticker[t] for t in tickers if t in by_ticker])
     if live_web["text"]:
         sections.append(live_web["text"])
-        cited.append({"type": "live_web_search", "label": "Brave live search"})
+        cited.append({"type": "native_web_search_request", "label": "Codex native web search request"})
 
     text = "\n\n".join(sections) or "(No portfolio context is currently available.)"
     if len(text) > MAX_CONTEXT_CHARS:
@@ -264,54 +260,23 @@ def _live_web_context(message: str, holdings) -> dict[str, str | None]:
         return {"text": "", "status": "skipped_no_detected_ticker", "searched_at": None}
     if not _wants_live_web(message):
         return {"text": "", "status": "skipped_question_not_time_sensitive", "searched_at": None}
-    if not settings.brave_search_api_key:
-        return {"text": "", "status": "skipped_brave_key_missing", "searched_at": None}
 
     lines = [
-        "LIVE WEB SEARCH CONTEXT",
-        f"Searched at: {searched_at}",
-        "Use these Brave search snippets as current leads only; verify against primary sources before treating them as decisive.",
+        "CODEX NATIVE WEB SEARCH REQUEST",
+        f"Requested at: {searched_at}",
+        "Use Codex GPT-5.5 native web search for current leads; verify against primary sources before treating fresh snippets as decisive.",
     ]
-    result_count = 0
-    errors: list[str] = []
     for h in list(holdings)[:3]:
         entity = h.company_name or h.ticker
-        queries = [f"{h.ticker} {entity} next catalyst FDA trial data stock latest news"]
+        query = f"{h.ticker} {entity} next catalyst FDA trial data stock latest news"
         lines.append("")
-        lines.append(f"Live search leads for {h.ticker}:")
-        seen: set[str] = set()
-        for query in queries:
-            try:
-                with httpx.Client(timeout=5.0) as client:
-                    web_hits = brave_web_client.search(
-                        query,
-                        api_key=settings.brave_search_api_key,  # type: ignore[arg-type]
-                        num_results=5,
-                        client=client,
-                    )
-                for hit in web_hits:
-                    if hit.url in seen:
-                        continue
-                    seen.add(hit.url)
-                    result_count += 1
-                    lines.append(
-                        f"- WEB: {_one_line(hit.title, 150)} | {hit.url} | "
-                        f"{_one_line(hit.description, 260)}"
-                    )
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"{h.ticker} web search failed: {str(e)[:160]}")
-        if not seen:
-            lines.append("- No live Brave leads returned.")
-
-    if errors:
-        lines.append("")
-        lines.append("Live search errors:")
-        for err in errors[:6]:
-            lines.append(f"- {err}")
-    status = f"ok_{result_count}_results" if result_count else "no_results"
-    if errors and not result_count:
-        status = "failed"
-    return {"text": "\n".join(lines), "status": status, "searched_at": searched_at}
+        lines.append(f"Search request for {h.ticker} {entity}:")
+        lines.append(f"- Query: {query}")
+    return {
+        "text": "\n".join(lines),
+        "status": "codex_native_web_search_requested",
+        "searched_at": searched_at,
+    }
 
 
 def _wants_live_web(message: str) -> bool:

@@ -9,10 +9,6 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from ..config import settings
-from .brave_web_client import BraveWebResult
-from .brave_web_client import search as brave_web_search
-
 log = logging.getLogger("sma_monitor.news.ir_discovery")
 
 EXCLUDED_HOST_PARTS = (
@@ -60,6 +56,15 @@ IR_PATH_MARKERS = ("investor-relations", "investor-hub", "/investors", "/investo
 BAD_PATH_MARKERS = ("sec-filings", "sec-filing", "/filings/", "ownership", "fileadmin", ".pdf")
 
 
+# Generic candidate result used by deterministic IR URL discovery.
+@dataclass(frozen=True)
+class WebResult:
+    title: str
+    url: str
+    description: str
+    raw: dict
+
+
 @dataclass(frozen=True)
 class IrDiscoveryResult:
     ticker: str
@@ -82,25 +87,10 @@ def discover_ir_urls(
     api_key: str | None = None,
     max_results: int = 10,
 ) -> IrDiscoveryResult:
-    """Find and validate issuer IR URLs. Returns empty result on failure."""
+    """Find and validate issuer IR URLs using deterministic guesses only."""
+    _ = (api_key, max_results)
     ticker = ticker.strip().upper()
-    api_key = api_key if api_key is not None else settings.brave_search_api_key
-    if not api_key:
-        return IrDiscoveryResult(ticker=ticker, status="skipped", reason="brave_key_missing")
-
-    queries = _queries(ticker, company_name)
-    seen: set[str] = set()
-    results: list[BraveWebResult] = list(_guessed_results(ticker, company_name))
-    for q in queries:
-        try:
-            for row in brave_web_search(q, api_key=api_key, num_results=max_results):
-                norm = _normalize_url(row.url)
-                if norm and norm not in seen:
-                    seen.add(norm)
-                    results.append(row)
-        except Exception as e:
-            log.warning("ir_discovery_search_failed",
-                        extra={"ticker": ticker, "query": q, "err": str(e)[:240]})
+    results: list[WebResult] = list(_guessed_results(ticker, company_name))
 
     candidates = sorted(
         (_candidate(row, ticker=ticker, company_name=company_name) for row in results),
@@ -145,24 +135,24 @@ def _queries(ticker: str, company_name: str | None) -> list[str]:
     ]
 
 
-def _guessed_results(ticker: str, company_name: str | None) -> list[BraveWebResult]:
+def _guessed_results(ticker: str, company_name: str | None) -> list[WebResult]:
     tokens = _company_tokens(company_name)
     if not tokens:
         return []
     stems = {tokens[0]}
     if len(tokens) >= 2:
         stems.add(tokens[0] + tokens[1])
-    out: list[BraveWebResult] = []
+    out: list[WebResult] = []
     for stem in sorted(stems):
         for host in (f"ir.{stem}.com", f"investors.{stem}.com", f"investor.{stem}.com"):
-            out.append(BraveWebResult(
+            out.append(WebResult(
                 title=f"{company_name or ticker} investor relations",
                 url=f"https://{host}/",
                 description=f"Guessed official investor relations host for {ticker}.",
                 raw={"source": "guess"},
             ))
         for path in ("investor-hub", "investors", "investor-relations"):
-            out.append(BraveWebResult(
+            out.append(WebResult(
                 title=f"{company_name or ticker} investor relations",
                 url=f"https://{stem}.com/{path}",
                 description=f"Guessed official investor relations path for {ticker}.",
@@ -179,7 +169,7 @@ class _Candidate:
     score: int
 
 
-def _candidate(row: BraveWebResult, *, ticker: str, company_name: str | None) -> _Candidate:
+def _candidate(row: WebResult, *, ticker: str, company_name: str | None) -> _Candidate:
     url = _normalize_url(row.url)
     if not url:
         return _Candidate(row.url, row.title, row.description, 0)

@@ -1,20 +1,18 @@
 """Due-diligence source policy — precedence + verification.
 
 Single source of truth for the manager's mandated source ordering in Codex's
-daily per-holding due diligence. Codex does not fetch sources itself: the
-pipeline assembles source-tagged, Brave-verified evidence and Codex judges it
-under these rules (see decision/prompt.build_system_prompt). Both the ingestion
-pipeline (fetch order) and the decision prompt (evidence weighting) read from
-here so the precedence is defined once.
+daily per-holding due diligence. The pipeline assembles source-tagged direct
+evidence, and Codex GPT-5.5 uses native web search for fresh corroboration when
+the prompt requests it (see decision/prompt.build_system_prompt).
 
 Precedence (most-authoritative first):
   - Financials:            SEC filings  -> FMP
-  - Biomed literature:     PubMed / ClinicalTrials.gov / web search -> Semantic Scholar
-  - Non-biomed literature: web search (Brave) -> Semantic Scholar
+  - Biomed literature:     PubMed / ClinicalTrials.gov -> Semantic Scholar
+  - Non-biomed literature: Semantic Scholar plus Codex native web-search checks
 Verification:
-  - Any datum from an external API (FMP, Semantic Scholar) must be corroborated
-    by a Brave web search before it is treated as reliable; uncorroborated API
-    data is surfaced to Codex as low-confidence and never escalates a verdict.
+  - Any datum from an external API (FMP, Semantic Scholar) should be corroborated
+    by Codex native web search or a primary source before it is treated as
+    reliable; uncorroborated API data is surfaced as low-confidence.
 """
 from __future__ import annotations
 
@@ -26,18 +24,16 @@ FINANCIAL_SOURCE_ORDER: tuple[str, ...] = ("sec_filings", "fmp")
 BIOMED_LITERATURE_ORDER: tuple[str, ...] = (
     "pubmed",
     "clinicaltrials_gov",
-    "web_search",
     "semantic_scholar",
 )
-GENERAL_LITERATURE_ORDER: tuple[str, ...] = ("web_search", "semantic_scholar")
+GENERAL_LITERATURE_ORDER: tuple[str, ...] = ("semantic_scholar",)
 
-# External-API sources whose data must be corroborated by a Brave web search
-# before Codex treats it as reliable (the verification mandate).
+# External-API sources whose data should be corroborated by Codex native web
+# search or a primary source before Codex treats it as reliable.
 API_SOURCES_REQUIRING_VERIFICATION: tuple[str, ...] = ("fmp", "semantic_scholar")
 
-# The web-search provider used both as a primary literature source and as the
-# cross-check that verifies API-derived data.
-VERIFICATION_PROVIDER = "brave"
+# The web-search provider used for cross-check instructions in prompts.
+VERIFICATION_PROVIDER = "codex_native_web_search"
 
 
 # A holding is biomed when its sidecar names drug indications — the clean signal

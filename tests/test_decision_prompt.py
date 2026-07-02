@@ -1,8 +1,8 @@
 """Decision-prompt tests — FMP corroboration rendering in the user message.
 
-Verifies the Brave cross-check (6c) is surfaced to Codex: a corroborated FMP
-snapshot shows its status + backing source, and an unchecked one says so (so
-Codex applies the source-policy low-confidence rule).
+Verifies independent corroboration is surfaced to Codex: a corroborated FMP
+snapshot shows its status + backing source, and an unchecked one asks Codex to
+use native web search before treating API data as reliable.
 """
 from __future__ import annotations
 
@@ -38,10 +38,12 @@ def test_prompt_renders_fmp_corroboration():
     assert "globenewswire" in msg
 
 
-# Without a corroboration check, the prompt says so (Codex treats FMP unverified).
-def test_prompt_marks_unchecked_fmp():
+# Without a Python-side corroboration check, the prompt tells Codex to use native web search.
+def test_prompt_marks_unchecked_fmp_for_codex_native_search():
     msg = build_user_message(_candidate(fmp_metrics={"company": "X"}))
     assert "not checked" in msg.lower()
+    assert "native web search" in msg.lower()
+    assert "brave" not in msg.lower()
 
 
 def test_prompt_renders_ema20_snapshot():

@@ -30,7 +30,7 @@ indications:
   - "second-line NSCLC"
 
 # Optional exact issuer-disclosure URLs for the 6 AM smart recompute. Fill these
-# when known; the app checks them before falling back to Brave/Yahoo discovery.
+# when known; the app checks them before deterministic official-URL discovery and Codex native web-search handoffs.
 ir_url: "https://ir.example.com"
 press_releases_url: "https://ir.example.com/news-events/press-releases"
 press_release_rss_url: "https://ir.example.com/rss/news-releases.xml"

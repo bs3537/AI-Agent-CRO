@@ -20,12 +20,11 @@ class Settings(BaseSettings):
     ibkr_flex_query_id: str | None = None
 
     # News ingestion — Phase 2
-    # W2: Brave replaces Exa as the primary search source; Semantic Scholar
-    # provides literature (bucket #10, replacing Scite) and FMP adds financials
-    # (#4/#7/#12 + dashboard). exa_api_key/scite_api_key are retained as legacy
-    # fallbacks.
+    # Direct/source-specific adapters provide live evidence. Generic web search is
+    # handled by Codex GPT-5.5 native web search in the agent/runner layer, not
+    # by an application-held Brave Search API key. exa_api_key/scite_api_key are
+    # retained as legacy fallback inputs.
     exa_api_key: str | None = None
-    brave_search_api_key: str | None = None
     scite_api_key: str | None = None
     # W2 (updated): Semantic Scholar is the live literature source for bucket
     # #10 — a plain REST key (x-api-key header), so no OAuth/logout on the host.
@@ -91,7 +90,7 @@ class Settings(BaseSettings):
     def missing_for(self, phase: int) -> list[str]:
         required_by_phase: dict[int, list[str]] = {
             1: ["ibkr_flex_token", "ibkr_flex_query_id"],
-            2: ["brave_search_api_key"],  # W2: Brave is the primary news source
+            2: [],  # direct-source ingestion is optional/key-gated per adapter
             3: ["anthropic_api_key"],
             4: ["anthropic_api_key"],
         }

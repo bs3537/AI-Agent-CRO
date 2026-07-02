@@ -23,7 +23,7 @@ feature layers (decision, API, frontend).
 src/sma_monitor/
   config · paths · identity · db · logging_setup   PHASE 0  foundations (imported everywhere)
   portfolio/    PHASE 1  IBKR Flex pull ⨝ per-ticker YAML sidecar → Holding
-  news/         PHASE 2  Brave/FMP/SEC/PubMed/CT.gov/S2 → articles + bucket tags
+  news/         PHASE 2  FMP/SEC/PubMed/CT.gov/S2 + Codex native web-search handoffs → articles + bucket tags
   scorer/       PHASE 3  3 axes × multipliers → composite score + threshold band
   red_team/     PHASE 4  above-T₂ scores → bearish thesis vs warning-sign catalog
   outputs/      PHASE 5  alerts (≥T) + evening digest + feedback marks
