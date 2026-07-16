@@ -60,6 +60,7 @@ def join(
                 thesis_generated_by=sc.thesis_generated_by,
                 thesis_generated_at=sc.thesis_generated_at,
                 thesis_compute_source=sc.thesis_compute_source,
+                preliminary_thesis=sc.preliminary_thesis,
                 draft_rating_grade=sc.draft_rating_grade,
                 draft_rating_note=sc.draft_rating_note,
                 draft_rating_confidence=sc.draft_rating_confidence,

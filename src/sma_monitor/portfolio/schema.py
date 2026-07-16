@@ -21,6 +21,39 @@ Confidence = Literal["high", "medium", "low"]
 ThesisSource = Literal["pm", "ai_generated", "system_stub"]
 ThesisStatus = Literal["active", "draft"]
 DraftGrade = Literal["A", "B", "C", "D"]
+SecurityType = Literal["operating_company", "etf", "other"]
+ResearchSourceType = Literal[
+    "company",
+    "filing",
+    "regulatory",
+    "clinical",
+    "market",
+    "other",
+]
+
+
+class ThesisResearchSource(BaseModel):
+    """One source used to ground an AI-generated preliminary thesis."""
+
+    title: str
+    url: str
+    source_type: ResearchSourceType = "other"
+
+
+class PreliminaryThesis(BaseModel):
+    """Structured, versioned research that remains provisional until PM review."""
+
+    version: str
+    security_type: SecurityType = "operating_company"
+    sector: str | None = None
+    investment_case: str
+    moat: str
+    catalysts: list[str] = Field(default_factory=list)
+    differentiation: str
+    risks: list[str] = Field(default_factory=list)
+    monitoring_points: list[str] = Field(default_factory=list)
+    research_sources: list[ThesisResearchSource] = Field(default_factory=list)
+    researched_at: datetime
 
 
 # One row per ticker from an IBKR Flex pull. Output of the normalization
@@ -91,6 +124,7 @@ class Sidecar(BaseModel):
     thesis_generated_by: str | None = None
     thesis_generated_at: datetime | None = None
     thesis_compute_source: str | None = None
+    preliminary_thesis: PreliminaryThesis | None = None
     draft_rating_grade: DraftGrade | None = None
     draft_rating_note: str | None = None
     draft_rating_confidence: float | None = None
@@ -135,6 +169,7 @@ class Holding(BaseModel):
     thesis_generated_by: str | None = None
     thesis_generated_at: datetime | None = None
     thesis_compute_source: str | None = None
+    preliminary_thesis: PreliminaryThesis | None = None
     draft_rating_grade: DraftGrade | None = None
     draft_rating_note: str | None = None
     draft_rating_confidence: float | None = None

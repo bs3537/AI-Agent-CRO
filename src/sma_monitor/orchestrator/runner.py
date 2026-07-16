@@ -141,6 +141,22 @@ def _execute(row: dict, *, offline: bool) -> dict:
             offline=bool(payload.get("offline", offline)),
             force=bool(payload.get("force", True)),
         )
+    if command in {"preliminary_thesis_one", "preliminary_thesis_backfill"}:
+        from .preliminary_thesis import run_preliminary_thesis_workflow
+
+        ticker = (row.get("ticker") or payload.get("ticker") or "").strip().upper()
+        tickers = payload.get("tickers") or ([ticker] if ticker else None)
+        if command == "preliminary_thesis_one" and not tickers:
+            raise RuntimeError("preliminary_thesis_one requires ticker")
+        return run_preliminary_thesis_workflow(
+            tickers=tickers,
+            limit=payload.get("limit"),
+            upgrade_existing_ai=bool(payload.get("upgrade_existing_ai", True)),
+            refresh_inputs=bool(payload.get("refresh_inputs", command == "preliminary_thesis_one")),
+            compute_source=str(
+                payload.get("compute_source") or f"hermes_{command}"
+            ),
+        )
     if command == "collect":
         from .pipeline import run_collect_cycle
 
@@ -168,6 +184,15 @@ def _execute(row: dict, *, offline: bool) -> dict:
 
 def _raise_for_failed_recompute_summary(row: dict, summary: dict) -> None:
     command = row.get("command")
+    if command in {"preliminary_thesis_one", "preliminary_thesis_backfill"}:
+        drafts = summary.get("drafts") if isinstance(summary, dict) else None
+        failures = drafts.get("failed") if isinstance(drafts, dict) else None
+        if failures:
+            raise RunnerRequestError(
+                f"preliminary thesis failed for {len(failures)} ticker(s)",
+                summary=summary,
+            )
+        return
     if command not in {"manual_recompute_one", "manual_recompute_all", "thesis_recompute"}:
         return
     decisions = summary.get("decisions") if isinstance(summary, dict) else None

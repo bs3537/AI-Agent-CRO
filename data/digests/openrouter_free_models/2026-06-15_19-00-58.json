@@ -1,0 +1,118 @@
+{
+  "generated_at_utc": "2026-06-15T19:00:58.244358+00:00",
+  "source_url": "https://openrouter.ai/collections/free-models",
+  "subject": "OpenRouter free models \u2014 top token usage \u2014 2026-06-15",
+  "token_time_label": "7 days",
+  "top_models": [
+    {
+      "cached_tokens": 2416889409472,
+      "completion_tokens": 20857758161,
+      "display_usage": "2.73T",
+      "name": "Owl Alpha",
+      "prompt_tokens": 2708509150483,
+      "rank": 1,
+      "reasoning_tokens": 1647,
+      "total_tokens": 2729366910291,
+      "variant": "openrouter/owl-alpha"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 4002538760,
+      "display_usage": "882B",
+      "name": "NVIDIA: Nemotron 3 Ultra (free)",
+      "prompt_tokens": 877007591243,
+      "rank": 2,
+      "reasoning_tokens": 1481211234,
+      "total_tokens": 882491341237,
+      "variant": "nvidia/nemotron-3-ultra-550b-a55b-20260604:free"
+    },
+    {
+      "cached_tokens": 254891833836,
+      "completion_tokens": 3456246826,
+      "display_usage": "678B",
+      "name": "Poolside: Laguna M.1 (free)",
+      "prompt_tokens": 672910100779,
+      "rank": 3,
+      "reasoning_tokens": 1220825367,
+      "total_tokens": 677587172972,
+      "variant": "poolside/laguna-m.1-20260312:free"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 7928695254,
+      "display_usage": "585B",
+      "name": "Nex AGI: Nex-N2-Pro (free)",
+      "prompt_tokens": 571603955288,
+      "rank": 4,
+      "reasoning_tokens": 5232119341,
+      "total_tokens": 584764769883,
+      "variant": "nex-agi/nex-n2-pro:free"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 9072126067,
+      "display_usage": "411B",
+      "name": "NVIDIA: Nemotron 3 Super (free)",
+      "prompt_tokens": 394911472973,
+      "rank": 5,
+      "reasoning_tokens": 6586217997,
+      "total_tokens": 410569817037,
+      "variant": "nvidia/nemotron-3-super-120b-a12b-20230311:free"
+    },
+    {
+      "cached_tokens": 87439384128,
+      "completion_tokens": 20404761876,
+      "display_usage": "230B",
+      "name": "OpenAI: gpt-oss-120b (free)",
+      "prompt_tokens": 203733571215,
+      "rank": 6,
+      "reasoning_tokens": 5421595414,
+      "total_tokens": 229559928505,
+      "variant": "openai/gpt-oss-120b:free"
+    },
+    {
+      "cached_tokens": 40896904464,
+      "completion_tokens": 1288775264,
+      "display_usage": "106B",
+      "name": "Poolside: Laguna XS.2 (free)",
+      "prompt_tokens": 103921799447,
+      "rank": 7,
+      "reasoning_tokens": 649870135,
+      "total_tokens": 105860444846,
+      "variant": "poolside/laguna-xs.2-20260421:free"
+    },
+    {
+      "cached_tokens": 14178936224,
+      "completion_tokens": 8571767873,
+      "display_usage": "62.4B",
+      "name": "OpenAI: gpt-oss-20b (free)",
+      "prompt_tokens": 51482014350,
+      "rank": 8,
+      "reasoning_tokens": 2373378645,
+      "total_tokens": 62427160868,
+      "variant": "openai/gpt-oss-20b:free"
+    },
+    {
+      "cached_tokens": 10014518877,
+      "completion_tokens": 1517805930,
+      "display_usage": "43.3B",
+      "name": "Google: Gemma 4 31B (free)",
+      "prompt_tokens": 41628504257,
+      "rank": 9,
+      "reasoning_tokens": 135320676,
+      "total_tokens": 43281630863,
+      "variant": "google/gemma-4-31b-it-20260402:free"
+    },
+    {
+      "cached_tokens": 0,
+      "completion_tokens": 3140349904,
+      "display_usage": "35.7B",
+      "name": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
+      "prompt_tokens": 29957005965,
+      "rank": 10,
+      "reasoning_tokens": 2652270640,
+      "total_tokens": 35749626509,
+      "variant": "nvidia/nemotron-3-nano-30b-a3b:free"
+    }
+  ]
+}

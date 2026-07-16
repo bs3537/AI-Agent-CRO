@@ -17,6 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
+from ...analyst_targets.store import latest_target_state, target_state_from_row
 from ...config import settings
 from ...db import connection
 from ...decision.schema import GRADE_VERDICT, VERDICT_COLOR
@@ -32,7 +33,7 @@ from ...portfolio.delete import delete_holding_data
 from ...portfolio.ir_urls import populate_ir_urls_for_tickers
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
-from ...portfolio.sidecar import set_thesis
+from ...portfolio.sidecar import ensure_sidecar, set_thesis
 from ...portfolio.store import latest_positions, save_manual_position
 from ...portfolio.uploads import (
     UploadError,
@@ -64,7 +65,13 @@ from ..schemas import (
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
 UPLOAD_FILE = File(...)
-RECOMPUTE_COMMANDS = {"manual_recompute_one", "manual_recompute_all", "thesis_recompute"}
+RECOMPUTE_COMMANDS = {
+    "manual_recompute_one",
+    "manual_recompute_all",
+    "preliminary_thesis_one",
+    "preliminary_thesis_backfill",
+    "thesis_recompute",
+}
 SECRETISH_ERROR_RE = re.compile(
     r"(?i)(api[_-]?key|auth[_-]?token|access[_-]?token|token|password|secret)=([^\s&]+)"
 )
@@ -187,6 +194,8 @@ def _dashboard_cache(tickers: list[str]) -> dict[str, dict[str, Any]]:
         "file_counts": {},
         "severity": {},
         "prices": {},
+        "targets": {},
+        "financials": {},
     }
     if not tickers:
         return cache
@@ -233,6 +242,25 @@ def _dashboard_cache(tickers: list[str]) -> dict[str, dict[str, Any]]:
                 cache["prices"][ticker] = json.loads(row["closes"] or "[]")
             except (TypeError, json.JSONDecodeError):
                 cache["prices"][ticker] = None
+
+        for row in conn.execute(
+            f"SELECT * FROM analyst_price_targets WHERE ticker IN ({placeholders})",
+            tickers,
+        ).fetchall():
+            cache["targets"][row["ticker"]] = row
+
+        for row in conn.execute(
+            f"SELECT ticker, metrics FROM fmp_snapshots WHERE ticker IN ({placeholders}) "
+            "ORDER BY ticker, fetched_at DESC",
+            tickers,
+        ).fetchall():
+            ticker = row["ticker"]
+            if ticker in cache["financials"]:
+                continue
+            try:
+                cache["financials"][ticker] = json.loads(row["metrics"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                cache["financials"][ticker] = {}
     return cache
 
 
@@ -249,12 +277,22 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         rating = _rating_out(latest_rating(h.ticker))
         n_files = len(list_files(h.ticker))
         spark = _spark_out(h.ticker)
+        analyst_target = latest_target_state(h.ticker)
+        is_etf = bool(
+            (latest_fmp_metrics(h.ticker) or {}).get("is_etf")
+            or (analyst_target or {}).get("status") == "not_applicable"
+        )
         severity = _max_severity(h.ticker) if dec_row else 0
     else:
         dec_row = cache["decisions"].get(h.ticker)
         rating = _rating_out(cache["ratings"].get(h.ticker))
         n_files = int(cache["file_counts"].get(h.ticker, 0))
         spark = _spark_from_closes(cache["prices"].get(h.ticker))
+        analyst_target = target_state_from_row(cache["targets"].get(h.ticker))
+        is_etf = bool(
+            cache["financials"].get(h.ticker, {}).get("is_etf")
+            or (analyst_target or {}).get("status") == "not_applicable"
+        )
         severity = int(cache["severity"].get(h.ticker, 0)) if dec_row else 0
     return PositionSummary(
         ticker=h.ticker, company_name=h.company_name, stage=h.stage,
@@ -270,12 +308,19 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         thesis_generated_by=h.thesis_generated_by,
         thesis_generated_at=h.thesis_generated_at.isoformat() if h.thesis_generated_at else None,
         thesis_compute_source=h.thesis_compute_source,
+        preliminary_thesis=(
+            h.preliminary_thesis.model_dump(mode="json")
+            if h.preliminary_thesis is not None
+            else None
+        ),
         draft_rating_grade=h.draft_rating_grade,
         draft_rating_note=h.draft_rating_note,
         draft_rating_confidence=h.draft_rating_confidence,
         draft_rating_drivers=h.draft_rating_drivers,
+        is_etf=is_etf,
         n_files=n_files,
         spark=spark,  # W6/V2: 1yr close sparkline + EMA20 overlay
+        analyst_target=analyst_target,
         rating=rating,
         decision=_decision_out(dec_row, severity, rating),
     )
@@ -318,8 +363,9 @@ def list_positions() -> PositionsResponse:
     )
 
 
-# POST /api/positions — manually add a position by ticker + portfolio weight,
-# then immediately run the same fresh-evidence + LLM recompute path as the tile.
+# POST /api/positions — manually add a position by ticker + portfolio weight.
+# A supplied thesis is PM-authored and follows the normal recompute path. When
+# blank, create a visible stub and queue researched preliminary-thesis generation.
 @router.post("", response_model=ManualPositionResponse, status_code=201)
 def add_manual_position(
     body: ManualPositionCreate,
@@ -348,9 +394,13 @@ def add_manual_position(
         cost_basis=cost_basis_total,
         qty=qty_est,
     )
-    set_thesis(want, body.thesis)
+    supplied_thesis = body.thesis.strip()
+    if supplied_thesis:
+        set_thesis(want, supplied_thesis)
+    else:
+        ensure_sidecar(want)
     ir_state = _populate_ir_urls_best_effort(want, offline=offline)
-    if settings.is_dashboard_role():
+    if settings.is_dashboard_role() and supplied_thesis:
         state = {
             "queued": enqueue_runner_request(
                 command="manual_recompute_one",
@@ -361,11 +411,33 @@ def add_manual_position(
                 },
             )
         }
-    else:
+    elif settings.is_dashboard_role():
+        state = {
+            "queued": enqueue_runner_request(
+                command="preliminary_thesis_one",
+                ticker=want,
+                payload={
+                    "ticker": want,
+                    "upgrade_existing_ai": True,
+                    "refresh_inputs": not offline,
+                    "compute_source": "hermes_manual_preliminary_thesis",
+                },
+            )
+        }
+    elif supplied_thesis:
         state = recompute_one_with_refresh(
             want,
             offline=offline,
             compute_source="manual_single",
+        )
+    else:
+        from ...orchestrator.preliminary_thesis import run_preliminary_thesis_workflow
+
+        state = run_preliminary_thesis_workflow(
+            tickers=[want],
+            upgrade_existing_ai=True,
+            refresh_inputs=not offline,
+            compute_source="manual_preliminary_thesis",
         )
     if ir_state is not None:
         state["ir_urls"] = ir_state

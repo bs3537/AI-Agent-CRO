@@ -1,0 +1,25 @@
+OpenRouter Free Models — Top 3 by Token Usage
+Run time: 2026-06-18 03:01 PM EDT
+Source: https://openrouter.ai/collections/free-models
+Usage window: 7 days
+
+Top 3 models:
+1. Owl Alpha
+   Model ID: openrouter/owl-alpha
+   Usage: 2.72T tokens (2,719,635,095,241)
+   Prompt: 2,697,975,013,973; completion: 21,660,078,713; reasoning: 2,555
+2. NVIDIA: Nemotron 3 Ultra (free)
+   Model ID: nvidia/nemotron-3-ultra-550b-a55b-20260604:free
+   Usage: 841B tokens (841,046,188,190)
+   Prompt: 835,251,674,236; completion: 4,196,588,069; reasoning: 1,597,925,885
+3. Nex AGI: Nex-N2-Pro (free)
+   Model ID: nex-agi/nex-n2-pro:free
+   Usage: 792B tokens (791,696,382,688)
+   Prompt: 775,720,373,008; completion: 9,785,906,214; reasoning: 6,190,103,466
+
+Prior-run comparison:
+- #1 Owl Alpha: same rank, +32.5B tokens
+- #2 NVIDIA: Nemotron 3 Ultra (free): same rank, −15.3B tokens
+- #3 Nex AGI: Nex-N2-Pro (free): same rank, +45.2B tokens
+
+Generated automatically by the Hermes OpenRouter free-model monitor.

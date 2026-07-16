@@ -7,8 +7,9 @@ the decision candidate. Runs against the conftest sandbox DB.
 """
 from __future__ import annotations
 
-from pathlib import Path
+import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -184,13 +185,19 @@ def test_ctgov_parse_fixture():
 # FMP parse_metrics flattens the endpoint sections into friendly keys.
 def test_fmp_parse_metrics():
     body = {
-        "profile": [{"companyName": "Vertex", "marketCap": 1.2e11, "price": 465.0}],
+        "profile": [{
+            "companyName": "Vertex",
+            "marketCap": 1.2e11,
+            "price": 465.0,
+            "isEtf": False,
+        }],
         "ratios": [{"currentRatioTTM": 2.7, "grossProfitMarginTTM": 0.88, "cashPerShareTTM": 45.0}],
         "key_metrics": [{"enterpriseValueTTM": 5.0e10}],
     }
     m = fmp_client.parse_metrics(body)
     assert m["company"] == "Vertex" and m["current_ratio"] == 2.7 and m["cash_per_share"] == 45.0
     assert m["market_cap"] == 1.2e11 and m["enterprise_value"] == 5.0e10
+    assert m["is_etf"] is False
 
 
 # Every adapter refuses to run live without a key + without a fixture, raising
@@ -272,13 +279,46 @@ def test_price_history_parse():
     assert fmp_client._parse_history(body) == [1.0, 2.0, 3.0]
     legacy = {"symbol": "X", "historical": body}
     assert fmp_client._parse_history(legacy) == [1.0, 2.0, 3.0]
+    details = fmp_client._parse_history_details(body)
+    assert details.start_date == "2026-05-18"
+    assert details.end_date == "2026-05-20"
 
 
 # Price-series store round-trips; latest_price_series returns the newest array.
 def test_price_series_roundtrip():
-    fmp_client.save_price_series("ZZSPARK", [10.0, 11.0, 9.5])
+    fmp_client.save_price_series(
+        "ZZSPARK",
+        [10.0, 11.0, 9.5],
+        start_date="2026-07-13",
+        end_date="2026-07-15",
+    )
     assert fmp_client.latest_price_series("zzspark") == [10.0, 11.0, 9.5]
+    snapshot = fmp_client.latest_price_snapshot("zzspark")
+    assert snapshot and snapshot["end_date"] == "2026-07-15"
     assert fmp_client.latest_price_series("NOPE") is None
+
+
+# Existing deployments gain the dated EOD columns without rebuilding price history.
+def test_price_series_date_column_migration():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE price_series (
+            event_id TEXT PRIMARY KEY,
+            ticker TEXT NOT NULL,
+            closes TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        )"""
+    )
+
+    fmp_client._ensure_column(conn, "price_series", "start_date", "TEXT")
+    fmp_client._ensure_column(conn, "price_series", "end_date", "TEXT")
+
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(price_series)").fetchall()
+    }
+    conn.close()
+    assert {"start_date", "end_date"} <= columns
 
 
 # refresh_prices_for_holdings replays a {ticker: [closes]} fixture into the store.

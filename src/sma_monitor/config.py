@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # #10 — a plain REST key (x-api-key header), so no OAuth/logout on the host.
     semantic_scholar_api_key: str | None = None
     fmp_api_key: str | None = None
+    # TipRanks uses the bundled local Camoufox browser rather than a third-party
+    # API. These settings keep the service location and pacing operator-tunable.
+    tipranks_browser_url: str = "http://127.0.0.1:9377"
+    tipranks_browser_command: str = (
+        "node /opt/hermes/node_modules/@askjo/camofox-browser/server.js"
+    )
+    tipranks_browser_start_timeout_seconds: float = 35.0
+    tipranks_render_wait_seconds: float = 3.0
+    tipranks_request_delay_seconds: float = 2.0
     # SEC EDGAR (financials primary, ahead of FMP) needs no key — only a
     # descriptive User-Agent per SEC's fair-access policy. Set a real contact.
     sec_edgar_user_agent: str = "sma-monitor (contact: admin@example.com)"

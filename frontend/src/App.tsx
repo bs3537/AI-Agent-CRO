@@ -254,7 +254,11 @@ export default function App() {
     async (payload: ManualPositionPayload) => {
       const res = await api.addManualPosition(payload)
       await refresh()
-      setNotice(`${res.position.ticker} added and analyzed.`)
+      setNotice(
+        payload.thesis.trim()
+          ? `${res.position.ticker} added and analyzed.`
+          : `${res.position.ticker} added; preliminary thesis research queued.`,
+      )
     },
     [refresh],
   )

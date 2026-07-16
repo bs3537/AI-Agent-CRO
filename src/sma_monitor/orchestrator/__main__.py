@@ -10,6 +10,9 @@
   python -m sma_monitor.orchestrator process-runner-requests [--limit N]
   python -m sma_monitor.orchestrator runner-run
   python -m sma_monitor.orchestrator runner-requests
+  python -m sma_monitor.orchestrator preliminary-thesis [--ticker TICKER]
+  python -m sma_monitor.orchestrator tipranks-refresh
+  python -m sma_monitor.orchestrator target-upside-refresh
   python -m sma_monitor.orchestrator install-cron
   python -m sma_monitor.orchestrator retry-dead-letters [--offline]
   python -m sma_monitor.orchestrator simulate-spend --usd N
@@ -192,6 +195,51 @@ def cmd_runner_requests(args, log):
     return 0
 
 
+# CLI: create or explicitly upgrade researched preliminary theses.
+def cmd_preliminary_thesis(args, log):
+    from .preliminary_thesis import run_preliminary_thesis_workflow
+
+    summary = run_preliminary_thesis_workflow(
+        tickers=args.ticker,
+        limit=args.limit,
+        upgrade_existing_ai=args.upgrade_existing_ai,
+        refresh_inputs=args.refresh_inputs,
+        compute_source=args.compute_source,
+    )
+    log.info("preliminary_thesis_done", extra=summary)
+    print(json.dumps(summary, indent=2, default=str))
+    return 1 if summary.get("drafts", {}).get("failed") else 0
+
+
+# CLI: refresh weekly TipRanks analyst-consensus targets through local Camoufox.
+def cmd_tipranks_refresh(args, log):
+    from ..analyst_targets.service import refresh_tipranks_targets
+
+    summary = refresh_tipranks_targets(
+        tickers=args.ticker,
+        start_browser=not args.no_start_browser,
+        delay_seconds=args.delay_seconds,
+    )
+    log.info("tipranks_refresh_done", extra=summary)
+    print(json.dumps(summary, indent=2, default=str))
+    return 1 if summary["failed"] else 0
+
+
+# CLI: refresh dated FMP EOD closes and recompute upside to saved TipRanks targets.
+def cmd_target_upside_refresh(args, log):
+    from ..analyst_targets.service import refresh_eod_target_upside
+
+    summary = refresh_eod_target_upside(
+        api_key=settings.fmp_api_key,
+        tickers=args.ticker,
+        retry_attempts=args.retry_attempts,
+        retry_seconds=args.retry_seconds,
+    )
+    log.info("target_upside_refresh_done", extra=summary)
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
 # CLI: emit a crontab snippet for the cron-driven deployment. Pipe through
 # `crontab -` or paste into `crontab -e`.
 def cmd_install_cron(args, log):
@@ -336,6 +384,70 @@ def main(argv=None):
         help="List recent dashboard-enqueued runner requests",
     )
     p_runner_list.add_argument("--limit", type=int, default=20)
+
+    p_preliminary = sub.add_parser(
+        "preliminary-thesis",
+        help="Research and write PM-review preliminary theses",
+    )
+    p_preliminary.add_argument(
+        "--ticker",
+        action="append",
+        help="Only process this held ticker. May be repeated.",
+    )
+    p_preliminary.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Bound the number of eligible drafts processed in this run.",
+    )
+    p_preliminary.add_argument(
+        "--upgrade-existing-ai",
+        action="store_true",
+        help="Upgrade legacy AI drafts; PM-authored theses remain untouched.",
+    )
+    p_preliminary.add_argument(
+        "--refresh-inputs",
+        action="store_true",
+        help="Refresh targeted FMP, IR, and TipRanks context before research.",
+    )
+    p_preliminary.add_argument(
+        "--compute-source",
+        default="manual_preliminary_thesis_cli",
+    )
+
+    p_targets = sub.add_parser(
+        "tipranks-refresh",
+        help="Saturday 6 PM ET — scrape TipRanks mean analyst targets",
+    )
+    p_targets.add_argument(
+        "--ticker",
+        action="append",
+        help="Only refresh this ticker. May be repeated.",
+    )
+    p_targets.add_argument(
+        "--no-start-browser",
+        action="store_true",
+        help="Require an already-running Camoufox service",
+    )
+    p_targets.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=None,
+        help="Delay between ticker pages; defaults to TIPRANKS_REQUEST_DELAY_SECONDS",
+    )
+
+    p_upside = sub.add_parser(
+        "target-upside-refresh",
+        help="Weekdays 5 PM ET — refresh FMP EOD closes and target upside",
+    )
+    p_upside.add_argument(
+        "--ticker",
+        action="append",
+        help="Only refresh this ticker. May be repeated.",
+    )
+    p_upside.add_argument("--retry-attempts", type=int, default=3)
+    p_upside.add_argument("--retry-seconds", type=float, default=300.0)
+
     sub.add_parser("install-cron", help="Emit a crontab snippet")
 
     p_retry = sub.add_parser("retry-dead-letters", help="Re-attempt pending dead-lettered scores")
@@ -362,6 +474,9 @@ def main(argv=None):
         "runner-run": cmd_runner_run,
         "hermes-run": cmd_runner_run,
         "runner-requests": cmd_runner_requests,
+        "preliminary-thesis": cmd_preliminary_thesis,
+        "tipranks-refresh": cmd_tipranks_refresh,
+        "target-upside-refresh": cmd_target_upside_refresh,
         "install-cron": cmd_install_cron,
         "retry-dead-letters": cmd_retry_dead_letters,
         "simulate-spend": cmd_simulate_spend,

@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from ..portfolio.joined import latest_joined
 from ..news.buckets import load_buckets
 from ..news.store import bucket_activity
+from ..portfolio.joined import latest_joined
 from .channels import Channel, build_channels
 from .format import render_digest_markdown
 from .schema import DigestEvent, DigestSummary, HoldingSnapshot
@@ -46,7 +46,7 @@ def assemble_digest(
 ) -> dict:
     init_outputs_schema()
     if date_iso is None:
-        date_iso = datetime.now(timezone.utc).date().isoformat()
+        date_iso = datetime.now(UTC).date().isoformat()
     if channels is None:
         channels = build_channels(prefer_stdout=False)
 
@@ -115,7 +115,7 @@ def assemble_digest(
         coverage_audit=coverage,
         silent_buckets=silent,
         narrative=None,
-        assembled_at=datetime.now(timezone.utc),
+        assembled_at=datetime.now(UTC),
     )
 
     # Render once to feed the synthesizer (if used)
@@ -180,7 +180,8 @@ def _synthesize_narrative(
         return _template_narrative(summary)
 
     system_prompt = (
-        "You synthesize SMA news digests for a biotech-heavy book. You write "
+        "You synthesize SMA news digests for a multi-sector book with emphasis "
+        "on biotech/pharma and technology. You write "
         "ONE neutral paragraph (4-7 sentences). No directional verbs "
         "(no buy/sell/trim/add). Pattern-cite when a red-team match is shown. "
         "Highlight the top 1-3 items and the most notable bucket-level "

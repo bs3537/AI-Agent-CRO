@@ -6,7 +6,7 @@ use native web search before treating API data as reliable.
 """
 from __future__ import annotations
 
-from sma_monitor.decision.prompt import build_user_message
+from sma_monitor.decision.prompt import build_system_prompt, build_user_message
 from sma_monitor.decision.schema import DecisionCandidate, TechnicalSnapshot
 
 
@@ -92,3 +92,13 @@ def test_prompt_marks_manager_thesis_as_controlling():
     assert "manager_entered_primary" in msg
     assert "Manager thesis controls" in msg
     assert "SUPPORTING THESIS DOCUMENTS" in msg
+
+
+def test_monitoring_prompts_use_the_multi_sector_portfolio_mandate():
+    from sma_monitor.red_team.prompt import _VOICE
+    from sma_monitor.scorer.prompt import SYSTEM_PROMPT
+
+    prompts = [build_system_prompt(), SYSTEM_PROMPT, _VOICE]
+    for prompt in prompts:
+        assert "multi-sector" in prompt
+        assert "biotech-heavy" not in prompt

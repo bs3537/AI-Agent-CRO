@@ -1,0 +1,23 @@
+# Oneshot: refresh FMP EOD closes and recompute upside to TipRanks targets.
+
+[Unit]
+Description=SMA Monitor - daily analyst-target upside refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator target-upside-refresh
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sma-monitor/data
+PrivateTmp=true

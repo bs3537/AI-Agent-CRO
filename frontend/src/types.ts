@@ -57,6 +57,47 @@ export interface SparklineData {
   technical_state: TechnicalState
 }
 
+// TipRanks mean analyst target and its latest FMP EOD upside calculation.
+export interface AnalystTarget {
+  ticker: string
+  source: 'tipranks'
+  status: 'current' | 'stale' | 'unavailable' | 'not_applicable'
+  mean_price_target: number | null
+  high_price_target: number | null
+  low_price_target: number | null
+  analyst_count: number | null
+  currency: string | null
+  source_url: string
+  target_window: string
+  target_fetched_at: string | null
+  last_attempt_at: string
+  unavailable_reason: string | null
+  reference_close: number | null
+  price_as_of: string | null
+  upside_pct: number | null
+  upside_updated_at: string | null
+}
+
+export interface ThesisResearchSource {
+  title: string
+  url: string
+  source_type: 'company' | 'filing' | 'regulatory' | 'clinical' | 'market' | 'other'
+}
+
+export interface PreliminaryThesis {
+  version: string
+  security_type: 'operating_company' | 'etf' | 'other'
+  sector: string | null
+  investment_case: string
+  moat: string
+  catalysts: string[]
+  differentiation: string
+  risks: string[]
+  monitoring_points: string[]
+  research_sources: ThesisResearchSource[]
+  researched_at: string
+}
+
 // One upcoming catalyst.
 export interface Catalyst {
   date: string
@@ -123,12 +164,15 @@ export interface PositionSummary {
   thesis_generated_by: string | null
   thesis_generated_at: string | null
   thesis_compute_source: string | null
+  preliminary_thesis: PreliminaryThesis | null
   draft_rating_grade: Grade | null
   draft_rating_note: string | null
   draft_rating_confidence: number | null
   draft_rating_drivers: string[]
+  is_etf: boolean
   n_files: number
   spark: SparklineData | null
+  analyst_target: AnalystTarget | null
   rating: Rating | null
   decision: Decision | null
 }

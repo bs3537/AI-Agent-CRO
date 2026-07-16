@@ -1,0 +1,11 @@
+# Weekdays at 5 PM New York time, evaluated with DST awareness.
+
+[Unit]
+Description=SMA Monitor - refresh target upside weekdays at 5 PM ET
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -13,6 +13,9 @@ _RESERVED = {
     "processName", "process", "message", "taskName",
 }
 
+# HTTP client INFO logs include full query strings, which can contain API keys.
+_QUIET_LOGGERS = ("httpx", "httpcore")
+
 
 # Custom logging formatter that emits one JSON object per LogRecord.
 # Every phase logs through this so the orchestrator (Phase 6) and the
@@ -46,3 +49,5 @@ def setup_logging(level: str = "INFO") -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    for logger_name in _QUIET_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)

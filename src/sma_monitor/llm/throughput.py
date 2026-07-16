@@ -22,7 +22,7 @@ from typing import Any
 
 # The stages that resolve their own model/effort. Names match the `stage=`
 # argument each pipeline passes to get_provider().
-STAGES = ("scorer", "red_team", "decision", "digest", "chat")
+STAGES = ("scorer", "red_team", "decision", "draft_thesis", "digest", "chat")
 
 # Default reasoning effort per stage when no env override is set. Keep every
 # Codex-backed AI-CRO stage at "medium" by default so thesis save, daily drift,
@@ -32,6 +32,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "scorer": "medium",
     "red_team": "medium",
     "decision": "medium",
+    "draft_thesis": "medium",
     "digest": "medium",
     "chat": "medium",
 }

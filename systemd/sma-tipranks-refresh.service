@@ -1,0 +1,24 @@
+# Oneshot: weekly TipRanks analyst-consensus refresh via local Camoufox.
+
+[Unit]
+Description=SMA Monitor - weekly TipRanks analyst price targets
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sma
+Group=sma
+WorkingDirectory=/opt/sma-monitor
+EnvironmentFile=/opt/sma-monitor/.env
+ExecStartPre=/opt/sma-monitor/.venv/bin/python -m sma_monitor
+ExecStart=/opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator tipranks-refresh
+StandardOutput=journal
+StandardError=journal
+
+# The local browser needs access to its cache and virtual-display runtime.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/opt/sma-monitor/data /tmp
+PrivateTmp=false

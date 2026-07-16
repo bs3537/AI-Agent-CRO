@@ -6,6 +6,7 @@ import Divider from '@mui/material/Divider'
 import Drawer from '@mui/material/Drawer'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -17,6 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { api } from '../api'
 import type { FileMeta, PositionDetail, PositionSummary } from '../types'
+import ThesisTargetLine from './ThesisTargetLine'
 
 const MAX_THESIS_WORDS = 2000
 
@@ -66,6 +68,9 @@ export default function ThesisDrawer({
 
   const wordCount = countWords(thesis)
   const tooLong = wordCount > MAX_THESIS_WORDS
+  const isAiDraft = position?.is_ai_generated_thesis
+    || (position?.thesis_source === 'ai_generated' && position?.thesis_status === 'draft')
+  const preliminary = isAiDraft ? position?.preliminary_thesis : null
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files ?? [])
@@ -113,7 +118,9 @@ export default function ThesisDrawer({
     <Drawer anchor="right" open={!!ticker} onClose={busy ? undefined : onClose}>
       <Box sx={{ width: { xs: 360, sm: 520 }, p: 2 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="h6">{ticker} thesis</Typography>
+          <Typography variant="h6">
+            {ticker} {isAiDraft ? 'preliminary thesis' : 'thesis'}
+          </Typography>
           <IconButton onClick={onClose} size="small" disabled={busy}>
             <CloseIcon />
           </IconButton>
@@ -127,8 +134,25 @@ export default function ThesisDrawer({
         )}
 
         <Stack spacing={2}>
+          {isAiDraft && (
+            <Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                AI-generated · {position?.thesis_generated_by ?? 'model'}
+                {position?.thesis_generated_at
+                  ? ` · ${new Date(position.thesis_generated_at).toLocaleString()}`
+                  : ''}
+              </Typography>
+              <Box sx={{ mt: 0.75 }}>
+                <ThesisTargetLine
+                  target={position?.analyst_target ?? null}
+                  isEtf={position?.is_etf ?? false}
+                />
+              </Box>
+            </Box>
+          )}
+
           <TextField
-            label="Thesis"
+            label={isAiDraft ? 'Preliminary thesis' : 'Thesis'}
             value={thesis}
             onChange={(e) => setThesis(e.target.value)}
             multiline
@@ -138,6 +162,29 @@ export default function ThesisDrawer({
             error={tooLong}
             helperText={`${wordCount}/${MAX_THESIS_WORDS} words`}
           />
+
+          {preliminary && preliminary.research_sources.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2" sx={{ color: 'primary.main', mb: 0.5 }}>
+                Research sources
+              </Typography>
+              <Stack spacing={0.5}>
+                {preliminary.research_sources.map((source) => (
+                  <Link
+                    key={source.url}
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    variant="body2"
+                    underline="hover"
+                    sx={{ overflowWrap: 'anywhere' }}
+                  >
+                    {source.title}
+                  </Link>
+                ))}
+              </Stack>
+            </Box>
+          )}
 
           <Box>
             <input

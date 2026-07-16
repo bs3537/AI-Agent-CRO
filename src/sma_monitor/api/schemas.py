@@ -63,6 +63,54 @@ class SparklineOut(BaseModel):
     technical_state: TechnicalState = "no_price_data"
 
 
+# TipRanks consensus target plus the latest dated EOD reference-price calculation.
+class AnalystTargetOut(BaseModel):
+    ticker: str
+    source: Literal["tipranks"] = "tipranks"
+    status: Literal["current", "stale", "unavailable", "not_applicable"]
+    mean_price_target: float | None = None
+    high_price_target: float | None = None
+    low_price_target: float | None = None
+    analyst_count: int | None = None
+    currency: str | None = None
+    source_url: str
+    target_window: str
+    target_fetched_at: str | None = None
+    last_attempt_at: str
+    unavailable_reason: str | None = None
+    reference_close: float | None = None
+    price_as_of: str | None = None
+    upside_pct: float | None = None
+    upside_updated_at: str | None = None
+
+
+class ThesisResearchSourceOut(BaseModel):
+    title: str
+    url: str
+    source_type: Literal[
+        "company",
+        "filing",
+        "regulatory",
+        "clinical",
+        "market",
+        "other",
+    ] = "other"
+
+
+class PreliminaryThesisOut(BaseModel):
+    version: str
+    security_type: Literal["operating_company", "etf", "other"]
+    sector: str | None = None
+    investment_case: str
+    moat: str
+    catalysts: list[str] = Field(default_factory=list)
+    differentiation: str
+    risks: list[str] = Field(default_factory=list)
+    monitoring_points: list[str] = Field(default_factory=list)
+    research_sources: list[ThesisResearchSourceOut] = Field(default_factory=list)
+    researched_at: str
+
+
 # One upcoming catalyst on a position.
 class CatalystOut(BaseModel):
     date: str
@@ -129,12 +177,15 @@ class PositionSummary(BaseModel):
     thesis_generated_by: str | None = None
     thesis_generated_at: str | None = None
     thesis_compute_source: str | None = None
+    preliminary_thesis: PreliminaryThesisOut | None = None
     draft_rating_grade: Grade | None = None
     draft_rating_note: str | None = None
     draft_rating_confidence: float | None = None
     draft_rating_drivers: list[str] = Field(default_factory=list)
+    is_etf: bool = False
     n_files: int = 0
     spark: SparklineOut | None = None  # ~1yr daily EOD closes + EMA20 overlay
+    analyst_target: AnalystTargetOut | None = None
     rating: RatingOut | None = None
     decision: DecisionOut | None = None
 
@@ -171,7 +222,7 @@ class ThesisUpdate(BaseModel):
 class ManualPositionCreate(BaseModel):
     ticker: str
     portfolio_weight_pct: float = Field(ge=0, le=100, default=0.0)
-    thesis: str
+    thesis: str = ""
     cost_basis_per_share: float | None = Field(default=None, gt=0)
 
     @field_validator("ticker")

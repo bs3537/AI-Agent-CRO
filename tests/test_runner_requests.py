@@ -95,6 +95,40 @@ def test_runner_processor_dispatches_manual_recompute_one(monkeypatch):
     assert row["status"] == "succeeded"
 
 
+def test_runner_processor_dispatches_preliminary_thesis_one(monkeypatch):
+    _clear_runner_requests()
+    req = enqueue_runner_request(
+        command="preliminary_thesis_one",
+        ticker="VRTX",
+        payload={
+            "upgrade_existing_ai": True,
+            "refresh_inputs": True,
+            "compute_source": "hermes_test_preliminary",
+        },
+    )
+    captured = {}
+
+    def fake_workflow(**kwargs):
+        captured.update(kwargs)
+        return {"drafts": {"created": 1, "failed": []}}
+
+    monkeypatch.setattr(
+        "sma_monitor.orchestrator.preliminary_thesis.run_preliminary_thesis_workflow",
+        fake_workflow,
+    )
+
+    summary = process_runner_requests(limit=1)
+
+    assert summary["succeeded"] == 1
+    assert captured["tickers"] == ["VRTX"]
+    assert captured["upgrade_existing_ai"] is True
+    assert captured["refresh_inputs"] is True
+    assert captured["compute_source"] == "hermes_test_preliminary"
+    row = recent_runner_requests(limit=1)[0]
+    assert row["request_id"] == req["request_id"]
+    assert row["status"] == "succeeded"
+
+
 def test_runner_processor_records_failure(monkeypatch):
     _clear_runner_requests()
     req = enqueue_runner_request(command="manual_recompute_all", payload={"force": True})

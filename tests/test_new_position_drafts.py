@@ -22,14 +22,38 @@ class FakeDraftProvider:
         self.calls: list[dict] = []
 
     def complete_json(self, *, system, user, schema=None, max_tokens=512) -> dict:
-        self.calls.append({"system": system, "user": user, "schema": schema, "max_tokens": max_tokens})
+        self.calls.append(
+            {
+                "system": system,
+                "user": user,
+                "schema": schema,
+                "max_tokens": max_tokens,
+            }
+        )
         return {
             "company_name": "NewDraft Bio",
+            "sector": "Healthcare",
+            "security_type": "operating_company",
             "stage": "clinical_stage",
             "conviction_tier": 3,
-            "thesis": self.thesis,
+            "investment_case": self.thesis,
+            "moat": "A differentiated platform with patent and know-how barriers.",
+            "catalysts": ["Phase 2 data expected in the second half of 2099."],
+            "differentiation": "A targeted delivery profile may improve on incumbent therapy.",
+            "risks": ["Clinical efficacy and financing remain unproven."],
+            "monitoring_points": ["Verify trial timing and cash runway in primary filings."],
+            "sources": [
+                {
+                    "title": "Company investor relations",
+                    "url": "https://example.com/investors",
+                    "source_type": "company",
+                }
+            ],
             "initial_grade": "B",
-            "grade_rationale": "New position has a plausible but unreviewed AI thesis; monitor until PM review.",
+            "grade_rationale": (
+                "New position has a plausible but unreviewed AI thesis; "
+                "monitor until PM review."
+            ),
             "drivers": ["AI-generated draft", "PM review required"],
             "confidence": 0.61,
         }
@@ -107,7 +131,12 @@ def test_bootstrap_creates_ai_draft_sidecar_and_initial_rating_for_missing_posit
     from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
 
     positions = _save_positions("NEWD")
-    provider = FakeDraftProvider(thesis="AI-generated draft: NEWD is a newly detected position with clinical upside.")
+    provider = FakeDraftProvider(
+        thesis=(
+            "AI-generated draft: NEWD is a newly detected position with "
+            "clinical upside."
+        )
+    )
 
     state = bootstrap_ai_draft_sidecars(
         positions=positions,
@@ -122,12 +151,19 @@ def test_bootstrap_creates_ai_draft_sidecar_and_initial_rating_for_missing_posit
 
     sc = load_sidecar("NEWD")
     assert sc is not None
-    assert sc.thesis.startswith("AI-generated draft")
+    assert sc.thesis.startswith("AI-generated preliminary thesis")
     assert sc.thesis_source == "ai_generated"
     assert sc.thesis_status == "draft"
     assert sc.thesis_generated_by == "fake-codex-draft"
     assert sc.thesis_compute_source == "test_new_position_draft"
     assert sc.draft_rating_grade == "B"
+    assert sc.preliminary_thesis is not None
+    assert sc.preliminary_thesis.version == "sector_neutral_research_v2"
+    assert sc.preliminary_thesis.moat.startswith("A differentiated")
+    assert sc.preliminary_thesis.research_sources[0].url == "https://example.com/investors"
+    assert "multi-sector long-only SMA" in provider.calls[0]["system"]
+    assert "Never reject or weaken" in provider.calls[0]["system"]
+    assert "Codex native web search" in provider.calls[0]["system"]
 
     rating = latest_rating("NEWD")
     assert rating is not None
@@ -177,6 +213,7 @@ def test_bootstrap_does_not_overwrite_pm_thesis_and_pm_edit_clears_draft_marker(
     assert reviewed.thesis == "PM-reviewed thesis replaces the AI draft."
     assert reviewed.thesis_source == "pm"
     assert reviewed.thesis_status == "active"
+    assert reviewed.preliminary_thesis is None
 
     state2 = bootstrap_ai_draft_sidecars(
         positions=draft_positions,
@@ -205,7 +242,156 @@ def test_dashboard_api_surfaces_ai_draft_metadata(client):
     assert row["thesis_status"] == "draft"
     assert row["is_ai_generated_thesis"] is True
     assert row["thesis_generated_by"] == "fake-codex-draft"
+    assert row["preliminary_thesis"]["moat"].startswith("A differentiated")
+    assert row["preliminary_thesis"]["research_sources"][0]["source_type"] == "company"
     assert row["rating"]["grade"] == "B"
+
+
+def test_legacy_ai_drafts_upgrade_only_when_explicitly_requested():
+    from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
+
+    positions = _save_positions("UPGD")
+    write_sidecar(
+        Sidecar(
+            ticker="UPGD",
+            conviction_tier=3,
+            stage="commercial_stage",
+            thesis="AI-generated draft thesis (PM review required): legacy text.",
+            thesis_source="ai_generated",
+            thesis_status="draft",
+            draft_rating_grade="C",
+            draft_rating_note="Existing monitoring assessment.",
+            draft_rating_confidence=0.42,
+            draft_rating_drivers=["existing driver"],
+        )
+    )
+
+    skipped = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=FakeDraftProvider(),
+        compute_source="test_upgrade",
+    )
+    assert skipped["skipped_existing_ai_draft"] == ["UPGD"]
+    assert load_sidecar("UPGD").preliminary_thesis is None
+
+    upgraded = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=FakeDraftProvider(),
+        compute_source="test_upgrade",
+        upgrade_existing_ai=True,
+    )
+    assert upgraded["upgraded_existing_ai"] == 1
+    assert upgraded["upgraded_tickers"] == ["UPGD"]
+    assert upgraded["ratings_created"] == 0
+    assert upgraded["ratings_preserved"] == 1
+    upgraded_sidecar = load_sidecar("UPGD")
+    assert upgraded_sidecar.preliminary_thesis.version == "sector_neutral_research_v2"
+    assert upgraded_sidecar.draft_rating_grade == "C"
+    assert upgraded_sidecar.draft_rating_note == "Existing monitoring assessment."
+    assert upgraded_sidecar.draft_rating_drivers == ["existing driver"]
+
+
+def test_legacy_ai_text_with_incorrect_pm_metadata_is_not_treated_as_pm_authored():
+    from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
+
+    positions = _save_positions("UPGM")
+    legacy_text = (
+        "AI-generated draft thesis (PM review required): legacy text with "
+        "incorrect PM metadata."
+    )
+    write_sidecar(
+        Sidecar(
+            ticker="UPGM",
+            conviction_tier=3,
+            stage="commercial_stage",
+            thesis=legacy_text,
+            thesis_source="pm",
+            thesis_status="active",
+        )
+    )
+
+    skipped = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=FakeDraftProvider(),
+        compute_source="test_upgrade",
+    )
+    assert skipped["skipped_existing_ai_draft"] == ["UPGM"]
+    assert load_sidecar("UPGM").thesis == legacy_text
+
+    upgraded = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=FakeDraftProvider(),
+        compute_source="test_upgrade",
+        upgrade_existing_ai=True,
+    )
+    assert upgraded["upgraded_tickers"] == ["UPGM"]
+    upgraded_sidecar = load_sidecar("UPGM")
+    assert upgraded_sidecar.thesis_source == "ai_generated"
+    assert upgraded_sidecar.thesis_status == "draft"
+    assert upgraded_sidecar.preliminary_thesis.version == "sector_neutral_research_v2"
+
+
+def test_etf_draft_uses_fund_research_and_no_company_price_target_context():
+    from sma_monitor.news.fmp_client import save_fmp_snapshot
+    from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
+
+    positions = _save_positions("DRFT")
+    save_fmp_snapshot(
+        "DRFT",
+        {
+            "company": "Draft Technology ETF",
+            "sector": "Technology",
+            "is_etf": True,
+        },
+    )
+    provider = FakeDraftProvider(thesis="Diversified technology exposure.")
+    state = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=provider,
+        compute_source="test_etf_draft",
+    )
+
+    assert state["created_tickers"] == ["DRFT"]
+    sidecar = load_sidecar("DRFT")
+    assert sidecar.preliminary_thesis.security_type == "etf"
+    assert sidecar.stage == "commercial_stage"
+    assert (
+        "Not applicable: this security is classified as an ETF/fund."
+        in provider.calls[0]["user"]
+    )
+
+
+def test_backfill_persists_each_worker_batch_and_continues_after_one_failure():
+    from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
+
+    positions = _save_positions("BTA1", "BTA2", "BTA3")
+
+    class PartiallyFailingProvider(FakeDraftProvider):
+        def complete_json(self, *, system, user, schema=None, max_tokens=512):
+            if "Ticker: BTA2\n" in user:
+                raise RuntimeError("simulated research failure")
+            return super().complete_json(
+                system=system,
+                user=user,
+                schema=schema,
+                max_tokens=max_tokens,
+            )
+
+    state = bootstrap_ai_draft_sidecars(
+        positions=positions,
+        provider=PartiallyFailingProvider(),
+        compute_source="test_batched_backfill",
+        workers=2,
+    )
+
+    assert state["batches_total"] == 2
+    assert state["batches_completed"] == 2
+    assert state["created"] == 2
+    assert {row["ticker"] for row in state["failed"]} == {"BTA2"}
+    assert load_sidecar("BTA1").preliminary_thesis is not None
+    assert load_sidecar("BTA2") is None
+    assert load_sidecar("BTA3").preliminary_thesis is not None
+    set_thesis("BTA2", "Test cleanup PM thesis.")
 
 
 def test_smart_morning_recompute_bootstraps_missing_sidecars_before_join(monkeypatch):

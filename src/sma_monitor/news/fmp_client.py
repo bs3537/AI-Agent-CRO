@@ -13,6 +13,7 @@ refresh_for_holdings is skipped, so this is never called live without the key.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -29,8 +30,15 @@ FMP_BASE = "https://financialmodelingprep.com/stable"
 # The stable API (legacy /api/v3 retired Aug 31 2025) renamed several fields
 # (mktCap→marketCap, peRatioTTM→priceToEarningsRatioTTM, debtEquityRatioTTM→
 # debtToEquityRatioTTM) and moved cash/FCF-per-share from key-metrics-ttm into ratios-ttm.
-_PROFILE_FIELDS = {"companyName": "company", "sector": "sector", "marketCap": "market_cap",
-                   "price": "price", "beta": "beta"}
+_PROFILE_FIELDS = {
+    "companyName": "company",
+    "sector": "sector",
+    "marketCap": "market_cap",
+    "price": "price",
+    "beta": "beta",
+    "isEtf": "is_etf",
+    "isFund": "is_fund",
+}
 _RATIOS_FIELDS = {"priceToEarningsRatioTTM": "pe_ttm", "currentRatioTTM": "current_ratio",
                   "quickRatioTTM": "quick_ratio", "debtToEquityRatioTTM": "debt_to_equity",
                   "grossProfitMarginTTM": "gross_margin", "netProfitMarginTTM": "net_margin",
@@ -71,10 +79,27 @@ class FmpError(RuntimeError):
     pass
 
 
+# Dated EOD history returned when callers need both closes and trading dates.
+@dataclass(frozen=True)
+class PriceHistory:
+    closes: list[float]
+    start_date: str | None
+    end_date: str | None
+
+
 # Create the fmp_snapshots table. Safe to call repeatedly.
 def init_fmp_schema() -> None:
     with connection() as conn:
         conn.executescript(FMP_SCHEMA)
+        _ensure_column(conn, "price_series", "start_date", "TEXT")
+        _ensure_column(conn, "price_series", "end_date", "TEXT")
+
+
+# Migrate price-series tables created before dated EOD snapshots were introduced.
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 # Fetch a compact metrics dict for one ticker from FMP (profile + TTM ratios +
@@ -92,6 +117,33 @@ def fetch_metrics(ticker: str, *, api_key: str, client: httpx.Client | None = No
         if owns:
             client.close()
     return metrics
+
+
+# Fetch FMP's explicit ETF classification for one symbol.
+def fetch_is_etf(
+    ticker: str,
+    *,
+    api_key: str,
+    client: httpx.Client | None = None,
+) -> bool | None:
+    owns = client is None
+    client = client or httpx.Client(timeout=30.0)
+    try:
+        resp = client.get(
+            f"{FMP_BASE}/profile",
+            params={"symbol": ticker.upper(), "apikey": api_key},
+        )
+        if resp.status_code != 200:
+            raise FmpError(
+                f"FMP profile {ticker} failed: {resp.status_code} {resp.text[:200]}"
+            )
+        body = resp.json()
+        row = body[0] if isinstance(body, list) and body else {}
+        flag = row.get("isEtf") if isinstance(row, dict) else None
+        return flag if isinstance(flag, bool) else None
+    finally:
+        if owns:
+            client.close()
 
 
 # GET one FMP /stable endpoint for a symbol (each returns a single-element list)
@@ -162,6 +214,35 @@ def latest_fmp_metrics(ticker: str) -> dict | None:
         return json.loads(row["metrics"])
     except (TypeError, json.JSONDecodeError):
         return None
+
+
+# Batch the latest cached ETF flags for dashboard and weekly target workflows.
+def latest_is_etf_flags(tickers: list[str]) -> dict[str, bool]:
+    init_fmp_schema()
+    normalized = sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()})
+    if not normalized:
+        return {}
+    placeholders = ",".join("?" for _ in normalized)
+    result: dict[str, bool] = {}
+    with connection() as conn:
+        rows = conn.execute(
+            f"""SELECT ticker, metrics FROM fmp_snapshots
+                WHERE ticker IN ({placeholders})
+                ORDER BY ticker, fetched_at DESC""",
+            normalized,
+        ).fetchall()
+    for row in rows:
+        ticker = row["ticker"]
+        if ticker in result:
+            continue
+        try:
+            metrics = json.loads(row["metrics"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        flag = metrics.get("is_etf") if isinstance(metrics, dict) else None
+        if isinstance(flag, bool):
+            result[ticker] = flag
+    return result
 
 
 # Refresh FMP snapshots for every held ticker. Reads from a fixture when
@@ -280,8 +361,13 @@ def _merge_quote_rows(result: dict[str, dict], payload) -> None:
 # /stable/historical-price-eod/full endpoint, which returns a newest-first array
 # of daily OHLC rows; we keep the closes and reverse them. Returns [] on any failure.
 def fetch_price_history(
-    ticker: str, *, api_key: str, days: int = PRICE_HISTORY_DAYS, client: httpx.Client | None = None
-) -> list[float]:
+    ticker: str,
+    *,
+    api_key: str,
+    days: int = PRICE_HISTORY_DAYS,
+    client: httpx.Client | None = None,
+    include_dates: bool = False,
+) -> list[float] | PriceHistory:
     owns = client is None
     client = client or httpx.Client(timeout=30.0)
     try:
@@ -291,7 +377,8 @@ def fetch_price_history(
         resp = client.get(f"{FMP_BASE}/historical-price-eod/full", params=params)
         if resp.status_code != 200:
             raise FmpError(f"FMP history {ticker} failed: {resp.status_code} {resp.text[:200]}")
-        return _parse_history(resp.json())
+        history = _parse_history_details(resp.json())
+        return history if include_dates else history.closes
     finally:
         if owns:
             client.close()
@@ -301,10 +388,29 @@ def fetch_price_history(
 # /stable endpoint returns a flat array of daily rows; the legacy endpoint nested
 # them under "historical". Accept either; FMP returns newest-first so we reverse.
 def _parse_history(body: Any) -> list[float]:
+    return _parse_history_details(body).closes
+
+
+# Parse FMP history into closes plus the actual first/last trading dates.
+def _parse_history_details(body: Any) -> PriceHistory:
     rows = body if isinstance(body, list) else (body.get("historical") or [])
-    closes = [r["close"] for r in rows if isinstance(r, dict) and r.get("close") is not None]
-    closes.reverse()  # FMP returns newest-first; sparkline wants oldest→newest
-    return closes
+    points: list[tuple[str | None, float]] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("close") is None:
+            continue
+        try:
+            close = float(row["close"])
+        except (TypeError, ValueError):
+            continue
+        date = row.get("date")
+        points.append((str(date), close) if date else (None, close))
+    points.reverse()  # FMP returns newest-first; sparkline wants oldest→newest.
+    dated = [date for date, _close in points if date]
+    return PriceHistory(
+        closes=[close for _date, close in points],
+        start_date=dated[0] if dated else None,
+        end_date=dated[-1] if dated else None,
+    )
 
 
 # Stable id for a price series — one per (ticker, UTC date).
@@ -314,7 +420,14 @@ def price_event_id(ticker: str, fetched_at: datetime) -> str:
 
 
 # Persist one ticker's daily-close series (idempotent per ticker per day).
-def save_price_series(ticker: str, closes: list[float], *, fetched_at: datetime | None = None) -> str:
+def save_price_series(
+    ticker: str,
+    closes: list[float],
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    fetched_at: datetime | None = None,
+) -> str:
     init_fmp_schema()
     fetched_at = fetched_at or datetime.now(timezone.utc)
     ticker = ticker.upper()
@@ -327,9 +440,17 @@ def save_price_series(ticker: str, closes: list[float], *, fetched_at: datetime 
              json.dumps({"n_points": len(closes)})),
         )
         conn.execute(
-            "INSERT OR REPLACE INTO price_series(event_id, ticker, closes, fetched_at) "
-            "VALUES (?, ?, ?, ?)",
-            (eid, ticker, json.dumps(closes), fetched_at.isoformat()),
+            """INSERT OR REPLACE INTO price_series
+               (event_id, ticker, closes, start_date, end_date, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                eid,
+                ticker,
+                json.dumps(closes),
+                start_date,
+                end_date,
+                fetched_at.isoformat(),
+            ),
         )
     return eid
 
@@ -337,18 +458,32 @@ def save_price_series(ticker: str, closes: list[float], *, fetched_at: datetime 
 # Return the most recent daily-close series for a ticker, or None when none
 # cached (offline / no key). Consumed by the API to render the sparkline.
 def latest_price_series(ticker: str) -> list[float] | None:
+    snapshot = latest_price_snapshot(ticker)
+    return snapshot["closes"] if snapshot else None
+
+
+# Return the latest close series together with its actual FMP trading-date range.
+def latest_price_snapshot(ticker: str) -> dict[str, Any] | None:
     init_fmp_schema()
     with connection() as conn:
         row = conn.execute(
-            "SELECT closes FROM price_series WHERE ticker = ? ORDER BY fetched_at DESC LIMIT 1",
+            """SELECT closes, start_date, end_date, fetched_at
+               FROM price_series WHERE ticker = ?
+               ORDER BY fetched_at DESC LIMIT 1""",
             (ticker.upper(),),
         ).fetchone()
     if row is None:
         return None
     try:
-        return json.loads(row["closes"])
+        closes = json.loads(row["closes"])
     except (TypeError, json.JSONDecodeError):
         return None
+    return {
+        "closes": closes,
+        "start_date": row["start_date"],
+        "end_date": row["end_date"],
+        "fetched_at": row["fetched_at"],
+    }
 
 
 # Refresh daily-close series for every held ticker. Fixture (a {ticker: [closes]}
@@ -376,7 +511,17 @@ def refresh_prices_for_holdings(
             if not series:
                 continue
             closes = [p["close"] if isinstance(p, dict) else float(p) for p in series]
-            save_price_series(t, closes)
+            dates = [
+                str(p["date"])
+                for p in series
+                if isinstance(p, dict) and p.get("date")
+            ]
+            save_price_series(
+                t,
+                closes,
+                start_date=dates[0] if dates else None,
+                end_date=dates[-1] if dates else None,
+            )
             n += 1
         return {"tickers": len(tickers), "updated": n, "source": "fixture"}
 
@@ -391,12 +536,31 @@ def refresh_prices_for_holdings(
     with httpx.Client(timeout=30.0) as client:
         for t in tickers:
             try:
-                closes = fetch_price_history(t, api_key=api_key, days=days, client=client)
+                history = fetch_price_history(
+                    t,
+                    api_key=api_key,
+                    days=days,
+                    client=client,
+                    include_dates=True,
+                )
             except FmpError:
                 errors += 1
                 continue
+            if isinstance(history, PriceHistory):
+                closes = history.closes
+                start_date = history.start_date
+                end_date = history.end_date
+            else:
+                closes = history
+                start_date = None
+                end_date = None
             if closes:
-                save_price_series(t, closes)
+                save_price_series(
+                    t,
+                    closes,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
                 updated += 1
     # Total wipeout → systemic failure; raise so collect trips fmp_failure.
     if tickers and errors == len(tickers):

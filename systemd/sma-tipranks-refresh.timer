@@ -1,0 +1,11 @@
+# Saturday 6 PM New York time, evaluated with DST awareness.
+
+[Unit]
+Description=SMA Monitor - refresh TipRanks targets Saturday at 6 PM ET
+
+[Timer]
+OnCalendar=Sat *-*-* 18:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

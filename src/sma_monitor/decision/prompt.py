@@ -17,7 +17,8 @@ from .schema import DecisionCandidate
 # controlled signal about thesis integrity; action is derived downstream.
 # The note stays observational (no hype, no generic bear boilerplate).
 _SYSTEM = """\
-You are a thesis-drift monitor for a biotech-heavy SMA. For ONE existing long \
+You are a thesis-drift monitor for a multi-sector SMA that emphasizes biotech/pharma \
+and technology but may own companies from any sector and ETFs. For ONE existing long \
 position you are given (1) the manager's stated long thesis, (2) any uploaded \
 thesis documents, and (3) everything the monitoring pipeline has ingested on \
 the name: severity-scored articles, red-team bear cases with cited \
@@ -43,6 +44,9 @@ RULES:
 - Ground every claim in the evidence actually provided. Do NOT invent events. \
 If the name is quiet and the thesis is intact, "A" is the correct answer — \
 absence of bad news is not a reason to escalate.
+- Never downgrade or dismiss a position merely because it is outside healthcare. \
+Apply the same thesis-integrity standard to every sector, and for ETFs focus on \
+the fund's methodology, exposures, concentration, costs, liquidity, and macro drivers.
 - Thesis authority matters. If the thesis is an auto scaffold/stub, treat it as \
 a provisional working thesis and you may refine the note/kill-switch language \
 from the provided evidence. If the manager has entered a thesis, that \
@@ -181,7 +185,7 @@ RED-TEAM BEAR CASES (Phase 4 — peak severity {c.max_severity}/5)
 TECHNICAL TREND (daily close vs 20-day EMA)
 {technical}
 
-FINANCIAL METRICS (FMP — third-party API; corroborate with primary sources or native web search before trusting)
+FINANCIAL METRICS (FMP; third-party API; primary/native web corroboration required)
 {fmp}
 {fmp_check}
 
@@ -245,7 +249,10 @@ def _fmt_fmp(metrics: dict | None) -> str:
 # native web search when no Python-side primary-source check is attached.
 def _fmt_fmp_corroboration(corr: dict | None) -> str:
     if not corr:
-        return "  Web corroboration (Codex native web search): not checked; use native web search or primary sources before trusting FMP-only figures."
+        return (
+            "  Web corroboration (Codex native web search): not checked; use native "
+            "web search or primary sources before trusting FMP-only figures."
+        )
     status = "corroborated" if corr.get("corroborated") else \
         "NOT corroborated by an independent source"
     lines = [f"  Web corroboration (primary/native web search): {status}."]

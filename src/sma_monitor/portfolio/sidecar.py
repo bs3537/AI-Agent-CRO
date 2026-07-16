@@ -231,6 +231,7 @@ def set_thesis(ticker: str, thesis: str) -> Sidecar:
     sc.thesis_generated_by = None
     sc.thesis_generated_at = None
     sc.thesis_compute_source = None
+    sc.preliminary_thesis = None
     sc.draft_rating_grade = None
     sc.draft_rating_note = None
     sc.draft_rating_confidence = None

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from ..analyst_targets.store import init_analyst_target_schema
 from ..db import connection, init_db
 from ..decision.store import init_decision_schema
 from ..news.fmp_client import init_fmp_schema
@@ -41,6 +42,11 @@ def delete_holding_data(ticker: str) -> dict:
         rating_ids = _ids(conn, "SELECT event_id FROM position_ratings WHERE ticker = ?", ticker)
         fmp_ids = _ids(conn, "SELECT event_id FROM fmp_snapshots WHERE ticker = ?", ticker)
         price_ids = _ids(conn, "SELECT event_id FROM price_series WHERE ticker = ?", ticker)
+        target_ids = _ids(
+            conn,
+            "SELECT event_id FROM analyst_price_targets WHERE ticker = ?",
+            ticker,
+        )
         poll_ids = _ids(conn, "SELECT poll_id FROM news_polls WHERE ticker = ?", ticker)
         dead_ids = _ids(conn, "SELECT event_id FROM dead_letters WHERE ticker = ?", ticker)
         position_ids = _ids(conn, "SELECT event_id FROM positions WHERE ticker = ?", ticker)
@@ -67,6 +73,12 @@ def delete_holding_data(ticker: str) -> dict:
         )
         counts["fmp_snapshots"] = _delete_by_ids(conn, "fmp_snapshots", "event_id", fmp_ids)
         counts["price_series"] = _delete_by_ids(conn, "price_series", "event_id", price_ids)
+        counts["analyst_price_targets"] = _delete_by_ids(
+            conn,
+            "analyst_price_targets",
+            "event_id",
+            target_ids,
+        )
         counts["news_polls"] = _delete_by_ids(conn, "news_polls", "poll_id", poll_ids)
         counts["positions"] = _delete_by_ids(conn, "positions", "event_id", position_ids)
         counts["manual_positions"] = _delete_by_ids(
@@ -98,6 +110,7 @@ def delete_holding_data(ticker: str) -> dict:
             + rating_ids
             + fmp_ids
             + price_ids
+            + target_ids
             + poll_ids
             + position_ids
             + manual_ids
@@ -116,6 +129,7 @@ def _init_delete_schemas() -> None:
     init_red_team_schema()
     init_decision_schema()
     init_fmp_schema()
+    init_analyst_target_schema()
     init_orchestrator_schema()
     init_uploads_schema()
 

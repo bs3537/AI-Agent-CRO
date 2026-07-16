@@ -42,7 +42,6 @@ export default function AddPositionDrawer({
     !ticker.trim() ||
     invalidWeight ||
     invalidCostBasis ||
-    !thesis.trim() ||
     wordCount > MAX_THESIS_WORDS
 
   const reset = () => {
@@ -130,20 +129,24 @@ export default function AddPositionDrawer({
             fullWidth
           />
           <TextField
-            label="Original buying thesis"
+            label="Buying thesis — optional"
             value={thesis}
             onChange={(e) => setThesis(e.target.value)}
             disabled={busy}
             multiline
-            minRows={12}
+            minRows={8}
             maxRows={24}
             error={wordCount > MAX_THESIS_WORDS}
-            helperText={`${wordCount}/${MAX_THESIS_WORDS} words`}
+            helperText={
+              thesis.trim()
+                ? `${wordCount}/${MAX_THESIS_WORDS} words`
+                : 'Leave blank to queue preliminary research.'
+            }
             fullWidth
           />
           <Stack direction="row" spacing={1}>
             <Button variant="contained" disabled={busy || invalid} onClick={() => void submit()}>
-              {busy ? 'Adding and analyzing...' : 'Add and analyze'}
+              {busy ? 'Adding...' : 'Add position'}
             </Button>
             <Button disabled={busy} onClick={close}>
               Cancel

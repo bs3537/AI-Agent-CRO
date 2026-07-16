@@ -15,7 +15,10 @@ from .schema import ScoreCandidate
 # System prompt: role declaration + full rubric + output schema. Cached
 # at the API level (ephemeral, 5-min TTL) since it's constant across calls.
 SYSTEM_PROMPT = f"""\
-You are a neutral severity scorer for a biotech-heavy SMA news monitor. \
+You are a neutral severity scorer for a multi-sector SMA news monitor that \
+emphasizes biotech/pharma and technology but may own companies from any sector \
+and ETFs. Apply sector-appropriate evidence standards and never reduce relevance \
+merely because a holding is outside healthcare. \
 You score one news article for one position along three axes. \
 You DO NOT recommend actions — no "buy"/"sell"/"trim"/"add" verbs. \
 You produce structured JSON only.
@@ -43,6 +46,10 @@ def build_user_message(c: ScoreCandidate) -> str:
         else (c.source or "—")
     )
     published = c.published_at.isoformat() if c.published_at else "—"
+    primary = (
+        f"#{c.primary_bucket_id} {c.primary_bucket_name} "
+        f"(tagger conf {c.primary_bucket_confidence:.2f})"
+    )
 
     return f"""\
 HOLDING
@@ -54,7 +61,7 @@ HOLDING
   Thesis: {c.thesis.strip()}
 
 ARTICLE BUCKET
-  Primary:   #{c.primary_bucket_id} {c.primary_bucket_name} (tagger conf {c.primary_bucket_confidence:.2f})
+  Primary:   {primary}
   Secondary: {secondary}
 
 ARTICLE

@@ -15,6 +15,8 @@ Production is split across two roles:
 | `sma-runner.service` | always-on | Hermes queue processor for Replit manual requests |
 | `sma-thesis-recompute.service` + `.timer` | oneshot @ 06:00 ET | smart refresh + Codex thesis recompute |
 | `sma-thesis-email.service` + `.timer` | oneshot @ 09:15 ET | send morning thesis email |
+| `sma-tipranks-refresh.service` + `.timer` | oneshot Saturday @ 18:00 ET | refresh TipRanks mean analyst targets |
+| `sma-target-upside-refresh.service` + `.timer` | oneshot weekdays @ 17:00 ET | refresh FMP EOD closes and target upside |
 | `sma-collect.service` + `.timer` | oneshot @ 18:00 ET | positions, news, score, red-team, decide |
 | `sma-dispatch.service` + `.timer` | oneshot @ 21:00 ET | assemble + send evening digest |
 | `sma-monitor.service` | always-on | **alternative** scheduler: one run-loop covering the daily firings |
@@ -95,6 +97,7 @@ sudo systemctl enable --now sma-api
 # Scheduler — EITHER the three timers …
 sudo systemctl enable --now sma-runner
 sudo systemctl enable --now sma-thesis-recompute.timer sma-thesis-email.timer sma-collect.timer sma-dispatch.timer
+sudo systemctl enable --now sma-tipranks-refresh.timer sma-target-upside-refresh.timer
 # … OR the single run-loop (not both):
 # sudo systemctl enable --now sma-monitor
 ```
@@ -108,6 +111,8 @@ journalctl -u sma-api -f                   # API logs
 journalctl -u sma-collect --since today    # a batch run's logs
 sudo systemctl start sma-thesis-email.service   # fire a step now (manual)
 sudo systemctl start sma-thesis-recompute.service
+sudo systemctl start sma-tipranks-refresh.service
+sudo systemctl start sma-target-upside-refresh.service
 /opt/sma-monitor/.venv/bin/python -m sma_monitor.orchestrator runner-requests
 ```
 

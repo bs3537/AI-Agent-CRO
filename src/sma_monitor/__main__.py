@@ -12,6 +12,7 @@ Verifies:
 import logging
 import sys
 
+from .analyst_targets.store import init_analyst_target_schema
 from .config import settings
 from .db import database_backend, init_db
 from .decision.store import init_decision_schema
@@ -47,6 +48,7 @@ def main() -> int:
     init_uploads_schema()
     init_news_schema()
     init_fmp_schema()
+    init_analyst_target_schema()
     init_scores_schema()
     init_red_team_schema()
     init_outputs_schema()

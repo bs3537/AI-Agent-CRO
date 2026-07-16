@@ -1,0 +1,25 @@
+OpenRouter Free Models — Top 3 by Token Usage
+Run time: 2026-06-09 03:00 PM EDT
+Source: https://openrouter.ai/collections/free-models
+Usage window: 7 days
+
+Top 3 models:
+1. Owl Alpha
+   Model ID: openrouter/owl-alpha
+   Usage: 2.24T tokens (2,240,192,794,546)
+   Prompt: 2,220,557,181,241; completion: 19,635,612,359; reasoning: 946
+2. Poolside: Laguna M.1 (free)
+   Model ID: poolside/laguna-m.1-20260312:free
+   Usage: 656B tokens (655,962,495,952)
+   Prompt: 651,499,022,127; completion: 3,302,913,693; reasoning: 1,160,560,132
+3. NVIDIA: Nemotron 3 Super (free)
+   Model ID: nvidia/nemotron-3-super-120b-a12b-20230311:free
+   Usage: 552B tokens (552,476,227,287)
+   Prompt: 536,294,228,329; completion: 9,371,488,507; reasoning: 6,810,510,451
+
+Prior-run comparison:
+- #1 Owl Alpha: same rank, +27.1B tokens
+- #2 Poolside: Laguna M.1 (free): same rank, +14.9B tokens
+- #3 NVIDIA: Nemotron 3 Super (free): same rank, −33.4B tokens
+
+Generated automatically by the Hermes OpenRouter free-model monitor.
