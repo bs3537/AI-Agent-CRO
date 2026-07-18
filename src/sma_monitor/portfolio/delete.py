@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from ..analyst_targets.store import init_analyst_target_schema
 from ..db import connection, init_db
 from ..decision.store import init_decision_schema
+from ..news.catalyst_outlook import init_catalyst_schema
 from ..news.fmp_client import init_fmp_schema
 from ..news.store import init_news_schema
 from ..orchestrator.store import init_orchestrator_schema
@@ -47,6 +48,11 @@ def delete_holding_data(ticker: str) -> dict:
             "SELECT event_id FROM analyst_price_targets WHERE ticker = ?",
             ticker,
         )
+        catalyst_outlook_ids = _ids(
+            conn,
+            "SELECT event_id FROM catalyst_outlooks WHERE ticker = ?",
+            ticker,
+        )
         poll_ids = _ids(conn, "SELECT poll_id FROM news_polls WHERE ticker = ?", ticker)
         dead_ids = _ids(conn, "SELECT event_id FROM dead_letters WHERE ticker = ?", ticker)
         position_ids = _ids(conn, "SELECT event_id FROM positions WHERE ticker = ?", ticker)
@@ -78,6 +84,12 @@ def delete_holding_data(ticker: str) -> dict:
             "analyst_price_targets",
             "event_id",
             target_ids,
+        )
+        counts["catalyst_outlooks"] = _delete_by_ids(
+            conn,
+            "catalyst_outlooks",
+            "event_id",
+            catalyst_outlook_ids,
         )
         counts["news_polls"] = _delete_by_ids(conn, "news_polls", "poll_id", poll_ids)
         counts["positions"] = _delete_by_ids(conn, "positions", "event_id", position_ids)
@@ -111,6 +123,7 @@ def delete_holding_data(ticker: str) -> dict:
             + fmp_ids
             + price_ids
             + target_ids
+            + catalyst_outlook_ids
             + poll_ids
             + position_ids
             + manual_ids
@@ -130,6 +143,7 @@ def _init_delete_schemas() -> None:
     init_decision_schema()
     init_fmp_schema()
     init_analyst_target_schema()
+    init_catalyst_schema()
     init_orchestrator_schema()
     init_uploads_schema()
 

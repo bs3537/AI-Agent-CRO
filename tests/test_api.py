@@ -86,24 +86,26 @@ def test_list_positions(client):
     if vrtx["spark"] is not None:
         assert set(vrtx["spark"]) >= {"closes", "ema20", "technical_state"}
     assert "analyst_target" in vrtx
+    assert "catalyst_outlook" in vrtx
     assert "is_etf" in vrtx
 
 
-# The grid exposes a batched TipRanks target with its dated EOD upside calculation.
+# The grid exposes a batched FMP target with its dated EOD upside calculation.
 def test_list_positions_includes_analyst_target(client):
+    from sma_monitor.analyst_targets.fmp import FmpConsensusTarget
     from sma_monitor.analyst_targets.store import apply_reference_price, save_target_success
-    from sma_monitor.analyst_targets.tipranks import TipRanksTarget
 
     save_target_success(
         HELD,
-        TipRanksTarget(
+        FmpConsensusTarget(
             mean_price_target=540.0,
             high_price_target=600.0,
             low_price_target=480.0,
             analyst_count=24,
             currency="USD",
-            source_url="https://www.tipranks.com/stocks/vrtx/forecast",
         ),
+        source="fmp",
+        target_window="current_sell_side_consensus",
     )
     apply_reference_price(
         HELD,
@@ -114,7 +116,7 @@ def test_list_positions_includes_analyst_target(client):
     target = next(
         p for p in client.get("/api/positions").json()["positions"] if p["ticker"] == HELD
     )["analyst_target"]
-    assert target["source"] == "tipranks"
+    assert target["source"] == "fmp"
     assert target["mean_price_target"] == pytest.approx(540.0)
     assert target["upside_pct"] == pytest.approx(0.2)
     assert target["price_as_of"] == "2026-07-15"
@@ -448,6 +450,7 @@ def test_status(client):
 def test_delete_holding_removes_tile_and_stored_data(client):
     from sma_monitor.analyst_targets.store import save_target_success
     from sma_monitor.analyst_targets.tipranks import TipRanksTarget
+    from sma_monitor.news.catalyst_outlook import save_catalyst_outlook
 
     ticker = "MRNA"
     before = client.get("/api/positions").json()["positions"]
@@ -464,6 +467,18 @@ def test_delete_holding_removes_tile_and_stored_data(client):
             source_url="https://www.tipranks.com/stocks/mrna/forecast",
         ),
     )
+    save_catalyst_outlook(
+        ticker,
+        [{
+            "date": "2027-02-01",
+            "date_label": "February 2027",
+            "type": "earnings",
+            "label": "Quarterly earnings",
+            "confirmed": True,
+            "source_title": "Company investor relations",
+            "source_url": "https://example.com/mrna",
+        }],
+    )
 
     r = client.delete(f"/api/positions/{ticker}")
     assert r.status_code == 200
@@ -471,6 +486,7 @@ def test_delete_holding_removes_tile_and_stored_data(client):
     assert body["ticker"] == ticker
     assert body["deleted"]["positions"] >= 1
     assert body["deleted"]["analyst_price_targets"] == 1
+    assert body["deleted"]["catalyst_outlooks"] == 1
 
     after = client.get("/api/positions").json()["positions"]
     assert ticker not in {p["ticker"] for p in after}

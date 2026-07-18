@@ -7,19 +7,26 @@ import Chip from '@mui/material/Chip'
 import Container from '@mui/material/Container'
 import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import TableRowsIcon from '@mui/icons-material/TableRows'
+import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import { api } from './api'
 import type { ManualPositionPayload, PositionsResponse, QuotesResponse, Status } from './types'
 import AddPositionDrawer from './components/AddPositionDrawer'
 import BrandLogo from './components/BrandLogo'
 import ChatPanel from './components/ChatPanel'
 import PositionCard from './components/PositionCard'
-import DetailDrawer from './components/DetailDrawer'
+import HoldingDrawer from './components/HoldingDrawer'
+import KpiStrip from './components/KpiStrip'
+import PositionsTable from './components/PositionsTable'
+import TriageBands from './components/TriageBands'
 import ThesisDrawer, { type ThesisPackage } from './components/ThesisDrawer'
 import StatusBar from './components/StatusBar'
 
@@ -29,6 +36,15 @@ const POLL_MS = 30_000
 const QUOTES_POLL_MS = 30 * 60 * 1_000
 const RECOMPUTE_STATUS_POLL_MS = 1_500
 const RECOMPUTE_STATUS_TIMEOUT_MS = 10 * 60 * 1000
+const VIEW_STORAGE_KEY = 'ai-cro-dashboard-view-v1'
+
+function initialViewMode(): 'grid' | 'table' {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'table'
+  } catch {
+    return 'table'
+  }
+}
 
 async function waitForQueuedRecompute(requestId: string): Promise<void> {
   const deadline = Date.now() + RECOMPUTE_STATUS_TIMEOUT_MS
@@ -71,6 +87,15 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [quotes, setQuotes] = useState<QuotesResponse | null>(null)
   const [quotesAt, setQuotesAt] = useState<Date | null>(null)
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(initialViewMode)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, viewMode)
+    } catch {
+      // Browser privacy settings may disable storage; the in-memory choice still works.
+    }
+  }, [viewMode])
 
   useEffect(() => {
     if (!recomputingAll) { setRecomputeAllSecs(0); return }
@@ -301,55 +326,127 @@ export default function App() {
   const liveQuotes = quotes?.quotes ?? {}
   const thesisPosition =
     data?.positions.find((p) => p.ticker === thesisTicker) ?? null
+  const detailPosition =
+    data?.positions.find((p) => p.ticker === detailTicker) ?? null
 
   return (
     <Box sx={{ pb: 6 }}>
       <AppBar position="sticky" color="default" enableColorOnDark elevation={0}>
-        <Toolbar sx={{ gap: 2 }}>
+        <Toolbar
+          sx={{
+            gap: { xs: 1, md: 2 },
+            flexWrap: { xs: 'wrap', md: 'nowrap' },
+            py: { xs: 1, md: 0 },
+          }}
+        >
           <BrandLogo />
           <Box sx={{ flexGrow: 1 }} />
           <StatusBar status={status} />
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            startIcon={<AddIcon />}
-            disabled={recomputingAll}
-            onClick={() => setAddPositionOpen(true)}
-            sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexBasis: { xs: '100%', md: 'auto' },
+              justifyContent: { xs: 'flex-end', md: 'initial' },
+              ml: { xs: 0, md: 1.5 },
+            }}
           >
-            Add position
-          </Button>
-          <Tooltip title="Open AI CRO chat">
-            <IconButton
-              color={chatOpen ? 'primary' : 'default'}
+            <ToggleButtonGroup
               size="small"
-              onClick={() => setChatOpen((v) => !v)}
+              exclusive
+              value={viewMode}
+              onChange={(_event, next: 'grid' | 'table' | null) => {
+                if (next) setViewMode(next)
+              }}
               sx={{ flexShrink: 0 }}
             >
-              <AutoAwesomeIcon />
-            </IconButton>
-          </Tooltip>
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            startIcon={<RefreshIcon />}
-            disabled={recomputingAll || !data || data.positions.length === 0}
-            onClick={() => void onRecomputeAll()}
-            sx={{ ml: 1.5, whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            {recomputingAll && recomputeQueue
-              ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker} · ${recomputeAllSecs}s`
-              : 'Recompute all'}
-          </Button>
+              <Tooltip title="Table view">
+                <ToggleButton value="table" aria-label="Table view">
+                  <TableRowsIcon fontSize="small" />
+                </ToggleButton>
+              </Tooltip>
+              <Tooltip title="Tile view">
+                <ToggleButton value="grid" aria-label="Tile view">
+                  <ViewModuleIcon fontSize="small" />
+                </ToggleButton>
+              </Tooltip>
+            </ToggleButtonGroup>
+            <Tooltip title="Add position">
+              <Button
+                variant="outlined"
+                color="primary"
+                size="small"
+                startIcon={<AddIcon />}
+                disabled={recomputingAll}
+                onClick={() => setAddPositionOpen(true)}
+                aria-label="Add position"
+                sx={{
+                  minWidth: { xs: 34, sm: 'auto' },
+                  px: { xs: 1, sm: 1.5 },
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  '& .MuiButton-startIcon': { mr: { xs: 0, sm: 1 } },
+                }}
+              >
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                  Add position
+                </Box>
+              </Button>
+            </Tooltip>
+            <Tooltip title="Open AI CRO chat">
+              <IconButton
+                aria-label="Open AI CRO chat"
+                color={chatOpen ? 'primary' : 'default'}
+                size="small"
+                onClick={() => setChatOpen((value) => !value)}
+                sx={{ flexShrink: 0 }}
+              >
+                <AutoAwesomeIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Recompute all positions">
+              <span>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  startIcon={<RefreshIcon />}
+                  disabled={
+                    recomputingAll || !data || data.positions.length === 0
+                  }
+                  onClick={() => void onRecomputeAll()}
+                  aria-label="Recompute all positions"
+                  sx={{
+                    minWidth: { xs: 34, sm: 'auto' },
+                    px: { xs: 1, sm: 1.5 },
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    '& .MuiButton-startIcon': { mr: { xs: 0, sm: 1 } },
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{ display: { xs: 'none', sm: 'inline' } }}
+                  >
+                    {recomputingAll && recomputeQueue
+                      ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker} · ${recomputeAllSecs}s`
+                      : 'Recompute all'}
+                  </Box>
+                </Button>
+              </span>
+            </Tooltip>
+          </Box>
         </Toolbar>
         {!data && !error && <LinearProgress color="primary" />}
       </AppBar>
 
       <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0, pb: 6 }}>
-          <Container maxWidth={chatOpen ? false : 'lg'} sx={{ mt: 3 }}>
+          <Container
+            maxWidth={chatOpen || viewMode === 'table' ? false : 'lg'}
+            sx={{ mt: 3, px: { xs: 1.5, sm: 3 } }}
+          >
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
@@ -396,27 +493,51 @@ export default function App() {
           </Box>
         )}
 
-        <Box
-          sx={{
-            display: 'grid',
-            gap: 2,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))',
-          }}
-        >
-          {data?.positions.map((pos) => (
-            <PositionCard
-              key={pos.ticker}
-              pos={pos}
-              liveQuote={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
+        {viewMode === 'grid' ? (
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))',
+            }}
+          >
+            {data?.positions.map((pos) => (
+              <PositionCard
+                key={pos.ticker}
+                pos={pos}
+                liveQuote={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
+                stale={stale}
+                onUpload={onUpload}
+                onRecompute={onRecompute}
+                onDelete={onDeleteHolding}
+                onOpenThesis={setThesisTicker}
+                onOpenDetail={setDetailTicker}
+              />
+            ))}
+          </Box>
+        ) : (
+          <>
+            <KpiStrip
+              positions={data?.positions ?? []}
               stale={stale}
-              onUpload={onUpload}
-              onRecompute={onRecompute}
-              onDelete={onDeleteHolding}
-              onOpenThesis={setThesisTicker}
+              liveQuotes={liveQuotes}
+              marketOpen={isMarketOpen}
+            />
+            <TriageBands
+              positions={data?.positions ?? []}
+              liveQuotes={liveQuotes}
+              marketOpen={isMarketOpen}
               onOpenDetail={setDetailTicker}
             />
-          ))}
-        </Box>
+            <PositionsTable
+              positions={data?.positions ?? []}
+              stale={stale}
+              liveQuotes={liveQuotes}
+              marketOpen={isMarketOpen}
+              onOpenDetail={setDetailTicker}
+            />
+          </>
+        )}
 
         {data && data.positions.length === 0 && (
           <Typography sx={{ opacity: 0.6, mt: 4, textAlign: 'center' }}>
@@ -434,9 +555,21 @@ export default function App() {
         )}
       </Box>
 
-      <DetailDrawer
+      <HoldingDrawer
         ticker={detailTicker}
+        position={detailPosition}
+        liveQuote={
+          isMarketOpen && detailTicker
+            ? liveQuotes[detailTicker] ?? null
+            : null
+        }
+        stale={stale}
+        thesisOpen={Boolean(thesisTicker)}
         onClose={() => setDetailTicker(null)}
+        onOpenThesis={setThesisTicker}
+        onUpload={onUpload}
+        onRecompute={onRecompute}
+        onDelete={onDeleteHolding}
         onChanged={() => void refresh()}
       />
 

@@ -18,11 +18,12 @@ export default function ThesisTargetLine({
   const mean = target?.mean_price_target
   const upside = target?.upside_pct
   const hasTarget = mean != null
+  const sourceLabel = target?.source === 'tipranks' ? 'TipRanks' : 'FMP'
   const label = hasTarget
     ? `${formatCurrency(mean, target?.currency)} (${upside == null ? 'upside pending' : formatUpside(upside)})`
     : target?.unavailable_reason === 'no_analyst_coverage'
       ? 'No current analyst coverage'
-      : 'Pending weekly refresh'
+      : 'Pending daily refresh'
   const analystLabel = target?.analyst_count != null
     ? `${target.analyst_count} analyst${target.analyst_count === 1 ? '' : 's'}`
     : null
@@ -39,11 +40,9 @@ export default function ThesisTargetLine({
       <Typography variant="body2" sx={{ color, fontWeight: 700 }}>
         {label}
       </Typography>
-      {analystLabel && (
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          · TipRanks mean · {analystLabel}
-        </Typography>
-      )}
+      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+        · {sourceLabel} mean{analystLabel ? ` · ${analystLabel}` : ''}
+      </Typography>
       {target?.source_url && (
         <OpenInNewIcon sx={{ fontSize: 13, color: 'text.secondary', flexShrink: 0 }} />
       )}
@@ -85,14 +84,15 @@ function formatCurrency(value: number, currency: string | null | undefined): str
 }
 
 function targetTooltip(target: AnalystTarget | null): string {
-  if (!target) return 'TipRanks consensus has not been collected yet.'
+  if (!target) return 'FMP consensus has not been collected yet.'
+  const source = target.source === 'tipranks' ? 'TipRanks' : 'FMP'
   if (target.status === 'stale') {
-    return 'Last successful TipRanks mean target retained; the latest weekly refresh failed or is overdue.'
+    return `Last successful ${source} mean target retained; the latest daily refresh failed or is overdue.`
   }
   if (target.mean_price_target == null) {
     return target.unavailable_reason === 'no_analyst_coverage'
-      ? 'TipRanks currently reports no sell-side consensus target.'
-      : 'TipRanks consensus is temporarily unavailable.'
+      ? `${source} currently reports no sell-side consensus target.`
+      : `${source} consensus is temporarily unavailable.`
   }
   return target.price_as_of
     ? `Upside uses the dated end-of-day close from ${target.price_as_of}.`

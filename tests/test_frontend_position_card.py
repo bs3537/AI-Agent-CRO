@@ -17,16 +17,18 @@ def test_position_card_renders_current_thesis_preview():
     assert "PreliminaryThesisPreview" in source
 
 
-def test_position_card_renders_tipranks_price_target_metric():
-    """Each position tile should show the compact TipRanks target metric."""
+def test_position_card_renders_fmp_price_target_metric():
+    """Each equity tile should show the compact source-aware FMP target metric."""
     card_source = POSITION_CARD.read_text(encoding="utf-8")
     metric_source = PRICE_TARGET_METRIC.read_text(encoding="utf-8")
     thesis_target_source = THESIS_TARGET_LINE.read_text(encoding="utf-8")
 
     assert "!pos.is_etf && <PriceTargetMetric target={pos.analyst_target} />" in card_source
     assert "<ThesisTargetLine target={pos.analyst_target} isEtf={pos.is_etf} />" in card_source
-    assert "PRICE TARGET · TIPRANKS" in metric_source
+    assert "targetSourceLabel" in metric_source
+    assert "'TipRanks' : 'FMP'" in metric_source
     assert "upside_pct" in metric_source
     assert "WarningAmberIcon" in metric_source
     assert "Price target" in thesis_target_source
-    assert "TipRanks mean" in thesis_target_source
+    assert "'TipRanks' : 'FMP'" in thesis_target_source
+    assert "{sourceLabel} mean" in thesis_target_source

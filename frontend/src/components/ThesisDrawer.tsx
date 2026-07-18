@@ -115,8 +115,21 @@ export default function ThesisDrawer({
   }
 
   return (
-    <Drawer anchor="right" open={!!ticker} onClose={busy ? undefined : onClose}>
-      <Box sx={{ width: { xs: 360, sm: 520 }, p: 2 }}>
+    <Drawer
+      anchor="right"
+      variant="persistent"
+      open={!!ticker}
+      onClose={busy ? undefined : onClose}
+      PaperProps={{
+        sx: (theme) => ({
+          width: { xs: '100vw', sm: 520 },
+          zIndex: theme.zIndex.drawer + 1,
+          borderLeft: '1px solid',
+          borderColor: 'divider',
+        }),
+      }}
+    >
+      <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography variant="h6">
             {ticker} {isAiDraft ? 'preliminary thesis' : 'thesis'}

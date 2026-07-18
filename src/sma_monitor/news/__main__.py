@@ -5,6 +5,7 @@
   python -m sma_monitor.news poll-literature [--ticker T] [--from-file F]   (Semantic Scholar → #10)
   python -m sma_monitor.news sec [--ticker T] [--from-file F]               (SEC filings → #7)
   python -m sma_monitor.news fmp [--ticker T] [--from-file F]               (FMP financials)
+  python -m sma_monitor.news catalysts [--ticker T] [--from-file F]         (Codex research)
   python -m sma_monitor.news show [--ticker T] [--bucket N] [--limit N]
   python -m sma_monitor.news show-buckets
   python -m sma_monitor.news show-queries [--ticker T]
@@ -22,6 +23,7 @@ from ..logging_setup import setup_logging
 from ..paths import ensure_dirs
 from ..portfolio.joined import latest_joined
 from .buckets import load_buckets
+from .catalyst_outlook import refresh_catalyst_outlooks_for_holdings
 from .fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from .pipeline import poll as run_poll
 from .pipeline import poll_literature as run_poll_literature
@@ -104,6 +106,17 @@ def cmd_fmp(args, log):
     log.info("fmp_refresh_done", extra={"metrics": res, "prices": prices})
     print({"metrics": res, "prices": prices})
     return 0
+
+
+def cmd_catalysts(args, log):
+    tickers = [args.ticker.upper()] if args.ticker else None
+    res = refresh_catalyst_outlooks_for_holdings(
+        tickers=tickers,
+        from_file=Path(args.from_file) if args.from_file else None,
+    )
+    log.info("catalyst_outlook_refresh_done", extra=res)
+    print(res)
+    return 0 if not res.get("errors") else 1
 
 
 # CLI: print recent articles in a tabular view (tier, buckets, tickers, title).
@@ -201,6 +214,13 @@ def main(argv=None):
     p_fmp.add_argument("--from-file", help="Load {ticker: metrics} JSON fixture")
     p_fmp.add_argument("--prices-file", help="Load {ticker: [closes]} price fixture (sparkline)")
 
+    p_catalysts = sub.add_parser(
+        "catalysts",
+        help="Refresh sourced upcoming catalysts with Codex native web research",
+    )
+    p_catalysts.add_argument("--ticker", help="Restrict to one ticker")
+    p_catalysts.add_argument("--from-file", help="Load {ticker: [catalysts]} JSON fixture")
+
     p_show = sub.add_parser("show", help="Print recent articles")
     p_show.add_argument("--ticker")
     p_show.add_argument("--bucket", type=int)
@@ -220,6 +240,7 @@ def main(argv=None):
         "poll-literature": cmd_poll_literature,
         "sec": cmd_sec,
         "fmp": cmd_fmp,
+        "catalysts": cmd_catalysts,
         "show": cmd_show,
         "show-buckets": cmd_show_buckets,
         "show-queries": cmd_show_queries,

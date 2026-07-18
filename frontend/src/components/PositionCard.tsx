@@ -27,6 +27,8 @@ import PriceTargetMetric from './PriceTargetMetric'
 import Sparkline from './Sparkline'
 import FileUpload from './FileUpload'
 import ThesisTargetLine from './ThesisTargetLine'
+import { sourceLabel } from '../format'
+import { TechnicalChip } from './TechnicalChip'
 
 // One position tile: header (ticker + decision chip), economics row, the
 // decision note + drivers, the inline thesis editor, and the action row
@@ -307,25 +309,6 @@ export default function PositionCard({
   )
 }
 
-function sourceLabel(source: string | undefined) {
-  const labels: Record<string, string> = {
-    scheduler: 'auto scheduler',
-    manual_single: 'manual tile',
-    manual_all: 'manual all',
-    scheduler_morning_full_codex: 'morning full-book Codex',
-    scheduler_new_position_draft: 'new-position AI draft',
-    manual_new_position_draft: 'manual new-position AI draft',
-    manual_preliminary_thesis: 'manual preliminary research',
-    manual_preliminary_thesis_cli: 'CLI preliminary research',
-    hermes_manual_preliminary_thesis: 'Hermes preliminary research',
-    hermes_preliminary_thesis_one: 'Hermes preliminary research',
-    hermes_preliminary_thesis_backfill: 'Hermes preliminary backfill',
-    preliminary_thesis_followup: 'preliminary thesis follow-up',
-    unknown: 'legacy run',
-  }
-  return labels[source ?? 'unknown'] ?? source
-}
-
 function previewText(text: string, maxChars = 520): string {
   const normalized = text.trim().replace(/\s+/g, ' ')
   if (normalized.length <= maxChars) return normalized
@@ -372,21 +355,4 @@ function PreliminaryThesisPreview({ pos }: { pos: PositionSummary }) {
       )}
     </Stack>
   )
-}
-
-function TechnicalChip({ pos }: { pos: PositionSummary }) {
-  const state = pos.rating?.technical_state ?? 'no_price_data'
-  const pct = pos.rating?.price_vs_ema20_pct
-  const labels: Record<string, string> = {
-    above_ema20: 'above 20-EMA',
-    below_ema20: 'below 20-EMA',
-    extended_below_ema20: 'extended below 20-EMA',
-    no_price_data: 'no price data',
-  }
-  const label = pct !== null && pct !== undefined && state !== 'no_price_data'
-    ? `${labels[state]} ${(pct * 100).toFixed(1)}%`
-    : labels[state]
-  const color: 'success' | 'default' | 'warning' =
-    state === 'above_ema20' ? 'success' : state === 'no_price_data' ? 'default' : 'warning'
-  return <Chip size="small" color={color} variant="outlined" label={label} />
 }

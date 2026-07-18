@@ -1,10 +1,15 @@
-"""TipRanks target parsing, retention, and EOD upside tests."""
+"""Analyst target parsing, retention, source, and EOD upside tests."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from sma_monitor.analyst_targets.fmp import (
+    FmpConsensusTarget,
+    fetch_fmp_consensus,
+    parse_fmp_consensus,
+)
 from sma_monitor.analyst_targets.store import (
     apply_reference_price,
     latest_target_state,
@@ -20,6 +25,55 @@ from sma_monitor.analyst_targets.tipranks import (
     TipRanksTarget,
     parse_tipranks_forecast,
 )
+
+
+class _FmpResponse:
+    def __init__(self, body, status_code=200):
+        self._body = body
+        self.status_code = status_code
+        self.text = str(body)
+
+    def json(self):
+        return self._body
+
+
+class _FmpClient:
+    def __init__(self, response):
+        self.response = response
+        self.request = None
+
+    def get(self, url, *, params):
+        self.request = {"url": url, "params": params}
+        return self.response
+
+
+# FMP stable consensus responses map into the generic dashboard target shape.
+def test_parse_and_fetch_fmp_consensus():
+    body = [{
+        "symbol": "AQST",
+        "targetHigh": 12,
+        "targetLow": 6,
+        "targetConsensus": 9,
+        "targetMedian": 8.5,
+        "analystCount": 6,
+    }]
+    parsed = parse_fmp_consensus("AQST", body)
+    assert parsed is not None
+    assert parsed.mean_price_target == pytest.approx(9)
+    assert parsed.high_price_target == pytest.approx(12)
+    assert parsed.low_price_target == pytest.approx(6)
+    assert parsed.analyst_count == 6
+
+    client = _FmpClient(_FmpResponse(body))
+    fetched = fetch_fmp_consensus("aqst", api_key="fake", client=client)
+    assert fetched == parsed
+    assert client.request["params"] == {"symbol": "AQST", "apikey": "fake"}
+
+
+# Empty and non-positive FMP consensus responses are valid no-coverage results.
+@pytest.mark.parametrize("body", [[], {}, [{"targetConsensus": 0}]])
+def test_parse_fmp_consensus_no_coverage(body):
+    assert parse_fmp_consensus("NONE", body) is None
 
 
 # The rendered forecast prose yields mean/high/low targets and analyst count.
@@ -193,7 +247,11 @@ def test_refresh_tipranks_targets_skips_etfs(monkeypatch):
         "latest_is_etf_flags",
         lambda tickers: {"ETF1": True, "EQTY": False},
     )
-    monkeypatch.setattr(service, "save_target_not_applicable", lambda ticker: "event-id")
+    monkeypatch.setattr(
+        service,
+        "save_target_not_applicable",
+        lambda ticker, **kwargs: "event-id",
+    )
     monkeypatch.setattr(settings, "fmp_api_key", None)
 
     summary = service.refresh_tipranks_targets(
@@ -212,3 +270,38 @@ def test_refresh_tipranks_targets_skips_etfs(monkeypatch):
     assert scraped == ["EQTY"]
     assert summary["skipped_etfs"] == ["ETF1"]
     assert summary["eligible_equities"] == 1
+
+
+# The scheduled FMP refresh skips ETFs and persists FMP attribution for equities.
+def test_refresh_fmp_targets_skips_etfs_and_sets_source(monkeypatch):
+    from sma_monitor.analyst_targets import service
+
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "latest_is_etf_flags",
+        lambda tickers: {"ETF1": True, "EQTY": False},
+    )
+
+    summary = service.refresh_fmp_targets(
+        api_key="fake",
+        tickers=["ETF1", "EQTY"],
+        fetch_fn=lambda ticker: fetched.append(ticker) or FmpConsensusTarget(
+            mean_price_target=25.0,
+            high_price_target=30.0,
+            low_price_target=20.0,
+            analyst_count=5,
+            currency="USD",
+        ),
+    )
+
+    assert fetched == ["EQTY"]
+    assert summary["source"] == "fmp"
+    assert summary["updated"] == 1
+    assert summary["skipped_etfs"] == ["ETF1"]
+    equity = latest_target_state("EQTY")
+    etf = latest_target_state("ETF1")
+    assert equity["source"] == "fmp"
+    assert equity["mean_price_target"] == pytest.approx(25.0)
+    assert etf["source"] == "fmp"
+    assert etf["status"] == "not_applicable"

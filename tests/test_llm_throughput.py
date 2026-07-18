@@ -31,6 +31,7 @@ def test_stage_effort_defaults_and_overrides(monkeypatch):
     assert stage_effort("scorer") == "medium"
     assert stage_effort("decision") == "medium"
     assert stage_effort("draft_thesis") == "medium"
+    assert stage_effort("catalyst_outlook") == "medium"
     assert stage_effort("chat") == "medium"
     monkeypatch.setenv("SMA_CODEX_EFFORT", "low")  # global
     assert stage_effort("decision") == "low"
@@ -116,6 +117,9 @@ def test_get_provider_stage_sets_model_and_effort(monkeypatch):
     assert p is not None and p.model == "gpt-5.5" and p.effort == "low"
     bare = provider_mod.get_provider()
     assert bare.model is None and bare.effort is None
+    catalyst = provider_mod.get_provider(stage="catalyst_outlook")
+    assert catalyst.web_search is True
+    assert p.web_search is False
     assert provider_mod.get_provider(prefer_offline=True) is None
 
 

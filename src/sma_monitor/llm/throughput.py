@@ -22,7 +22,15 @@ from typing import Any
 
 # The stages that resolve their own model/effort. Names match the `stage=`
 # argument each pipeline passes to get_provider().
-STAGES = ("scorer", "red_team", "decision", "draft_thesis", "digest", "chat")
+STAGES = (
+    "scorer",
+    "red_team",
+    "decision",
+    "draft_thesis",
+    "catalyst_outlook",
+    "digest",
+    "chat",
+)
 
 # Default reasoning effort per stage when no env override is set. Keep every
 # Codex-backed AI-CRO stage at "medium" by default so thesis save, daily drift,
@@ -33,9 +41,12 @@ DEFAULT_EFFORT: dict[str, str] = {
     "red_team": "medium",
     "decision": "medium",
     "draft_thesis": "medium",
+    "catalyst_outlook": "medium",
     "digest": "medium",
     "chat": "medium",
 }
+
+WEB_SEARCH_STAGES = frozenset({"catalyst_outlook"})
 
 # Fallback concurrency when SMA_LLM_CONCURRENCY is unset/invalid, and the hard
 # ceiling we clamp to (OpenAI publishes no TPM/concurrency cap; ~3-5 is the
@@ -62,6 +73,10 @@ def stage_effort(stage: str) -> str | None:
         or os.environ.get("SMA_CODEX_EFFORT")
         or DEFAULT_EFFORT.get(stage)
     )
+
+
+def stage_web_search(stage: str) -> bool:
+    return stage in WEB_SEARCH_STAGES
 
 
 # Number of concurrent `codex exec` processes the per-item loops may run.

@@ -14,6 +14,7 @@ from typing import Any
 from ..config import settings
 from ..decision.engine import run_decisions
 from ..decision.technicals import technical_state
+from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
 from ..news.fmp_client import (
     latest_price_series,
     refresh_for_holdings,
@@ -213,6 +214,10 @@ def _refresh_all_daily_signals(tickers: list[str]) -> dict[str, Any]:
     refresh["prices"] = _capture(
         "prices",
         lambda: refresh_prices_for_holdings(api_key=settings.fmp_api_key, tickers=tickers),
+    )
+    refresh["catalyst_outlooks"] = _capture(
+        "catalyst_outlooks",
+        lambda: refresh_catalyst_outlooks_for_holdings(tickers=tickers),
     )
     return refresh
 

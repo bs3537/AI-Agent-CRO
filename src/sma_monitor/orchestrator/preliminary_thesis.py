@@ -5,7 +5,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from ..analyst_targets.service import refresh_tipranks_targets
+from ..analyst_targets.service import refresh_fmp_targets
 from ..config import settings
 from ..news.fmp_client import refresh_for_holdings
 from ..portfolio.draft_thesis import bootstrap_ai_draft_sidecars
@@ -63,8 +63,11 @@ def run_preliminary_thesis_workflow(
         state["refresh"]["ir_urls"] = _capture(
             lambda: populate_ir_urls_for_tickers(wanted, create_missing=False)
         )
-        state["refresh"]["tipranks"] = _capture(
-            lambda: refresh_tipranks_targets(tickers=wanted)
+        state["refresh"]["analyst_targets"] = _capture(
+            lambda: refresh_fmp_targets(
+                api_key=settings.fmp_api_key,
+                tickers=wanted,
+            )
         )
 
     state["drafts"] = bootstrap_ai_draft_sidecars(

@@ -1,4 +1,4 @@
-"""Scheduled TipRanks refresh and FMP EOD upside workflows."""
+"""Scheduled analyst-consensus target and FMP EOD upside workflows."""
 from __future__ import annotations
 
 import logging
@@ -20,7 +20,10 @@ from ..news.fmp_client import (
     refresh_prices_for_holdings,
 )
 from ..portfolio.joined import latest_joined
+from .fmp import FMP_TARGET_DOCS_URL, FmpConsensusTarget, fetch_fmp_consensus
 from .store import (
+    FMP_SOURCE,
+    FMP_WINDOW,
     apply_reference_price,
     mark_target_failure,
     save_target_not_applicable,
@@ -40,6 +43,77 @@ log = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
 
 
+def refresh_fmp_targets(
+    *,
+    api_key: str | None,
+    tickers: list[str] | None = None,
+    fetch_fn: Callable[[str], FmpConsensusTarget | None] | None = None,
+) -> dict[str, Any]:
+    """Refresh FMP consensus targets for held equities."""
+    if not api_key and fetch_fn is None:
+        raise RuntimeError("FMP_API_KEY is required for analyst target refresh")
+    all_tickers = _held_tickers(tickers)
+    targets, skipped_etfs = _partition_etfs(
+        all_tickers,
+        api_key=api_key,
+        target_source=FMP_SOURCE,
+    )
+    summary: dict[str, Any] = {
+        "tickers": len(all_tickers),
+        "eligible_equities": len(targets),
+        "skipped_etfs": skipped_etfs,
+        "updated": 0,
+        "no_coverage": 0,
+        "failed": 0,
+        "stale_retained": 0,
+        "source": FMP_SOURCE,
+        "failures": [],
+    }
+    if not targets:
+        return summary
+
+    with httpx.Client(timeout=30.0) as client:
+        for ticker in targets:
+            attempted_at = datetime.now(UTC)
+            try:
+                target = (
+                    fetch_fn(ticker)
+                    if fetch_fn is not None
+                    else fetch_fmp_consensus(ticker, api_key=api_key or "", client=client)
+                )
+                if target is None:
+                    save_target_unavailable(
+                        ticker,
+                        attempted_at=attempted_at,
+                        source=FMP_SOURCE,
+                        target_window=FMP_WINDOW,
+                        source_url=FMP_TARGET_DOCS_URL,
+                    )
+                    summary["no_coverage"] += 1
+                else:
+                    save_target_success(
+                        ticker,
+                        target,
+                        fetched_at=attempted_at,
+                        source=FMP_SOURCE,
+                        target_window=FMP_WINDOW,
+                        source_url=FMP_TARGET_DOCS_URL,
+                    )
+                    summary["updated"] += 1
+                    _apply_latest_price(ticker, updated_at=attempted_at)
+            except Exception as exc:  # noqa: BLE001 - one ticker must not abort the book.
+                _record_failure(
+                    summary,
+                    ticker,
+                    attempted_at,
+                    exc,
+                    source=FMP_SOURCE,
+                    target_window=FMP_WINDOW,
+                    source_url=FMP_TARGET_DOCS_URL,
+                )
+    return summary
+
+
 # Refresh TipRanks targets for all dashboard positions or an explicit ticker subset.
 def refresh_tipranks_targets(
     *,
@@ -52,6 +126,7 @@ def refresh_tipranks_targets(
     targets, skipped_etfs = _partition_etfs(
         all_tickers,
         api_key=settings.fmp_api_key,
+        target_source="tipranks",
     )
     delay = (
         settings.tipranks_request_delay_seconds
@@ -116,7 +191,7 @@ def refresh_tipranks_targets(
     return summary
 
 
-# Refresh FMP EOD histories and then recalculate TipRanks upside for every position.
+# Refresh FMP consensus targets and EOD histories, then recalculate upside.
 def refresh_eod_target_upside(
     *,
     api_key: str | None,
@@ -127,9 +202,14 @@ def refresh_eod_target_upside(
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     all_tickers = _held_tickers(tickers)
-    targets, skipped_etfs = _partition_etfs(all_tickers, api_key=api_key)
     if not api_key:
         raise RuntimeError("FMP_API_KEY is required for the EOD target-upside refresh")
+    target_refresh = refresh_fmp_targets(api_key=api_key, tickers=all_tickers)
+    targets, skipped_etfs = _partition_etfs(
+        all_tickers,
+        api_key=api_key,
+        target_source=FMP_SOURCE,
+    )
     expected = expected_price_date or datetime.now(ET).date().isoformat()
     pending = list(targets)
     refreshes: list[dict[str, Any]] = []
@@ -171,7 +251,8 @@ def refresh_eod_target_upside(
         "expected_price_date": expected,
         "pending_price_date": pending,
         "price_refreshes": refreshes,
-        "source": "fmp_eod_close",
+        "target_refresh": target_refresh,
+        "source": "fmp_consensus_and_eod_close",
     }
 
 
@@ -201,17 +282,26 @@ def _record_failure(
     ticker: str,
     attempted_at: datetime,
     exc: Exception,
+    source: str = "tipranks",
+    target_window: str = "12_month_targets_issued_last_3_months",
+    source_url: str | None = None,
 ) -> None:
     from .store import latest_target_state
 
-    mark_target_failure(ticker, attempted_at=attempted_at)
+    mark_target_failure(
+        ticker,
+        attempted_at=attempted_at,
+        source=source,
+        target_window=target_window,
+        source_url=source_url,
+    )
     summary["failed"] += 1
     summary["failures"].append({"ticker": ticker, "reason": type(exc).__name__})
     state = latest_target_state(ticker)
     if state and state["status"] == "stale":
         summary["stale_retained"] += 1
     log.exception(
-        "tipranks_target_failed",
+        "analyst_target_failed",
         extra={"ticker": ticker, "error_type": type(exc).__name__},
         exc_info=exc,
     )
@@ -222,6 +312,7 @@ def _partition_etfs(
     tickers: list[str],
     *,
     api_key: str | None,
+    target_source: str,
 ) -> tuple[list[str], list[str]]:
     equities: list[str] = []
     etfs: list[str] = []
@@ -239,7 +330,20 @@ def _partition_etfs(
                 except FmpError:
                     log.warning("etf_classification_failed", extra={"ticker": ticker})
             if flag is True:
-                save_target_not_applicable(ticker)
+                save_target_not_applicable(
+                    ticker,
+                    source=target_source,
+                    target_window=(
+                        FMP_WINDOW
+                        if target_source == FMP_SOURCE
+                        else "12_month_targets_issued_last_3_months"
+                    ),
+                    source_url=(
+                        FMP_TARGET_DOCS_URL
+                        if target_source == FMP_SOURCE
+                        else None
+                    ),
+                )
                 etfs.append(ticker)
             else:
                 equities.append(ticker)

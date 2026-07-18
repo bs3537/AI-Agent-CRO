@@ -61,7 +61,7 @@ def next_firing_at(target_et: dtime, *, now_utc: datetime | None = None) -> date
 def crontab_lines() -> list[str]:
     """Emit a crontab snippet for the cron-host deployment."""
     return [
-        "# AI CRO — daily analysis plus TipRanks target maintenance.",
+        "# AI CRO — daily analysis plus FMP target maintenance.",
         "# Runner queue drain handles Replit dashboard manual requests.",
         "# TZ pin lets cron handle EST/EDT transitions automatically.",
         "TZ=America/New_York",
@@ -84,11 +84,7 @@ def crontab_lines() -> list[str]:
         "0 21 * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "dispatch >> data/logs/cron.log 2>&1",
         "",
-        "# Saturday 6 PM ET — refresh TipRanks analyst-consensus targets.",
-        "0 18 * * 6     cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
-        "tipranks-refresh >> data/logs/cron.log 2>&1",
-        "",
-        "# Weekdays 5 PM ET — refresh dated FMP EOD closes and target upside.",
+        "# Weekdays 5 PM ET — refresh FMP consensus targets, EOD closes, and upside.",
         "0 17 * * 1-5   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "target-upside-refresh >> data/logs/cron.log 2>&1",
         "",

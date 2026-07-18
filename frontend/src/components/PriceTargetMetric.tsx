@@ -5,7 +5,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import type { AnalystTarget } from '../types'
 
-// Compact TipRanks target metric for the position-card economics row.
+// Compact analyst-consensus target metric for the position-card economics row.
 export default function PriceTargetMetric({ target }: { target: AnalystTarget | null }) {
   const hasTarget = target?.mean_price_target != null
   const isStale = target?.status === 'stale'
@@ -23,6 +23,7 @@ export default function PriceTargetMetric({ target }: { target: AnalystTarget | 
         : 'Pending EOD'
     : `${upside >= 0 ? '+' : ''}${(upside * 100).toFixed(1)}%`
   const tooltip = targetTooltip(target)
+  const source = targetSourceLabel(target)
 
   const metric = (
     <Box
@@ -56,7 +57,7 @@ export default function PriceTargetMetric({ target }: { target: AnalystTarget | 
           component="div"
           sx={{ fontSize: 9, lineHeight: 1.1, color: 'text.secondary', fontWeight: 700 }}
         >
-          PRICE TARGET · TIPRANKS
+          PRICE TARGET · {source.toUpperCase()}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, mt: 0.2 }}>
           <Typography component="span" sx={{ fontSize: 14, lineHeight: 1.2, fontWeight: 750 }}>
@@ -93,12 +94,12 @@ export default function PriceTargetMetric({ target }: { target: AnalystTarget | 
 // Build the attribution and freshness tooltip for each target state.
 function targetTooltip(target: AnalystTarget | null) {
   if (!target) {
-    return 'TipRanks analyst target has not been collected yet.'
+    return 'FMP analyst consensus has not been collected yet.'
   }
   if (!target.mean_price_target) {
     return target.unavailable_reason === 'no_analyst_coverage'
-      ? 'No TipRanks sell-side analyst consensus target is currently available.'
-      : 'The TipRanks target is temporarily unavailable after a failed refresh.'
+      ? `No ${targetSourceLabel(target)} sell-side analyst consensus target is currently available.`
+      : `The ${targetSourceLabel(target)} target is temporarily unavailable after a failed refresh.`
   }
   const parts = [
     target.analyst_count != null
@@ -118,7 +119,11 @@ function targetTooltip(target: AnalystTarget | null) {
   return parts.filter(Boolean).join(' · ')
 }
 
-// Format the TipRanks high/low range when both values are present.
+function targetSourceLabel(target: AnalystTarget | null): string {
+  return target?.source === 'tipranks' ? 'TipRanks' : 'FMP'
+}
+
+// Format the analyst high/low range when both values are present.
 function rangeLabel(target: AnalystTarget): string | null {
   if (target.low_price_target == null || target.high_price_target == null) return null
   return `Range ${formatCurrency(target.low_price_target, target.currency)}–${formatCurrency(target.high_price_target, target.currency)}`

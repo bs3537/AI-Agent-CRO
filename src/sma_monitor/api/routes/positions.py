@@ -23,6 +23,7 @@ from ...db import connection
 from ...decision.schema import GRADE_VERDICT, VERDICT_COLOR
 from ...decision.store import latest_decision, latest_rating
 from ...decision.technicals import technical_state
+from ...news.catalyst_outlook import latest_catalyst_outlook
 from ...news.fmp_client import latest_fmp_metrics, latest_price_series
 from ...orchestrator.manual_recompute import (
     recompute_all_with_refresh,
@@ -45,6 +46,7 @@ from ...red_team.store import recent_passes
 from ...scorer.store import recent_scores
 from ..schemas import (
     CatalystOut,
+    CatalystOutlookItemOut,
     DecisionOut,
     DeleteHoldingResponse,
     FileOut,
@@ -196,6 +198,7 @@ def _dashboard_cache(tickers: list[str]) -> dict[str, dict[str, Any]]:
         "prices": {},
         "targets": {},
         "financials": {},
+        "catalyst_outlooks": {},
     }
     if not tickers:
         return cache
@@ -261,7 +264,36 @@ def _dashboard_cache(tickers: list[str]) -> dict[str, dict[str, Any]]:
                 cache["financials"][ticker] = json.loads(row["metrics"] or "{}")
             except (TypeError, json.JSONDecodeError):
                 cache["financials"][ticker] = {}
+
+        for row in conn.execute(
+            f"SELECT ticker, items_json FROM catalyst_outlooks "
+            f"WHERE ticker IN ({placeholders}) ORDER BY ticker, searched_at DESC",
+            tickers,
+        ).fetchall():
+            ticker = row["ticker"]
+            if ticker in cache["catalyst_outlooks"]:
+                continue
+            cache["catalyst_outlooks"][ticker] = _catalyst_outlook_items(
+                row["items_json"]
+            )
     return cache
+
+
+def _catalyst_outlook_items(value: str | list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return []
+    if not isinstance(value, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for item in value:
+        try:
+            items.append(CatalystOutlookItemOut.model_validate(item).model_dump())
+        except (TypeError, ValueError):
+            continue
+    return items
 
 
 # Build the grid-row summary for one holding: economics + nearest catalyst +
@@ -278,6 +310,9 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         n_files = len(list_files(h.ticker))
         spark = _spark_out(h.ticker)
         analyst_target = latest_target_state(h.ticker)
+        catalyst_outlook = _catalyst_outlook_items(
+            latest_catalyst_outlook(h.ticker)
+        )
         is_etf = bool(
             (latest_fmp_metrics(h.ticker) or {}).get("is_etf")
             or (analyst_target or {}).get("status") == "not_applicable"
@@ -289,6 +324,7 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         n_files = int(cache["file_counts"].get(h.ticker, 0))
         spark = _spark_from_closes(cache["prices"].get(h.ticker))
         analyst_target = target_state_from_row(cache["targets"].get(h.ticker))
+        catalyst_outlook = cache["catalyst_outlooks"].get(h.ticker, [])
         is_etf = bool(
             cache["financials"].get(h.ticker, {}).get("is_etf")
             or (analyst_target or {}).get("status") == "not_applicable"
@@ -321,6 +357,7 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
         n_files=n_files,
         spark=spark,  # W6/V2: 1yr close sparkline + EMA20 overlay
         analyst_target=analyst_target,
+        catalyst_outlook=catalyst_outlook,
         rating=rating,
         decision=_decision_out(dec_row, severity, rating),
     )

@@ -232,6 +232,7 @@ def _init_served_phase_schemas() -> None:
     # run a full collect cycle yet. Initialize all served schemas at startup.
     from ..analyst_targets.store import init_analyst_target_schema
     from ..decision.store import init_decision_schema
+    from ..news.catalyst_outlook import init_catalyst_schema
     from ..news.fmp_client import init_fmp_schema
     from ..news.store import init_news_schema
     from ..orchestrator.store import init_orchestrator_schema
@@ -247,6 +248,7 @@ def _init_served_phase_schemas() -> None:
     init_news_schema()
     init_fmp_schema()
     init_analyst_target_schema()
+    init_catalyst_schema()
     init_scores_schema()
     init_red_team_schema()
     init_orchestrator_schema()

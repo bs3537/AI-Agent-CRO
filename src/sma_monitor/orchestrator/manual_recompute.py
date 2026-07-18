@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 from ..config import settings
 from ..decision.engine import run_decisions
+from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
 from ..news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 from ..news.pipeline import poll as news_poll
 from ..news.pipeline import poll_literature, poll_sec
@@ -158,6 +159,10 @@ def _refresh_evidence(tickers: list[str], *, offline: bool) -> dict:
     state["prices"] = _capture(
         "prices",
         lambda: refresh_prices_for_holdings(api_key=settings.fmp_api_key, tickers=tickers),
+    )
+    state["catalyst_outlooks"] = _capture(
+        "catalyst_outlooks",
+        lambda: refresh_catalyst_outlooks_for_holdings(tickers=tickers),
     )
     return state
 

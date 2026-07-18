@@ -46,7 +46,10 @@ export default function StatusBar({ status }: { status: Status | null }) {
           />
         )
       })}
-      <Typography variant="caption" sx={{ opacity: 0.6 }}>
+      <Typography
+        variant="caption"
+        sx={{ opacity: 0.6, display: { xs: 'none', sm: 'block' } }}
+      >
         positions pulled {pulled}
       </Typography>
     </Box>

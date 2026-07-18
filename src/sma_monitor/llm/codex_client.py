@@ -124,9 +124,16 @@ class CodexProvider:
 
     # model/effort are the W9 per-stage overrides (None = account default / no
     # effort flag). get_provider(stage=...) fills them from llm/throughput.py.
-    def __init__(self, *, model: str | None = None, effort: str | None = None):
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        web_search: bool = False,
+    ):
         self.model = model
         self.effort = effort
+        self.web_search = web_search
 
     # Run a structured completion. Writes `schema` to a temp file, asks Codex
     # to emit schema-conforming JSON to an output file, and parses it. Falls
@@ -138,6 +145,7 @@ class CodexProvider:
         user: str,
         schema: dict | None = None,
         max_tokens: int = 512,
+        timeout_s: int | None = None,
     ) -> dict:
         prompt = _combine(system, user)
         with tempfile.TemporaryDirectory(prefix="sma_codex_") as td:
@@ -149,7 +157,14 @@ class CodexProvider:
                 schema_path.write_text(json.dumps(schema))
                 args += ["--output-schema", str(schema_path), "-o", str(out_path)]
             args.append("-")  # read the full prompt from stdin
-            stdout = _run(args, prompt, model=self.model, effort=self.effort)
+            stdout = _run(
+                args,
+                prompt,
+                model=self.model,
+                effort=self.effort,
+                web_search=self.web_search,
+                timeout_s=timeout_s,
+            )
             raw = out_path.read_text() if out_path and out_path.exists() else stdout
         return _extract_json_object(raw)
 
@@ -161,11 +176,16 @@ class CodexProvider:
         system: str,
         user: str,
         max_tokens: int = 600,
+        timeout_s: int | None = None,
     ) -> str:
         prompt = _combine(system, user)
         stdout = _run(
             ["exec", "--skip-git-repo-check", "--color", "never", "-"],
-            prompt, model=self.model, effort=self.effort,
+            prompt,
+            model=self.model,
+            effort=self.effort,
+            web_search=self.web_search,
+            timeout_s=timeout_s,
         )
         return _strip_fence(stdout).strip()
 
@@ -181,19 +201,30 @@ def _combine(system: str, user: str) -> str:
 # (-c model_reasoning_effort=…) right after the `exec` subcommand, and retries
 # with exponential backoff when the exec fails as rate-limited. Raises LLMError
 # on non-rate-limit non-zero exit, timeout, or a missing binary.
-def _run(args: list[str], prompt: str, *, model: str | None = None, effort: str | None = None) -> str:
+def _run(
+    args: list[str],
+    prompt: str,
+    *,
+    model: str | None = None,
+    effort: str | None = None,
+    web_search: bool = False,
+    timeout_s: int | None = None,
+) -> str:
     cmd = [_codex_bin(), *args]
     # Per-call override falls back to the legacy global SMA_CODEX_MODEL.
     model = model or os.environ.get("SMA_CODEX_MODEL")
     opts: list[str] = []
     if effort:
         opts += ["-c", f"model_reasoning_effort={effort}"]
+    if web_search:
+        opts += ["-c", "web_search=live"]
     if model:
         opts += ["-m", model]
     if opts:
         cmd[2:2] = opts  # insert just after the `exec` subcommand
 
     max_retries = _max_retries()
+    call_timeout_s = timeout_s or CALL_TIMEOUT_S
     attempt = 0
     while True:
         try:
@@ -202,12 +233,12 @@ def _run(args: list[str], prompt: str, *, model: str | None = None, effort: str 
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=CALL_TIMEOUT_S,
+                timeout=call_timeout_s,
             )
         except FileNotFoundError as e:
             raise LLMError(f"codex binary not found: {cmd[0]}") from e
         except subprocess.TimeoutExpired as e:
-            raise LLMError(f"codex exec timed out after {CALL_TIMEOUT_S}s") from e
+            raise LLMError(f"codex exec timed out after {call_timeout_s}s") from e
         if proc.returncode == 0:
             return proc.stdout or ""
         stderr = proc.stderr or ""

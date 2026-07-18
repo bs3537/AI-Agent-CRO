@@ -37,10 +37,11 @@ def test_crontab_collect_is_daily():
     assert "15 9 * * *" in lines
     assert "* * * * *" in lines
     assert "process-runner-requests --limit 1" in lines
-    assert "0 18 * * 6" in lines
-    assert "tipranks-refresh" in lines
+    assert "0 18 * * 6" not in lines
+    assert "tipranks-refresh" not in lines
     assert "0 17 * * 1-5" in lines
     assert "target-upside-refresh" in lines
+    assert "FMP consensus targets" in lines
 
 
 def test_morning_smart_recompute_runs_at_6am_et():

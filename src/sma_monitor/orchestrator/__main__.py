@@ -11,8 +11,8 @@
   python -m sma_monitor.orchestrator runner-run
   python -m sma_monitor.orchestrator runner-requests
   python -m sma_monitor.orchestrator preliminary-thesis [--ticker TICKER]
-  python -m sma_monitor.orchestrator tipranks-refresh
-  python -m sma_monitor.orchestrator target-upside-refresh
+  python -m sma_monitor.orchestrator tipranks-refresh          optional manual fallback
+  python -m sma_monitor.orchestrator target-upside-refresh     daily FMP target + EOD refresh
   python -m sma_monitor.orchestrator install-cron
   python -m sma_monitor.orchestrator retry-dead-letters [--offline]
   python -m sma_monitor.orchestrator simulate-spend --usd N
@@ -225,7 +225,7 @@ def cmd_tipranks_refresh(args, log):
     return 1 if summary["failed"] else 0
 
 
-# CLI: refresh dated FMP EOD closes and recompute upside to saved TipRanks targets.
+# CLI: refresh FMP consensus targets and dated EOD closes, then recompute upside.
 def cmd_target_upside_refresh(args, log):
     from ..analyst_targets.service import refresh_eod_target_upside
 
@@ -408,7 +408,7 @@ def main(argv=None):
     p_preliminary.add_argument(
         "--refresh-inputs",
         action="store_true",
-        help="Refresh targeted FMP, IR, and TipRanks context before research.",
+        help="Refresh targeted FMP, IR, and analyst-target context before research.",
     )
     p_preliminary.add_argument(
         "--compute-source",
@@ -417,7 +417,7 @@ def main(argv=None):
 
     p_targets = sub.add_parser(
         "tipranks-refresh",
-        help="Saturday 6 PM ET — scrape TipRanks mean analyst targets",
+        help="Optional manual TipRanks fallback refresh",
     )
     p_targets.add_argument(
         "--ticker",
@@ -438,7 +438,7 @@ def main(argv=None):
 
     p_upside = sub.add_parser(
         "target-upside-refresh",
-        help="Weekdays 5 PM ET — refresh FMP EOD closes and target upside",
+        help="Weekdays 5 PM ET — refresh FMP targets, EOD closes, and upside",
     )
     p_upside.add_argument(
         "--ticker",

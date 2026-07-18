@@ -38,6 +38,7 @@ class LLMProvider(Protocol):
         user: str,
         schema: dict | None = None,
         max_tokens: int = 512,
+        timeout_s: int | None = None,
     ) -> dict: ...
 
     # Run one completion that returns free-form text.
@@ -47,6 +48,7 @@ class LLMProvider(Protocol):
         system: str,
         user: str,
         max_tokens: int = 600,
+        timeout_s: int | None = None,
     ) -> str: ...
 
 
@@ -80,14 +82,17 @@ class FallbackProvider:
         user: str,
         schema: dict | None = None,
         max_tokens: int = 512,
+        timeout_s: int | None = None,
     ) -> dict:
-        return self._complete(
-            "complete_json",
-            system=system,
-            user=user,
-            schema=schema,
-            max_tokens=max_tokens,
-        )
+        kwargs = {
+            "system": system,
+            "user": user,
+            "schema": schema,
+            "max_tokens": max_tokens,
+        }
+        if timeout_s is not None:
+            kwargs["timeout_s"] = timeout_s
+        return self._complete("complete_json", **kwargs)
 
     def complete_text(
         self,
@@ -95,13 +100,16 @@ class FallbackProvider:
         system: str,
         user: str,
         max_tokens: int = 600,
+        timeout_s: int | None = None,
     ) -> str:
-        return self._complete(
-            "complete_text",
-            system=system,
-            user=user,
-            max_tokens=max_tokens,
-        )
+        kwargs = {
+            "system": system,
+            "user": user,
+            "max_tokens": max_tokens,
+        }
+        if timeout_s is not None:
+            kwargs["timeout_s"] = timeout_s
+        return self._complete("complete_text", **kwargs)
 
     def _complete(self, method: str, **kwargs):
         errors: list[str] = []
@@ -160,6 +168,10 @@ def get_provider(
     if stage is None:
         return CodexProvider()
 
-    from .throughput import stage_effort, stage_model
+    from .throughput import stage_effort, stage_model, stage_web_search
 
-    return CodexProvider(model=stage_model(stage), effort=stage_effort(stage))
+    return CodexProvider(
+        model=stage_model(stage),
+        effort=stage_effort(stage),
+        web_search=stage_web_search(stage),
+    )

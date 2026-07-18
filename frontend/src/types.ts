@@ -57,10 +57,10 @@ export interface SparklineData {
   technical_state: TechnicalState
 }
 
-// TipRanks mean analyst target and its latest FMP EOD upside calculation.
+// Sell-side mean analyst target and its latest FMP EOD upside calculation.
 export interface AnalystTarget {
   ticker: string
-  source: 'tipranks'
+  source: 'fmp' | 'tipranks'
   status: 'current' | 'stale' | 'unavailable' | 'not_applicable'
   mean_price_target: number | null
   high_price_target: number | null
@@ -105,6 +105,24 @@ export interface Catalyst {
   description: string
   confidence: string
   resolved: boolean
+}
+
+export interface CatalystOutlookItem {
+  date: string | null
+  date_label: string
+  type:
+    | 'regulatory'
+    | 'clinical_data'
+    | 'product_launch'
+    | 'earnings'
+    | 'investor_event'
+    | 'contract_milestone'
+    | 'fund_event'
+    | 'other'
+  label: string
+  confirmed: boolean
+  source_title: string
+  source_url: string
 }
 
 // One uploaded thesis document (metadata).
@@ -173,6 +191,7 @@ export interface PositionSummary {
   n_files: number
   spark: SparklineData | null
   analyst_target: AnalystTarget | null
+  catalyst_outlook: CatalystOutlookItem[]
   rating: Rating | null
   decision: Decision | null
 }

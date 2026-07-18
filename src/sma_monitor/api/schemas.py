@@ -63,10 +63,10 @@ class SparklineOut(BaseModel):
     technical_state: TechnicalState = "no_price_data"
 
 
-# TipRanks consensus target plus the latest dated EOD reference-price calculation.
+# Sell-side consensus target plus the latest dated EOD reference-price calculation.
 class AnalystTargetOut(BaseModel):
     ticker: str
-    source: Literal["tipranks"] = "tipranks"
+    source: Literal["fmp", "tipranks"] = "fmp"
     status: Literal["current", "stale", "unavailable", "not_applicable"]
     mean_price_target: float | None = None
     high_price_target: float | None = None
@@ -118,6 +118,25 @@ class CatalystOut(BaseModel):
     description: str
     confidence: str
     resolved: bool = False
+
+
+class CatalystOutlookItemOut(BaseModel):
+    date: str | None = None
+    date_label: str
+    type: Literal[
+        "regulatory",
+        "clinical_data",
+        "product_launch",
+        "earnings",
+        "investor_event",
+        "contract_milestone",
+        "fund_event",
+        "other",
+    ]
+    label: str
+    confirmed: bool = False
+    source_title: str
+    source_url: str
 
 
 # One uploaded thesis document (metadata only; text is server-side).
@@ -186,6 +205,7 @@ class PositionSummary(BaseModel):
     n_files: int = 0
     spark: SparklineOut | None = None  # ~1yr daily EOD closes + EMA20 overlay
     analyst_target: AnalystTargetOut | None = None
+    catalyst_outlook: list[CatalystOutlookItemOut] = Field(default_factory=list)
     rating: RatingOut | None = None
     decision: DecisionOut | None = None
 

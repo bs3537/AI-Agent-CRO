@@ -1,13 +1,13 @@
-"""Current TipRanks target state persisted for dashboard reads."""
+"""Current sell-side analyst target state persisted for dashboard reads."""
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from ..db import connection, init_db
 from ..identity import event_id
-from .tipranks import TipRanksTarget, tipranks_forecast_url
+from .tipranks import tipranks_forecast_url
 
 # Target rows retain the last successful value while attempt status records freshness.
 ANALYST_TARGET_SCHEMA = """
@@ -37,10 +37,15 @@ CREATE INDEX IF NOT EXISTS idx_analyst_target_fetched_at
     ON analyst_price_targets(target_fetched_at);
 """
 
-# Public presentation policy for TipRanks data and missed weekly refreshes.
-TARGET_SOURCE = "tipranks"
-TARGET_WINDOW = "12_month_targets_issued_last_3_months"
-TARGET_STALE_AFTER = timedelta(days=8)
+# Public presentation policy for source-specific target refreshes.
+TIPRANKS_SOURCE = "tipranks"
+TIPRANKS_WINDOW = "12_month_targets_issued_last_3_months"
+FMP_SOURCE = "fmp"
+FMP_WINDOW = "current_sell_side_consensus"
+TARGET_STALE_AFTER = {
+    TIPRANKS_SOURCE: timedelta(days=8),
+    FMP_SOURCE: timedelta(days=4),
+}
 TARGET_FIELDS = (
     "ticker",
     "source",
@@ -62,6 +67,15 @@ TARGET_FIELDS = (
 )
 
 
+class AnalystConsensusTarget(Protocol):
+    mean_price_target: float
+    high_price_target: float | None
+    low_price_target: float | None
+    analyst_count: int | None
+    currency: str | None
+    source_url: str
+
+
 # Create the current-state table and its universal events dependency.
 def init_analyst_target_schema() -> None:
     init_db()
@@ -74,19 +88,22 @@ def analyst_target_event_id(ticker: str) -> str:
     return event_id({"kind": "analyst_price_target", "ticker": ticker.upper()})
 
 
-# Persist a successful TipRanks target and clear any previous failure status.
+# Persist a successful analyst target and clear any previous failure status.
 def save_target_success(
     ticker: str,
-    target: TipRanksTarget,
+    target: AnalystConsensusTarget,
     *,
     fetched_at: datetime | None = None,
+    source: str = TIPRANKS_SOURCE,
+    target_window: str = TIPRANKS_WINDOW,
+    source_url: str | None = None,
 ) -> str:
     init_analyst_target_schema()
     ticker = ticker.strip().upper()
     fetched_at = fetched_at or datetime.now(UTC)
     eid = analyst_target_event_id(ticker)
     payload = {
-        "source": TARGET_SOURCE,
+        "source": source,
         "status": "current",
         "mean_price_target": target.mean_price_target,
         "analyst_count": target.analyst_count,
@@ -104,15 +121,15 @@ def save_target_success(
             (
                 ticker,
                 eid,
-                TARGET_SOURCE,
+                source,
                 "current",
                 target.mean_price_target,
                 target.high_price_target,
                 target.low_price_target,
                 target.analyst_count,
                 target.currency,
-                target.source_url,
-                TARGET_WINDOW,
+                source_url or target.source_url,
+                target_window,
                 fetched_at.isoformat(),
                 fetched_at.isoformat(),
                 None,
@@ -125,19 +142,22 @@ def save_target_success(
     return eid
 
 
-# Persist an explicit TipRanks no-coverage result and clear any obsolete target.
+# Persist an explicit no-coverage result and clear any obsolete target.
 def save_target_unavailable(
     ticker: str,
     *,
     attempted_at: datetime | None = None,
     reason: str = "no_analyst_coverage",
+    source: str = TIPRANKS_SOURCE,
+    target_window: str = TIPRANKS_WINDOW,
+    source_url: str | None = None,
 ) -> str:
     init_analyst_target_schema()
     ticker = ticker.strip().upper()
     attempted_at = attempted_at or datetime.now(UTC)
     eid = analyst_target_event_id(ticker)
-    source_url = tipranks_forecast_url(ticker)
-    payload = {"source": TARGET_SOURCE, "status": "unavailable", "reason": reason}
+    source_url = source_url or tipranks_forecast_url(ticker)
+    payload = {"source": source, "status": "unavailable", "reason": reason}
     with connection() as conn:
         _save_event(conn, eid, ticker, attempted_at, payload)
         conn.execute(
@@ -151,7 +171,7 @@ def save_target_unavailable(
             (
                 ticker,
                 eid,
-                TARGET_SOURCE,
+                source,
                 "unavailable",
                 None,
                 None,
@@ -159,7 +179,7 @@ def save_target_unavailable(
                 None,
                 None,
                 source_url,
-                TARGET_WINDOW,
+                target_window,
                 None,
                 attempted_at.isoformat(),
                 reason,
@@ -178,6 +198,9 @@ def mark_target_failure(
     *,
     attempted_at: datetime | None = None,
     reason: str = "scrape_failed",
+    source: str = TIPRANKS_SOURCE,
+    target_window: str = TIPRANKS_WINDOW,
+    source_url: str | None = None,
 ) -> str:
     init_analyst_target_schema()
     ticker = ticker.strip().upper()
@@ -185,7 +208,7 @@ def mark_target_failure(
     eid = analyst_target_event_id(ticker)
     with connection() as conn:
         row = conn.execute(
-            "SELECT mean_price_target FROM analyst_price_targets WHERE ticker = ?",
+            "SELECT source, mean_price_target FROM analyst_price_targets WHERE ticker = ?",
             (ticker,),
         ).fetchone()
         if row is None:
@@ -194,7 +217,7 @@ def mark_target_failure(
                 eid,
                 ticker,
                 attempted_at,
-                {"source": TARGET_SOURCE, "status": "unavailable", "reason": reason},
+                {"source": source, "status": "unavailable", "reason": reason},
             )
             conn.execute(
                 """INSERT INTO analyst_price_targets
@@ -204,10 +227,10 @@ def mark_target_failure(
                 (
                     ticker,
                     eid,
-                    TARGET_SOURCE,
+                    source,
                     "unavailable",
-                    tipranks_forecast_url(ticker),
-                    TARGET_WINDOW,
+                    source_url or tipranks_forecast_url(ticker),
+                    target_window,
                     attempted_at.isoformat(),
                     reason,
                 ),
@@ -219,7 +242,7 @@ def mark_target_failure(
                 eid,
                 ticker,
                 attempted_at,
-                {"source": TARGET_SOURCE, "status": status, "reason": reason},
+                {"source": row["source"], "status": status, "reason": reason},
             )
             conn.execute(
                 """UPDATE analyst_price_targets
@@ -235,19 +258,22 @@ def save_target_not_applicable(
     ticker: str,
     *,
     attempted_at: datetime | None = None,
+    source: str = FMP_SOURCE,
+    target_window: str = FMP_WINDOW,
+    source_url: str | None = None,
 ) -> str:
     init_analyst_target_schema()
     ticker = ticker.strip().upper()
     attempted_at = attempted_at or datetime.now(UTC)
     eid = analyst_target_event_id(ticker)
-    source_url = tipranks_forecast_url(ticker)
+    source_url = source_url or tipranks_forecast_url(ticker)
     with connection() as conn:
         _save_event(
             conn,
             eid,
             ticker,
             attempted_at,
-            {"source": TARGET_SOURCE, "status": "not_applicable", "reason": "etf"},
+            {"source": source, "status": "not_applicable", "reason": "etf"},
         )
         conn.execute(
             """INSERT OR REPLACE INTO analyst_price_targets
@@ -260,7 +286,7 @@ def save_target_not_applicable(
             (
                 ticker,
                 eid,
-                TARGET_SOURCE,
+                source,
                 "not_applicable",
                 None,
                 None,
@@ -268,7 +294,7 @@ def save_target_not_applicable(
                 None,
                 None,
                 source_url,
-                TARGET_WINDOW,
+                target_window,
                 None,
                 attempted_at.isoformat(),
                 "etf",
@@ -354,7 +380,8 @@ def target_state_from_row(
     if (
         state["status"] == "current"
         and fetched_at is not None
-        and now - fetched_at > TARGET_STALE_AFTER
+        and now - fetched_at
+        > TARGET_STALE_AFTER.get(state["source"], TARGET_STALE_AFTER[FMP_SOURCE])
     ):
         state["status"] = "stale"
         state["unavailable_reason"] = "target_refresh_overdue"
