@@ -132,6 +132,7 @@ export default function ThesisDrawer({
             zIndex: theme.zIndex.drawer + 1,
             borderLeft: '1px solid',
             borderColor: 'divider',
+            overflowY: 'auto',
             right: { xs: 0, md: catalystOpen ? `${CATALYST_DRAWER_WIDTH}px` : 0 },
             transition: `${theme.transitions.create(['transform', 'right'], {
               duration: theme.transitions.duration.enteringScreen,
@@ -228,6 +229,15 @@ export default function ThesisDrawer({
                 >
                   Add docs
                 </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<EventNoteIcon />}
+                  disabled={busy || !ticker}
+                  onClick={() => setCatalystOpen(true)}
+                >
+                  Add / edit catalysts
+                </Button>
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -257,17 +267,6 @@ export default function ThesisDrawer({
                 </List>
               )}
             </Box>
-
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<EventNoteIcon />}
-              disabled={busy || !ticker}
-              onClick={() => setCatalystOpen(true)}
-              sx={{ alignSelf: 'flex-start' }}
-            >
-              Add / edit catalysts
-            </Button>
 
             <Stack direction="row" spacing={1}>
               <Button
