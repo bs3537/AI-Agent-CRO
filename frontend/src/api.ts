@@ -89,6 +89,19 @@ export const api = {
     )
   },
 
+  // Save PM-edited catalysts as free text for a ticker.
+  saveCatalysts: (ticker: string, text: string) =>
+    fetch(`/api/positions/${ticker}/catalyst_outlook`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.text().catch(() => '')
+        throw new Error(`${r.status} ${r.statusText}${body ? `: ${body}` : ''}`)
+      }
+    }),
+
   // Remove an uploaded document.
   deleteFile: async (ticker: string, eventId: string) => {
     const r = await fetch(`/api/positions/${ticker}/files/${eventId}`, { method: 'DELETE' })

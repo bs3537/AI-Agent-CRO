@@ -1,12 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ElementType } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import Collapse from '@mui/material/Collapse'
 import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import type { PositionSummary, QuoteInfo } from '../types'
@@ -143,13 +146,16 @@ function Band({
   liveQuotes,
   marketOpen,
   onOpenDetail,
+  defaultExpanded = true,
 }: {
   triage: Triage
   rows: PositionSummary[]
   liveQuotes: Record<string, QuoteInfo>
   marketOpen: boolean
   onOpenDetail: (ticker: string) => void
+  defaultExpanded?: boolean
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const color = BAND_COLOR[triage]
   const { icon: Icon, title } = BAND_META[triage]
   return (
@@ -158,12 +164,24 @@ function Band({
       sx={{ mb: 1.25, borderLeft: `4px solid ${color}`, borderRadius: 1 }}
     >
       <Box
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setExpanded((v) => !v)
+          }
+        }}
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 0.75,
           px: 1.5,
           py: 0.9,
+          cursor: 'pointer',
+          userSelect: 'none',
+          '&:hover': { bgcolor: 'action.hover' },
         }}
       >
         <Icon fontSize="small" sx={{ color }} />
@@ -174,22 +192,30 @@ function Band({
             letterSpacing: 0,
             fontWeight: 700,
             color,
+            flexGrow: 1,
           }}
         >
           {title} ({rows.length})
         </Typography>
+        {expanded ? (
+          <ExpandLessIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+        ) : (
+          <ExpandMoreIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+        )}
       </Box>
-      <Divider />
-      <Stack divider={<Divider />}>
-        {rows.map((pos) => (
-          <BandRow
-            key={pos.ticker}
-            pos={pos}
-            quote={marketOpen ? liveQuotes[pos.ticker] ?? null : null}
-            onOpenDetail={onOpenDetail}
-          />
-        ))}
-      </Stack>
+      <Collapse in={expanded}>
+        <Divider />
+        <Stack divider={<Divider />}>
+          {rows.map((pos) => (
+            <BandRow
+              key={pos.ticker}
+              pos={pos}
+              quote={marketOpen ? liveQuotes[pos.ticker] ?? null : null}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </Stack>
+      </Collapse>
     </Paper>
   )
 }
@@ -241,6 +267,7 @@ export default function TriageBands({
           liveQuotes={liveQuotes}
           marketOpen={marketOpen}
           onOpenDetail={onOpenDetail}
+          defaultExpanded={true}
         />
       )}
       {watch.length > 0 && (
@@ -250,6 +277,7 @@ export default function TriageBands({
           liveQuotes={liveQuotes}
           marketOpen={marketOpen}
           onOpenDetail={onOpenDetail}
+          defaultExpanded={false}
         />
       )}
     </Box>

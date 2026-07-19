@@ -47,6 +47,7 @@ from ...scorer.store import recent_scores
 from ..schemas import (
     CatalystOut,
     CatalystOutlookItemOut,
+    CatalystTextUpdate,
     DecisionOut,
     DeleteHoldingResponse,
     FileOut,
@@ -549,6 +550,44 @@ def _pattern_ids(blob) -> list[str]:
     except (json.JSONDecodeError, TypeError):
         return []
     return [m.get("id") for m in items if m.get("id")]
+
+
+# PUT /api/positions/{ticker}/catalyst_outlook — save PM-edited catalysts as
+# plain text. Each non-empty line becomes one catalyst entry of type "other".
+# This overwrites the latest catalyst_outlook record for the ticker.
+@router.put("/{ticker}/catalyst_outlook", status_code=204)
+def update_catalyst_outlook(ticker: str, body: CatalystTextUpdate) -> None:
+    from ...news.catalyst_outlook import (
+        CatalystOutlookItem as _CItem,
+        save_catalyst_outlook as _save,
+    )
+    want = ticker.strip().upper()
+    if want not in _position_tickers():
+        raise HTTPException(status_code=404, detail=f"no held position for {want}")
+    text = (body.text or "").strip()
+    items: list[_CItem] = []
+    if text:
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            label = line[:80]
+            date_label = "Manual entry"
+            # Try to parse a leading date/label prefix like "Q4 2025: ..." or "2025-12-01: ..."
+            if ": " in line:
+                prefix, rest = line.split(": ", 1)
+                date_label = prefix.strip()[:40]
+                label = rest.strip()[:80]
+            items.append(_CItem(
+                date=None,
+                date_label=date_label,
+                type="other",
+                label=label,
+                confirmed=True,
+                source_title="PM manual entry",
+                source_url="manual",
+            ))
+    _save(want, items, model_used="pm_manual")
 
 
 # PUT /api/positions/{ticker}/thesis — edit the long thesis. Creates a minimal

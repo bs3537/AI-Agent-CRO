@@ -45,23 +45,18 @@ type SortKey =
   | 'weight'
   | 'gl'
   | 'upside'
-  | 'pt'
   | 'ema'
   | 'catalyst'
   | 'rating'
 type SortState = { key: SortKey; dir: 'asc' | 'desc' }
 
-const DEFAULT_DESC = new Set<SortKey>(['weight', 'gl', 'upside', 'pt', 'ema'])
+const DEFAULT_DESC = new Set<SortKey>(['weight', 'gl', 'upside', 'ema'])
 const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 }
 
-function targetMean(pos: PositionSummary): number | null {
+function targetUpside(pos: PositionSummary): number | null {
   if (pos.is_etf || !pos.analyst_target) return null
   if (!['current', 'stale'].includes(pos.analyst_target.status)) return null
-  return pos.analyst_target.mean_price_target
-}
-
-function targetUpside(pos: PositionSummary): number | null {
-  return targetMean(pos) === null ? null : pos.analyst_target?.upside_pct ?? null
+  return pos.analyst_target.upside_pct ?? null
 }
 
 function displayPnlPct(
@@ -121,8 +116,6 @@ function sortValue(
       return displayPnlPct(pos, quote)
     case 'upside':
       return targetUpside(pos)
-    case 'pt':
-      return targetMean(pos)
     case 'ema':
       return (
         pos.rating?.price_vs_ema20_pct ??
@@ -229,6 +222,7 @@ function CatalystCell({ items }: { items: CatalystOutlookItem[] }) {
           const tag = CATALYST_TAG[item.type] ?? CATALYST_TAG.other
           const days = daysUntil(item.date)
           const imminent = days !== null && days >= 0 && days <= 30
+          const isManual = item.source_url === 'manual' || !item.source_url
           return (
             <Tooltip
               key={`${item.source_url}-${index}`}
@@ -249,21 +243,35 @@ function CatalystCell({ items }: { items: CatalystOutlookItem[] }) {
                 >
                   {tag.text}
                 </Typography>
-                <Link
-                  href={item.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  underline="hover"
-                  onClick={(event) => event.stopPropagation()}
-                  sx={{
-                    color: imminent ? AMBER : 'text.primary',
-                    fontSize: 11,
-                    lineHeight: 1.4,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {item.confirmed ? '' : '~'}{item.date_label}
-                </Link>
+                {isManual ? (
+                  <Typography
+                    component="span"
+                    sx={{
+                      color: imminent ? AMBER : 'text.primary',
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {item.confirmed ? '' : '~'}{item.date_label}
+                  </Typography>
+                ) : (
+                  <Link
+                    href={item.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    underline="hover"
+                    onClick={(event) => event.stopPropagation()}
+                    sx={{
+                      color: imminent ? AMBER : 'text.primary',
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {item.confirmed ? '' : '~'}{item.date_label}
+                  </Link>
+                )}
               </Box>
             </Tooltip>
           )
@@ -317,16 +325,14 @@ export default function PositionsTable({
       <Table
         stickyHeader
         size="small"
-        sx={{ minWidth: 1180, '& tbody td': { verticalAlign: 'middle' } }}
+        sx={{ minWidth: 900, '& tbody td': { verticalAlign: 'middle' } }}
       >
         <TableHead>
           <TableRow>
             <SortHeader label="Symbol" sortKey="symbol" sort={sort} onSort={onSort} />
-            <TableCell sx={headCellSx}>Company</TableCell>
             <SortHeader label="Weight" sortKey="weight" sort={sort} onSort={onSort} align="right" />
             <SortHeader label="G/L" sortKey="gl" sort={sort} onSort={onSort} align="right" />
             <SortHeader label="PT upside" sortKey="upside" sort={sort} onSort={onSort} align="right" />
-            <SortHeader label="Mean PT" sortKey="pt" sort={sort} onSort={onSort} align="right" />
             <TableCell sx={headCellSx}>Trend</TableCell>
             <SortHeader label="vs 20-EMA" sortKey="ema" sort={sort} onSort={onSort} align="right" />
             <TableCell sx={headCellSx}>Upcoming catalysts</TableCell>
@@ -339,11 +345,6 @@ export default function PositionsTable({
             const quote = marketOpen ? liveQuotes[pos.ticker] ?? null : null
             const pnlPct = displayPnlPct(pos, quote)
             const target = pos.analyst_target
-            const meanTarget = targetMean(pos)
-            const targetTooltip =
-              meanTarget === null
-                ? undefined
-                : `${target?.analyst_count ?? 'Unspecified'} analysts | FMP consensus${target?.target_fetched_at ? ` | fetched ${new Date(target.target_fetched_at).toLocaleDateString()}` : ''}`
             const thesisLabel = pos.thesis.trim().toUpperCase()
             const isStub =
               pos.thesis_source === 'system_stub' ||
@@ -400,17 +401,6 @@ export default function PositionsTable({
                     )}
                   </Box>
                 </TableCell>
-                <TableCell>
-                  <Tooltip title={pos.company_name ?? ''}>
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{ maxWidth: 180, color: 'text.secondary' }}
-                    >
-                      {pos.company_name ?? '-'}
-                    </Typography>
-                  </Tooltip>
-                </TableCell>
                 <NumericCell value={pos.pct_nav} format={(value) => `${(value * 100).toFixed(1)}%`} />
                 <NumericCell value={pnlPct} format={signedPercent} color={signColor(pnlPct)} />
                 <NumericCell
@@ -422,11 +412,6 @@ export default function PositionsTable({
                       ? `EOD upside using the ${target.price_as_of} reference close`
                       : undefined
                   }
-                />
-                <NumericCell
-                  value={meanTarget}
-                  format={(value) => `$${value.toFixed(2)}`}
-                  tooltip={targetTooltip}
                 />
                 <TableCell sx={{ py: 0.5 }}>
                   <Sparkline spark={pos.spark} width={110} height={28} />

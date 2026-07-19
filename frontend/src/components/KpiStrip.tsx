@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
@@ -8,7 +7,6 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import type { Grade, PositionSummary, QuoteInfo } from '../types'
-import { compactUsd, signedPercent } from '../format'
 import { GRADE_HEX } from '../theme'
 
 const AMBER = '#F5B14C'
@@ -27,7 +25,7 @@ function StatGroup({
   children,
 }: {
   label: string
-  children: ReactNode
+  children: React.ReactNode
 }) {
   return (
     <Box sx={{ flexShrink: 0 }}>
@@ -55,15 +53,6 @@ function StatGroup({
       </Box>
     </Box>
   )
-}
-
-function marketValue(pos: PositionSummary, quote: QuoteInfo | null): number {
-  return quote ? quote.price * pos.qty : pos.market_value
-}
-
-function openPnl(pos: PositionSummary, quote: QuoteInfo | null): number | null {
-  if (pos.cost_basis === null) return null
-  return marketValue(pos, quote) - pos.cost_basis
 }
 
 function catalystWithinSevenDays(pos: PositionSummary): boolean {
@@ -95,25 +84,12 @@ export default function KpiStrip({
   marketOpen: boolean
 }) {
   const stats = useMemo(() => {
-    let book = 0
-    let pnlTotal = 0
-    let pnlCount = 0
-    let costTotal = 0
     const grades: Record<Grade, number> = { A: 0, B: 0, C: 0, D: 0 }
     let unrated = 0
     let belowEma = 0
     let catalystSoon = 0
 
     for (const pos of positions) {
-      const quote = marketOpen ? liveQuotes[pos.ticker] ?? null : null
-      book += marketValue(pos, quote)
-      const pnl = openPnl(pos, quote)
-      if (pnl !== null && pos.cost_basis !== null) {
-        pnlTotal += pnl
-        costTotal += pos.cost_basis
-        pnlCount += 1
-      }
-
       const grade = pos.rating?.grade ?? pos.decision?.grade ?? null
       if (grade) grades[grade] += 1
       else unrated += 1
@@ -125,10 +101,6 @@ export default function KpiStrip({
     }
 
     return {
-      book,
-      pnlTotal,
-      pnlCount,
-      pnlPct: costTotal > 0 ? pnlTotal / costTotal : null,
       grades,
       unrated,
       belowEma,
@@ -139,13 +111,6 @@ export default function KpiStrip({
         : 0,
     }
   }, [liveQuotes, marketOpen, positions])
-
-  const pnlColor =
-    stats.pnlCount === 0
-      ? 'text.disabled'
-      : stats.pnlTotal >= 0
-        ? 'success.main'
-        : 'error.main'
 
   return (
     <Paper
@@ -159,31 +124,6 @@ export default function KpiStrip({
         divider={<Divider orientation="vertical" flexItem />}
         sx={{ minWidth: 'min-content' }}
       >
-        <StatGroup label={stats.liveCount > 0 ? 'Book (live)' : 'Book'}>
-          <Typography component="span" sx={valueSx}>
-            {compactUsd(stats.book)}
-          </Typography>
-        </StatGroup>
-
-        <StatGroup label="Open P/L">
-          <Typography component="span" sx={{ ...valueSx, color: pnlColor }}>
-            {stats.pnlCount === 0 ? '-' : compactUsd(stats.pnlTotal)}
-          </Typography>
-          {stats.pnlPct !== null && (
-            <Typography
-              component="span"
-              variant="body2"
-              sx={{
-                fontVariantNumeric: 'tabular-nums',
-                color: pnlColor,
-                opacity: 0.85,
-              }}
-            >
-              {signedPercent(stats.pnlPct)}
-            </Typography>
-          )}
-        </StatGroup>
-
         <StatGroup label="Grades">
           <Stack direction="row" spacing={0.5} alignItems="center">
             {GRADE_ORDER.map((grade) => (

@@ -15,12 +15,15 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteIcon from '@mui/icons-material/Delete'
+import EventNoteIcon from '@mui/icons-material/EventNote'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import { api } from '../api'
 import type { FileMeta, PositionDetail, PositionSummary } from '../types'
+import CatalystDrawer, { CATALYST_DRAWER_WIDTH } from './CatalystDrawer'
 import ThesisTargetLine from './ThesisTargetLine'
 
 const MAX_THESIS_WORDS = 2000
+const THESIS_WIDTH = 520
 
 export type ThesisPackage = {
   ticker: string
@@ -49,6 +52,7 @@ export default function ThesisDrawer({
   const [replaceFiles, setReplaceFiles] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [catalystOpen, setCatalystOpen] = useState(false)
 
   useEffect(() => {
     setError(null)
@@ -56,6 +60,7 @@ export default function ThesisDrawer({
     setFiles([])
     setReplaceFiles(true)
     setThesis(position?.thesis ?? '')
+    setCatalystOpen(false)
     if (!ticker) return
     api
       .detail(ticker)
@@ -115,195 +120,220 @@ export default function ThesisDrawer({
   }
 
   return (
-    <Drawer
-      anchor="right"
-      variant="persistent"
-      open={!!ticker}
-      onClose={busy ? undefined : onClose}
-      PaperProps={{
-        sx: (theme) => ({
-          width: { xs: '100vw', sm: 520 },
-          zIndex: theme.zIndex.drawer + 1,
-          borderLeft: '1px solid',
-          borderColor: 'divider',
-        }),
-      }}
-    >
-      <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between">
-          <Typography variant="h6">
-            {ticker} {isAiDraft ? 'preliminary thesis' : 'thesis'}
-          </Typography>
-          <IconButton onClick={onClose} size="small" disabled={busy}>
-            <CloseIcon />
-          </IconButton>
-        </Stack>
-        <Divider sx={{ my: 1.5 }} />
+    <>
+      <Drawer
+        anchor="right"
+        variant="persistent"
+        open={!!ticker}
+        onClose={busy ? undefined : onClose}
+        PaperProps={{
+          sx: (theme) => ({
+            width: { xs: '100vw', sm: THESIS_WIDTH },
+            zIndex: theme.zIndex.drawer + 1,
+            borderLeft: '1px solid',
+            borderColor: 'divider',
+            right: { xs: 0, md: catalystOpen ? `${CATALYST_DRAWER_WIDTH}px` : 0 },
+            transition: `${theme.transitions.create(['transform', 'right'], {
+              duration: theme.transitions.duration.enteringScreen,
+            })} !important`,
+          }),
+        }}
+      >
+        <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography variant="h6">
+              {ticker} {isAiDraft ? 'preliminary thesis' : 'thesis'}
+            </Typography>
+            <IconButton onClick={onClose} size="small" disabled={busy}>
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+          <Divider sx={{ my: 1.5 }} />
 
-        {error && (
-          <Typography color="error" variant="body2" sx={{ mb: 1.5 }}>
-            {error}
-          </Typography>
-        )}
-
-        <Stack spacing={2}>
-          {isAiDraft && (
-            <Box>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                AI-generated · {position?.thesis_generated_by ?? 'model'}
-                {position?.thesis_generated_at
-                  ? ` · ${new Date(position.thesis_generated_at).toLocaleString()}`
-                  : ''}
-              </Typography>
-              <Box sx={{ mt: 0.75 }}>
-                <ThesisTargetLine
-                  target={position?.analyst_target ?? null}
-                  isEtf={position?.is_etf ?? false}
-                />
-              </Box>
-            </Box>
+          {error && (
+            <Typography color="error" variant="body2" sx={{ mb: 1.5 }}>
+              {error}
+            </Typography>
           )}
 
-          <TextField
-            label={isAiDraft ? 'Preliminary thesis' : 'Thesis'}
-            value={thesis}
-            onChange={(e) => setThesis(e.target.value)}
-            multiline
-            minRows={12}
-            maxRows={24}
-            fullWidth
-            error={tooLong}
-            helperText={`${wordCount}/${MAX_THESIS_WORDS} words`}
-          />
+          <Stack spacing={2}>
+            {isAiDraft && (
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  AI-generated · {position?.thesis_generated_by ?? 'model'}
+                  {position?.thesis_generated_at
+                    ? ` · ${new Date(position.thesis_generated_at).toLocaleString()}`
+                    : ''}
+                </Typography>
+                <Box sx={{ mt: 0.75 }}>
+                  <ThesisTargetLine
+                    target={position?.analyst_target ?? null}
+                    isEtf={position?.is_etf ?? false}
+                  />
+                </Box>
+              </Box>
+            )}
 
-          {preliminary && preliminary.research_sources.length > 0 && (
+            <TextField
+              label={isAiDraft ? 'Preliminary thesis' : 'Thesis'}
+              value={thesis}
+              onChange={(e) => setThesis(e.target.value)}
+              multiline
+              minRows={12}
+              maxRows={24}
+              fullWidth
+              error={tooLong}
+              helperText={`${wordCount}/${MAX_THESIS_WORDS} words`}
+            />
+
+            {preliminary && preliminary.research_sources.length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ color: 'primary.main', mb: 0.5 }}>
+                  Research sources
+                </Typography>
+                <Stack spacing={0.5}>
+                  {preliminary.research_sources.map((source) => (
+                    <Link
+                      key={source.url}
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      variant="body2"
+                      underline="hover"
+                      sx={{ overflowWrap: 'anywhere' }}
+                    >
+                      {source.title}
+                    </Link>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
+            <Box>
+              <input
+                ref={inputRef}
+                type="file"
+                hidden
+                multiple
+                accept=".txt,.md,.markdown,.pdf,.docx"
+                onChange={onPick}
+              />
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<UploadFileIcon />}
+                  disabled={busy}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  Add docs
+                </Button>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={replaceFiles}
+                      onChange={(e) => setReplaceFiles(e.target.checked)}
+                    />
+                  }
+                  label="Replace prior docs"
+                />
+              </Stack>
+              {files.length > 0 && (
+                <List dense disablePadding sx={{ mt: 1 }}>
+                  {files.map((file, i) => (
+                    <ListItem
+                      key={`${file.name}-${i}`}
+                      disableGutters
+                      secondaryAction={
+                        <IconButton edge="end" size="small" onClick={() => removePicked(i)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      }
+                    >
+                      <ListItemText primary={file.name} secondary={formatBytes(file.size)} />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Box>
+
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<EventNoteIcon />}
+              disabled={busy || !ticker}
+              onClick={() => setCatalystOpen(true)}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Add / edit catalysts
+            </Button>
+
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
+                onClick={() => void save()}
+                disabled={busy || tooLong || !ticker}
+              >
+                {busy ? 'Saving...' : 'Save and recompute'}
+              </Button>
+              <Button onClick={onClose} disabled={busy}>
+                Cancel
+              </Button>
+            </Stack>
+
+            <Divider />
+
             <Box>
               <Typography variant="subtitle2" sx={{ color: 'primary.main', mb: 0.5 }}>
-                Research sources
+                Current docs ({detail?.files.length ?? 0})
               </Typography>
-              <Stack spacing={0.5}>
-                {preliminary.research_sources.map((source) => (
-                  <Link
-                    key={source.url}
-                    href={source.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    variant="body2"
-                    underline="hover"
-                    sx={{ overflowWrap: 'anywhere' }}
-                  >
-                    {source.title}
-                  </Link>
-                ))}
-              </Stack>
-            </Box>
-          )}
-
-          <Box>
-            <input
-              ref={inputRef}
-              type="file"
-              hidden
-              multiple
-              accept=".txt,.md,.markdown,.pdf,.docx"
-              onChange={onPick}
-            />
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<UploadFileIcon />}
-                disabled={busy}
-                onClick={() => inputRef.current?.click()}
-              >
-                Add docs
-              </Button>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={replaceFiles}
-                    onChange={(e) => setReplaceFiles(e.target.checked)}
-                  />
-                }
-                label="Replace prior docs"
-              />
-            </Stack>
-            {files.length > 0 && (
-              <List dense disablePadding sx={{ mt: 1 }}>
-                {files.map((file, i) => (
+              <List dense disablePadding>
+                {(detail?.files ?? []).map((file) => (
                   <ListItem
-                    key={`${file.name}-${i}`}
+                    key={file.event_id}
                     disableGutters
                     secondaryAction={
-                      <IconButton edge="end" size="small" onClick={() => removePicked(i)}>
+                      <IconButton
+                        edge="end"
+                        size="small"
+                        disabled={busy}
+                        onClick={() => void removeCurrentFile(file)}
+                      >
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     }
                   >
-                    <ListItemText primary={file.name} secondary={formatBytes(file.size)} />
+                    <ListItemText
+                      primary={file.filename}
+                      secondary={`${file.content_type} - ${file.n_chars} chars`}
+                    />
                   </ListItem>
                 ))}
+                {detail && detail.files.length === 0 && (
+                  <Typography variant="body2" sx={{ opacity: 0.5 }}>
+                    No uploaded documents.
+                  </Typography>
+                )}
+                {!detail && !error && (
+                  <Typography variant="body2" sx={{ opacity: 0.5 }}>
+                    Loading...
+                  </Typography>
+                )}
               </List>
-            )}
-          </Box>
-
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              onClick={() => void save()}
-              disabled={busy || tooLong || !ticker}
-            >
-              {busy ? 'Saving...' : 'Save and recompute'}
-            </Button>
-            <Button onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
+            </Box>
           </Stack>
+        </Box>
+      </Drawer>
 
-          <Divider />
-
-          <Box>
-            <Typography variant="subtitle2" sx={{ color: 'primary.main', mb: 0.5 }}>
-              Current docs ({detail?.files.length ?? 0})
-            </Typography>
-            <List dense disablePadding>
-              {(detail?.files ?? []).map((file) => (
-                <ListItem
-                  key={file.event_id}
-                  disableGutters
-                  secondaryAction={
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      disabled={busy}
-                      onClick={() => void removeCurrentFile(file)}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  }
-                >
-                  <ListItemText
-                    primary={file.filename}
-                    secondary={`${file.content_type} - ${file.n_chars} chars`}
-                  />
-                </ListItem>
-              ))}
-              {detail && detail.files.length === 0 && (
-                <Typography variant="body2" sx={{ opacity: 0.5 }}>
-                  No uploaded documents.
-                </Typography>
-              )}
-              {!detail && !error && (
-                <Typography variant="body2" sx={{ opacity: 0.5 }}>
-                  Loading...
-                </Typography>
-              )}
-            </List>
-          </Box>
-        </Stack>
-      </Box>
-    </Drawer>
+      <CatalystDrawer
+        ticker={catalystOpen ? ticker : null}
+        onClose={() => setCatalystOpen(false)}
+        onSaved={() => {
+          onChanged()
+        }}
+      />
+    </>
   )
 }
 

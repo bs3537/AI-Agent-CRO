@@ -266,6 +266,11 @@ class PositionDetail(PositionSummary):
     financials: dict[str, Any] | None = None   # W2 (FMP); null until wired
 
 
+# PUT /api/positions/{ticker}/catalyst_outlook request body.
+class CatalystTextUpdate(BaseModel):
+    text: str
+
+
 # PUT /api/positions/{ticker}/thesis request body.
 class ThesisUpdate(BaseModel):
     thesis: str
