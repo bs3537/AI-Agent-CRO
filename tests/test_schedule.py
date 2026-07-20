@@ -42,6 +42,9 @@ def test_crontab_collect_is_daily():
     assert "0 17 * * 1-5" in lines
     assert "target-upside-refresh" in lines
     assert "FMP consensus targets" in lines
+    assert "0 23 * * 1-5" in lines
+    assert "healthcare-movers-refresh" in lines
+    assert "healthcare universe" in lines
 
 
 def test_morning_smart_recompute_runs_at_6am_et():

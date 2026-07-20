@@ -10,6 +10,7 @@ import type {
   ChatHistoryMessage,
   ChatStatusResponse,
   ChatSubmitResponse,
+  HealthcareMoversResponse,
   IBKRPullResponse,
   ManualPositionPayload,
   ManualPositionResponse,
@@ -137,6 +138,10 @@ export const api = {
 
   // Intraday quotes for all held tickers (+ is_market_open flag).
   quotes: () => fetch('/api/quotes').then(json<QuotesResponse>),
+
+  // Latest complete 1-5 trading-session US healthcare mover rankings.
+  healthcareMovers: () =>
+    fetch('/api/healthcare-movers').then(json<HealthcareMoversResponse>),
 
   // Portfolio chatbot. Uses multipart even with no files so uploads share the
   // same endpoint.

@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from ..config import settings
 from ..db import init_db
 from ..paths import ensure_dirs
-from .routes import chat, portfolio, positions, quotes, status
+from .routes import chat, healthcare_movers, portfolio, positions, quotes, status
 
 _log = logging.getLogger(__name__)
 
@@ -232,6 +232,7 @@ def _init_served_phase_schemas() -> None:
     # run a full collect cycle yet. Initialize all served schemas at startup.
     from ..analyst_targets.store import init_analyst_target_schema
     from ..decision.store import init_decision_schema
+    from ..healthcare_movers.store import init_healthcare_movers_schema
     from ..news.catalyst_outlook import init_catalyst_schema
     from ..news.fmp_client import init_fmp_schema
     from ..news.store import init_news_schema
@@ -247,6 +248,7 @@ def _init_served_phase_schemas() -> None:
     init_uploads_schema()
     init_news_schema()
     init_fmp_schema()
+    init_healthcare_movers_schema()
     init_analyst_target_schema()
     init_catalyst_schema()
     init_scores_schema()
@@ -278,6 +280,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(status.router)
     app.include_router(quotes.router)
+    app.include_router(healthcare_movers.router)
 
     # Serve the built SPA at the root when it exists (production). html=True
     # makes client-side routing fall back to index.html.

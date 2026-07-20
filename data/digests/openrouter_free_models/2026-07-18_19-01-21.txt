@@ -1,0 +1,25 @@
+OpenRouter Free Models — Top 3 by Token Usage
+Run time: 2026-07-18 03:01 PM EDT
+Source: https://openrouter.ai/collections/free-models
+Usage window: 7 days
+
+Top 3 models:
+1. Tencent: Hy3 (free)
+   Model ID: tencent/hy3-20260706:free
+   Usage: 12T tokens (12,048,391,240,219)
+   Prompt: 11,615,382,630,309; completion: 267,942,318,763; reasoning: 165,066,291,147
+2. NVIDIA: Nemotron 3 Ultra (free)
+   Model ID: nvidia/nemotron-3-ultra-550b-a55b-20260604:free
+   Usage: 3.59T tokens (3,592,254,145,583)
+   Prompt: 3,569,294,757,554; completion: 17,405,353,279; reasoning: 5,554,034,750
+3. Poolside: Laguna M.1 (free)
+   Model ID: poolside/laguna-m.1-20260312:free
+   Usage: 643B tokens (643,022,316,235)
+   Prompt: 636,387,034,403; completion: 4,738,091,065; reasoning: 1,897,190,767
+
+Prior-run comparison:
+- #1 Tencent: Hy3 (free): same rank, +2.22T tokens
+- #2 NVIDIA: Nemotron 3 Ultra (free): same rank, +517B tokens
+- #3 Poolside: Laguna M.1 (free): same rank, +20.3B tokens
+
+Generated automatically by the Hermes OpenRouter free-model monitor.

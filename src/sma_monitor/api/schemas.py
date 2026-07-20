@@ -217,6 +217,46 @@ class PositionsResponse(BaseModel):
     missing_sidecars: list[str] = Field(default_factory=list)
 
 
+class HealthcareMoverOut(BaseModel):
+    rank: int
+    ticker: str
+    company_name: str
+    industry: str | None = None
+    exchange: str | None = None
+    market_cap: float | None = None
+    price: float
+    return_pct: float
+    window_days: int
+    start_date: str
+    end_date: str
+    start_close: float
+    end_close: float
+    latest_volume: int | None = None
+    average_volume_20d: float | None = None
+    volume_ratio: float | None = None
+    flags: list[str] = Field(default_factory=list)
+    spark_dates: list[str] = Field(default_factory=list)
+    spark_closes: list[float | None] = Field(default_factory=list)
+    is_held: bool = False
+
+
+class HealthcareMoverDirectionsOut(BaseModel):
+    gainers: list[HealthcareMoverOut] = Field(default_factory=list)
+    decliners: list[HealthcareMoverOut] = Field(default_factory=list)
+
+
+class HealthcareMoversResponse(BaseModel):
+    status: Literal["current", "unavailable"]
+    source: Literal["fmp"] = "fmp"
+    as_of_date: str | None = None
+    generated_at: str | None = None
+    universe_count: int = 0
+    covered_count: int = 0
+    coverage_fraction: float = 0
+    rankings: dict[str, HealthcareMoverDirectionsOut] = Field(default_factory=dict)
+    message: str | None = None
+
+
 # GET /api/positions/{ticker}: the summary plus the full evidence trail.
 class PositionDetail(PositionSummary):
     catalysts: list[CatalystOut] = Field(default_factory=list)

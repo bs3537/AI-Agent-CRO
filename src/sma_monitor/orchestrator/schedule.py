@@ -88,6 +88,10 @@ def crontab_lines() -> list[str]:
         "0 17 * * 1-5   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
         "target-upside-refresh >> data/logs/cron.log 2>&1",
         "",
+        "# Weekdays 11 PM ET — refresh US healthcare universe and 1-5D mover rankings.",
+        "0 23 * * 1-5   cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "
+        "healthcare-movers-refresh >> data/logs/cron.log 2>&1",
+        "",
         "# Every minute — process one queued Replit dashboard request.",
         "# Chat requests are prioritized in the runner claim query so sidebar AI stays responsive.",
         "* * * * *    cd $WORKDIR && $VENV/bin/python -m sma_monitor.orchestrator "

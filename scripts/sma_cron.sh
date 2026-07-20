@@ -8,7 +8,7 @@
 # these the app silently falls back to its heuristics instead of real Codex.
 #
 # Usage: sma_cron.sh <collect|dispatch|thesis-recompute|thesis-email|
-#                     tipranks-refresh|target-upside-refresh|runner-once|selfcheck>
+#                     tipranks-refresh|target-upside-refresh|healthcare-movers-refresh|runner-once|selfcheck>
 set -euo pipefail
 
 # --- Environment the scheduler doesn't provide -------------------------------
@@ -33,8 +33,8 @@ fi
 
 # --- normal path: bootstrap schema (idempotent) then run the requested cycle -
 case "$CMD" in
-  collect|dispatch|thesis-recompute|thesis-email|tipranks-refresh|target-upside-refresh|runner-once) ;;
-  *) echo "usage: $0 <collect|dispatch|thesis-recompute|thesis-email|tipranks-refresh|target-upside-refresh|runner-once|selfcheck>" >&2; exit 2 ;;
+  collect|dispatch|thesis-recompute|thesis-email|tipranks-refresh|target-upside-refresh|healthcare-movers-refresh|runner-once) ;;
+  *) echo "usage: $0 <collect|dispatch|thesis-recompute|thesis-email|tipranks-refresh|target-upside-refresh|healthcare-movers-refresh|runner-once|selfcheck>" >&2; exit 2 ;;
 esac
 
 cd "$REPO"

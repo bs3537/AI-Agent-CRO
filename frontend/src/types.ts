@@ -203,6 +203,46 @@ export interface PositionsResponse {
   missing_sidecars: string[]
 }
 
+export interface HealthcareMover {
+  rank: number
+  ticker: string
+  company_name: string
+  industry: string | null
+  exchange: string | null
+  market_cap: number | null
+  price: number
+  return_pct: number
+  window_days: number
+  start_date: string
+  end_date: string
+  start_close: number
+  end_close: number
+  latest_volume: number | null
+  average_volume_20d: number | null
+  volume_ratio: number | null
+  flags: string[]
+  spark_dates: string[]
+  spark_closes: Array<number | null>
+  is_held: boolean
+}
+
+export interface HealthcareMoverDirections {
+  gainers: HealthcareMover[]
+  decliners: HealthcareMover[]
+}
+
+export interface HealthcareMoversResponse {
+  status: 'current' | 'unavailable'
+  source: 'fmp'
+  as_of_date: string | null
+  generated_at: string | null
+  universe_count: number
+  covered_count: number
+  coverage_fraction: number
+  rankings: Record<string, HealthcareMoverDirections>
+  message: string | null
+}
+
 // GET /api/positions/{ticker} detail.
 export interface PositionDetail extends PositionSummary {
   catalysts: Catalyst[]

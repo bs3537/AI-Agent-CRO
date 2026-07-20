@@ -13,6 +13,7 @@
   python -m sma_monitor.orchestrator preliminary-thesis [--ticker TICKER]
   python -m sma_monitor.orchestrator tipranks-refresh          optional manual fallback
   python -m sma_monitor.orchestrator target-upside-refresh     daily FMP target + EOD refresh
+  python -m sma_monitor.orchestrator healthcare-movers-refresh nightly healthcare rankings
   python -m sma_monitor.orchestrator install-cron
   python -m sma_monitor.orchestrator retry-dead-letters [--offline]
   python -m sma_monitor.orchestrator simulate-spend --usd N
@@ -240,6 +241,18 @@ def cmd_target_upside_refresh(args, log):
     return 0
 
 
+def cmd_healthcare_movers_refresh(args, log):
+    from ..healthcare_movers.service import refresh_healthcare_movers
+
+    summary = refresh_healthcare_movers(
+        api_key=settings.fmp_api_key,
+        bootstrap=args.bootstrap,
+    )
+    log.info("healthcare_movers_refresh_done", extra=summary)
+    print(json.dumps(summary, indent=2, default=str))
+    return 0 if summary["status"] == "current" else 1
+
+
 # CLI: emit a crontab snippet for the cron-driven deployment. Pipe through
 # `crontab -` or paste into `crontab -e`.
 def cmd_install_cron(args, log):
@@ -448,6 +461,16 @@ def main(argv=None):
     p_upside.add_argument("--retry-attempts", type=int, default=3)
     p_upside.add_argument("--retry-seconds", type=float, default=300.0)
 
+    p_movers = sub.add_parser(
+        "healthcare-movers-refresh",
+        help="Weekdays 11 PM ET — refresh US healthcare mover rankings",
+    )
+    p_movers.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Re-fetch history for every active healthcare symbol",
+    )
+
     sub.add_parser("install-cron", help="Emit a crontab snippet")
 
     p_retry = sub.add_parser("retry-dead-letters", help="Re-attempt pending dead-lettered scores")
@@ -477,6 +500,7 @@ def main(argv=None):
         "preliminary-thesis": cmd_preliminary_thesis,
         "tipranks-refresh": cmd_tipranks_refresh,
         "target-upside-refresh": cmd_target_upside_refresh,
+        "healthcare-movers-refresh": cmd_healthcare_movers_refresh,
         "install-cron": cmd_install_cron,
         "retry-dead-letters": cmd_retry_dead_letters,
         "simulate-spend": cmd_simulate_spend,
