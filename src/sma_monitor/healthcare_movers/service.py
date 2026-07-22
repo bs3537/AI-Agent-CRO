@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -28,10 +30,68 @@ log = logging.getLogger(__name__)
 MIN_VALID_COVERAGE = 0.95
 BACKFILL_CALENDAR_DAYS = 60
 BACKFILL_WORKERS = 4
+PRIMARY_LISTING_EXCHANGES = frozenset({"NASDAQ", "NYSE", "AMEX"})
 
 UniverseFetcher = Callable[..., list[dict[str, Any]]]
 QuoteFetcher = Callable[..., list[dict[str, Any]]]
 HistoryFetcher = Callable[..., list[dict[str, Any]]]
+
+
+@dataclass(frozen=True)
+class QuoteAlignment:
+    points: list[dict[str, Any]]
+    session_date: str | None
+    response_count: int
+    fresh_count: int
+    carried_count: int
+
+
+def align_quotes_to_market_session(
+    universe: Sequence[Mapping[str, Any]],
+    quote_points: Sequence[Mapping[str, Any]],
+) -> QuoteAlignment:
+    """Carry non-trading symbols forward to the dominant primary-exchange session."""
+    exchange_by_ticker = {
+        str(row.get("ticker") or "").strip().upper(): str(row.get("exchange") or "").upper()
+        for row in universe
+        if row.get("ticker")
+    }
+    by_ticker = {
+        str(row.get("ticker") or "").strip().upper(): dict(row)
+        for row in quote_points
+        if str(row.get("ticker") or "").strip().upper() in exchange_by_ticker
+        and row.get("price_date")
+    }
+    primary_dates = [
+        str(row["price_date"])
+        for ticker, row in by_ticker.items()
+        if exchange_by_ticker[ticker] in PRIMARY_LISTING_EXCHANGES
+    ]
+    candidate_dates = primary_dates or [str(row["price_date"]) for row in by_ticker.values()]
+    if not candidate_dates:
+        return QuoteAlignment([], None, 0, 0, 0)
+    counts = Counter(candidate_dates)
+    session_date = max(counts, key=lambda date: (counts[date], date))
+    aligned: list[dict[str, Any]] = []
+    fresh_count = 0
+    for ticker, row in sorted(by_ticker.items()):
+        is_fresh = str(row["price_date"]) == session_date
+        fresh_count += int(is_fresh)
+        aligned.append(
+            {
+                **row,
+                "ticker": ticker,
+                "price_date": session_date,
+                "volume": row.get("volume") if is_fresh else 0,
+            }
+        )
+    return QuoteAlignment(
+        points=aligned,
+        session_date=session_date,
+        response_count=len(aligned),
+        fresh_count=fresh_count,
+        carried_count=len(aligned) - fresh_count,
+    )
 
 
 def refresh_healthcare_movers(
@@ -70,20 +130,27 @@ def refresh_healthcare_movers(
     )
     history_saved = save_price_points(history_points, fetched_at=now)
 
-    quote_points: list[dict[str, Any]] = []
+    raw_quote_points: list[dict[str, Any]] = []
     try:
-        quote_points = quote_fetcher(tickers, api_key=api_key, now=now)
+        raw_quote_points = quote_fetcher(tickers, api_key=api_key, now=now)
     except (FmpError, RuntimeError, ValueError) as exc:
         errors.append(f"quotes: {exc}")
         log.warning("healthcare_movers_quotes_failed", extra={"error": str(exc)})
+    alignment = align_quotes_to_market_session(universe, raw_quote_points)
+    quote_points = alignment.points
     quotes_saved = save_price_points(quote_points, fetched_at=now)
 
     histories = price_histories(tickers, max_sessions=30)
-    result = compute_mover_rankings(universe, histories)
+    result = compute_mover_rankings(
+        universe,
+        histories,
+        as_of_date=alignment.session_date,
+    )
     universe_count = len(tickers)
     history_covered = int(result["covered_by_window"]["5"])
     quote_tickers = {str(row.get("ticker") or "").upper() for row in quote_points}
     quote_coverage = len(quote_tickers & set(tickers)) / universe_count if universe_count else 0.0
+    fresh_quote_coverage = alignment.fresh_count / universe_count if universe_count else 0.0
     history_coverage = history_covered / universe_count if universe_count else 0.0
     coverage = min(history_coverage, quote_coverage)
     is_current = universe_count > 0 and coverage >= min_coverage
@@ -108,8 +175,11 @@ def refresh_healthcare_movers(
         "backfill_requested": len(backfill_tickers),
         "history_points_saved": history_saved,
         "quotes_saved": quotes_saved,
+        "market_session_date": alignment.session_date,
         "history_coverage": history_coverage,
         "quote_coverage": quote_coverage,
+        "fresh_quote_coverage": fresh_quote_coverage,
+        "carried_forward_quotes": alignment.carried_count,
         "errors": errors,
     }
 
@@ -159,5 +229,7 @@ def ranking_health(result: Mapping[str, Any]) -> str:
         f"{result.get('status')} as of {result.get('as_of_date') or 'n/a'}; "
         f"{result.get('universe_count', 0)} symbols; "
         f"history {float(result.get('history_coverage') or 0):.1%}; "
-        f"quotes {float(result.get('quote_coverage') or 0):.1%}"
+        f"quotes {float(result.get('quote_coverage') or 0):.1%}; "
+        f"fresh trades {float(result.get('fresh_quote_coverage') or 0):.1%}; "
+        f"carried {int(result.get('carried_forward_quotes') or 0)}"
     )

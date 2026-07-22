@@ -11,7 +11,10 @@ from sma_monitor.healthcare_movers.fmp import (
     fetch_healthcare_universe,
     fetch_history_points,
 )
-from sma_monitor.healthcare_movers.service import refresh_healthcare_movers
+from sma_monitor.healthcare_movers.service import (
+    align_quotes_to_market_session,
+    refresh_healthcare_movers,
+)
 from sma_monitor.healthcare_movers.store import latest_ranking_snapshot
 
 
@@ -142,6 +145,37 @@ def test_fmp_history_is_normalized_oldest_first():
     assert all(row["ticker"] == "JSPR" for row in rows)
 
 
+def test_stale_otc_quote_is_carried_to_primary_market_session_with_zero_volume():
+    universe = [
+        {"ticker": "AAA", "exchange": "NASDAQ"},
+        {"ticker": "BBB", "exchange": "NYSE"},
+        {"ticker": "OTCM", "exchange": "OTC"},
+    ]
+    points = [
+        {"ticker": "AAA", "price_date": "2026-07-21", "close": 10, "volume": 100_000},
+        {"ticker": "BBB", "price_date": "2026-07-21", "close": 20, "volume": 200_000},
+        {
+            "ticker": "OTCM",
+            "price_date": "2026-07-20",
+            "close": 0.25,
+            "volume": 2_000_000,
+            "source_timestamp": 1_774_220_400,
+        },
+    ]
+
+    aligned = align_quotes_to_market_session(universe, points)
+
+    otc = next(row for row in aligned.points if row["ticker"] == "OTCM")
+    assert aligned.session_date == "2026-07-21"
+    assert aligned.response_count == 3
+    assert aligned.fresh_count == 2
+    assert aligned.carried_count == 1
+    assert otc["price_date"] == "2026-07-21"
+    assert otc["close"] == 0.25
+    assert otc["volume"] == 0
+    assert otc["source_timestamp"] == 1_774_220_400
+
+
 def _service_universe():
     return [
         {
@@ -201,6 +235,8 @@ def test_refresh_publishes_a_complete_snapshot():
     assert result["status"] == "current"
     assert result["history_coverage"] == 1
     assert result["quote_coverage"] == 1
+    assert result["fresh_quote_coverage"] == 1
+    assert result["carried_forward_quotes"] == 0
     with connection() as conn:
         run = conn.execute(
             "SELECT status FROM healthcare_mover_runs WHERE run_id = ?",
@@ -214,6 +250,55 @@ def test_refresh_publishes_a_complete_snapshot():
         ).fetchone()
     assert run["status"] == "current"
     assert leader["company_name"] == "UPCO Therapeutics"
+
+
+def test_refresh_carries_stale_otc_quote_without_ranking_it():
+    universe = _service_universe()
+    universe[1]["exchange"] = "OTC"
+
+    def stale_quotes(tickers, *, api_key, now):
+        points = _quotes(tickers, api_key=api_key, now=now)
+        by_ticker = {point["ticker"]: point for point in points}
+        by_ticker["UPCO"].update(
+            price_date="2026-07-20",
+            close=16,
+            volume=200_000,
+        )
+        by_ticker["DOWN"]["source_timestamp"] = 1_774_220_400
+        return points
+
+    result = refresh_healthcare_movers(
+        api_key="fake",
+        bootstrap=True,
+        now=datetime(2050, 7, 21, 3, 0, tzinfo=UTC),
+        universe_fetcher=lambda **kwargs: universe,
+        history_fetcher=_history,
+        quote_fetcher=stale_quotes,
+    )
+
+    assert result["status"] == "current"
+    assert result["as_of_date"] == "2026-07-20"
+    assert result["quote_coverage"] == 1
+    assert result["fresh_quote_coverage"] == pytest.approx(0.5)
+    assert result["carried_forward_quotes"] == 1
+    with connection() as conn:
+        carried = conn.execute(
+            """SELECT close, volume, source_timestamp
+               FROM healthcare_mover_prices
+               WHERE ticker = 'DOWN' AND price_date = '2026-07-20'"""
+        ).fetchone()
+        ranked = conn.execute(
+            """SELECT COUNT(*) AS count
+               FROM healthcare_mover_rankings
+               WHERE run_id = ? AND ticker = 'DOWN'""",
+            (result["run_id"],),
+        ).fetchone()
+    assert dict(carried) == {
+        "close": 5.0,
+        "volume": 0,
+        "source_timestamp": 1_774_220_400,
+    }
+    assert ranked["count"] == 0
 
 
 def test_incomplete_refresh_does_not_replace_last_valid_snapshot():

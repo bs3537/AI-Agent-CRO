@@ -30,15 +30,28 @@ def _worker() -> int:
 
 
 def _self_test() -> int:
-    sys.path.insert(0, str(REPO / "src"))
-    try:
-        from sma_monitor.healthcare_movers.service import refresh_healthcare_movers
-    except ImportError:
-        refresh_healthcare_movers = None
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO / "src")
+    import_check = (
+        subprocess.run(
+            [
+                str(VENV_PYTHON),
+                "-c",
+                "from sma_monitor.healthcare_movers.service import refresh_healthcare_movers",
+            ],
+            cwd=REPO,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if VENV_PYTHON.is_file()
+        else None
+    )
     checks = {
         "repo": REPO.is_dir(),
         "venv_python": VENV_PYTHON.is_file(),
-        "refresh_import": refresh_healthcare_movers is not None,
+        "refresh_import": import_check is not None and import_check.returncode == 0,
     }
     print(json.dumps({"self_test": checks}, indent=2, sort_keys=True))
     return 0 if all(checks.values()) else 1
