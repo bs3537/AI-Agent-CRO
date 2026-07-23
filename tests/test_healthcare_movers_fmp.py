@@ -222,6 +222,62 @@ def _quotes(tickers, *, api_key, now):
     ]
 
 
+def test_refresh_filters_healthcare_movers_to_25m_or_larger_market_caps():
+    universe = [_service_universe()[0]] + [
+        {
+            "ticker": "MICRO",
+            "company_name": "MICRO Therapeutics",
+            "sector": "Healthcare",
+            "industry": "Biotechnology",
+            "exchange": "NASDAQ",
+            "country": "US",
+            "market_cap": 24_999_999,
+        },
+        {
+            "ticker": "NOCAP",
+            "company_name": "NOCAP Therapeutics",
+            "sector": "Healthcare",
+            "industry": "Biotechnology",
+            "exchange": "NYSE",
+            "country": "US",
+            "market_cap": None,
+        },
+    ]
+    quote_calls = []
+
+    def quotes_for_filtered_universe(tickers, *, api_key, now):
+        quote_calls.append(list(tickers))
+        return _quotes(tickers, api_key=api_key, now=now)
+
+    result = refresh_healthcare_movers(
+        api_key="fake",
+        bootstrap=True,
+        now=datetime(2050, 7, 18, 4, 0, tzinfo=UTC),
+        universe_fetcher=lambda **kwargs: universe,
+        history_fetcher=_history,
+        quote_fetcher=quotes_for_filtered_universe,
+    )
+
+    assert result["status"] == "current"
+    assert result["market_cap_floor"] == 25_000_000
+    assert result["excluded_below_market_cap"] == 2
+    assert result["universe_count"] == 1
+    assert quote_calls == [["UPCO"]]
+    with connection() as conn:
+        inactive_low_cap = conn.execute(
+            """SELECT is_active FROM healthcare_mover_universe
+               WHERE ticker IN ('MICRO', 'NOCAP')"""
+        ).fetchall()
+        ranked_low_cap = conn.execute(
+            """SELECT COUNT(*) AS count
+               FROM healthcare_mover_rankings
+               WHERE run_id = ? AND ticker IN ('MICRO', 'NOCAP')""",
+            (result["run_id"],),
+        ).fetchone()
+    assert inactive_low_cap == []
+    assert ranked_low_cap["count"] == 0
+
+
 def test_refresh_publishes_a_complete_snapshot():
     result = refresh_healthcare_movers(
         api_key="fake",

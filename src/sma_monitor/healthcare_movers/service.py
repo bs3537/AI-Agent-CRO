@@ -27,16 +27,20 @@ from .store import (
 
 log = logging.getLogger(__name__)
 
+# Refresh thresholds and screening parameters for nightly mover runs.
 MIN_VALID_COVERAGE = 0.95
 BACKFILL_CALENDAR_DAYS = 60
 BACKFILL_WORKERS = 4
+MIN_MARKET_CAP = 25_000_000
 PRIMARY_LISTING_EXCHANGES = frozenset({"NASDAQ", "NYSE", "AMEX"})
 
+# Callable aliases keep refresh dependencies injectable in tests.
 UniverseFetcher = Callable[..., list[dict[str, Any]]]
 QuoteFetcher = Callable[..., list[dict[str, Any]]]
 HistoryFetcher = Callable[..., list[dict[str, Any]]]
 
 
+# QuoteAlignment summarizes how raw quotes were normalized to one session date.
 @dataclass(frozen=True)
 class QuoteAlignment:
     points: list[dict[str, Any]]
@@ -46,6 +50,7 @@ class QuoteAlignment:
     carried_count: int
 
 
+# Align quote dates so rankings compare all symbols on the dominant market session.
 def align_quotes_to_market_session(
     universe: Sequence[Mapping[str, Any]],
     quote_points: Sequence[Mapping[str, Any]],
@@ -94,6 +99,32 @@ def align_quotes_to_market_session(
     )
 
 
+# Keep only healthcare listings that meet the nightly movers market-cap floor.
+def filter_universe_by_market_cap(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    min_market_cap: float = MIN_MARKET_CAP,
+) -> tuple[list[dict[str, Any]], int]:
+    """Return rows at or above the market-cap floor plus the excluded count."""
+    filtered: list[dict[str, Any]] = []
+    excluded = 0
+    for row in rows:
+        market_cap = row.get("market_cap")
+        if isinstance(market_cap, bool):
+            market_cap_value = None
+        else:
+            try:
+                market_cap_value = float(market_cap) if market_cap is not None else None
+            except (TypeError, ValueError):
+                market_cap_value = None
+        if market_cap_value is None or market_cap_value < min_market_cap:
+            excluded += 1
+            continue
+        filtered.append(dict(row))
+    return filtered, excluded
+
+
+# Refresh all data needed for dashboard healthcare mover rankings.
 def refresh_healthcare_movers(
     *,
     api_key: str | None,
@@ -109,7 +140,11 @@ def refresh_healthcare_movers(
     if not api_key:
         raise RuntimeError("FMP_API_KEY is required for healthcare movers")
     now = now or datetime.now(UTC)
-    universe_rows = universe_fetcher(api_key=api_key)
+    raw_universe_rows = universe_fetcher(api_key=api_key)
+    universe_rows, excluded_below_market_cap = filter_universe_by_market_cap(
+        raw_universe_rows,
+        min_market_cap=MIN_MARKET_CAP,
+    )
     universe_summary = save_universe_snapshot(universe_rows, observed_at=now)
     universe = active_universe()
     tickers = [row["ticker"] for row in universe]
@@ -172,6 +207,8 @@ def refresh_healthcare_movers(
         "as_of_date": result["as_of_date"],
         "universe": universe_summary,
         "universe_count": universe_count,
+        "market_cap_floor": MIN_MARKET_CAP,
+        "excluded_below_market_cap": excluded_below_market_cap,
         "backfill_requested": len(backfill_tickers),
         "history_points_saved": history_saved,
         "quotes_saved": quotes_saved,
@@ -184,6 +221,7 @@ def refresh_healthcare_movers(
     }
 
 
+# Fetch missing recent price history for symbols that lack enough sessions.
 def _fetch_backfills(
     tickers: Sequence[str],
     *,
@@ -223,6 +261,7 @@ def _fetch_backfills(
     return points
 
 
+# Format refresh coverage and carry-forward health for compact cron summaries.
 def ranking_health(result: Mapping[str, Any]) -> str:
     """Human-readable coverage summary for CLI logs."""
     return (
