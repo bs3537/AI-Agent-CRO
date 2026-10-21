@@ -16,7 +16,7 @@ from ..portfolio.uploads import combined_text, list_files
 from ..red_team.store import recent_passes
 from ..scorer.store import recent_scores
 
-MAX_CONTEXT_CHARS = 42_000
+MAX_CONTEXT_CHARS = 150_000
 MAX_DETAIL_TICKERS = 6
 
 
@@ -91,12 +91,17 @@ def _portfolio_overview(holdings, missing: list[str], pulled_at) -> str:
     lines.append("Holdings sorted by % NAV:")
     for h in rows:
         pnl = _fmt_pnl(h.market_value, h.cost_basis)
-        tech = _technical_summary(h.ticker)
         lines.append(
-            f"- {h.ticker}: {h.pct_nav * 100:.1f}% NAV, P&L {pnl}, {tech}, "
-            f"price target: {_target_summary(h.ticker)}, "
-            f"catalysts: {_catalyst_summary(h.ticker)}; "
-            f"thesis: {_one_line(h.thesis, 220)}"
+            f"\n## {h.ticker} — {h.company_name or 'unknown company'}\n"
+            f"Weight {h.pct_nav * 100:.2f}% NAV; qty {h.qty:g}; "
+            f"market value {h.market_value:,.0f}; cost basis {h.cost_basis or 'n/a'}; "
+            f"open P&L {pnl}; stage {h.stage}; conviction tier {h.conviction_tier}\n"
+            f"Technical: {_technical_summary(h.ticker)}\n"
+            f"Analyst price target: {_target_summary(h.ticker)}\n"
+            f"Upcoming catalysts: {_catalyst_summary(h.ticker, limit=12)}; "
+            f"nearest catalyst in {h.nearest_catalyst_days} days; "
+            f"overdue catalyst: {'yes' if h.has_overdue_catalyst else 'no'}\n"
+            f"Thesis ({h.thesis_source}, {h.thesis_status}):\n{_block(h.thesis, 4_500)}"
         )
     return "\n".join(lines)
 

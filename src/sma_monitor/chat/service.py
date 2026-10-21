@@ -66,7 +66,7 @@ def complete_chat_response(
     answer = provider.complete_text(
         system=SYSTEM_PROMPT,
         user=user,
-        max_tokens=1400,
+        max_tokens=3000,
     )
     response = ChatResponse(
         answer=answer,
