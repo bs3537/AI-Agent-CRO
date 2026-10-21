@@ -14,7 +14,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
-import QueryStatsIcon from '@mui/icons-material/QueryStats'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import TableRowsIcon from '@mui/icons-material/TableRows'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
@@ -25,7 +24,6 @@ import BrandLogo from './components/BrandLogo'
 import ChatPanel from './components/ChatPanel'
 import PositionCard from './components/PositionCard'
 import HoldingDrawer from './components/HoldingDrawer'
-import HealthcareMoversPage from './components/HealthcareMoversPage'
 import KpiStrip from './components/KpiStrip'
 import PositionsTable from './components/PositionsTable'
 import TriageBands from './components/TriageBands'
@@ -70,7 +68,7 @@ function sleep(ms: number): Promise<void> {
 // Dashboard root: loads positions + status, polls on an interval, and wires
 // the per-card mutations (thesis edit, upload, recompute) back to the API,
 // refreshing the grid after each.
-function PortfolioDashboard({ onOpenMovers }: { onOpenMovers: () => void }) {
+function PortfolioDashboard() {
   const [data, setData] = useState<PositionsResponse | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -354,27 +352,6 @@ function PortfolioDashboard({ onOpenMovers }: { onOpenMovers: () => void }) {
               ml: { xs: 0, md: 1.5 },
             }}
           >
-            <Tooltip title="Healthcare movers">
-              <Button
-                variant="outlined"
-                color="inherit"
-                size="small"
-                startIcon={<QueryStatsIcon />}
-                onClick={onOpenMovers}
-                aria-label="Open healthcare movers"
-                sx={{
-                  minWidth: { xs: 34, sm: 'auto' },
-                  px: { xs: 1, sm: 1.5 },
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                  '& .MuiButton-startIcon': { mr: { xs: 0, sm: 1 } },
-                }}
-              >
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-                  Movers
-                </Box>
-              </Button>
-            </Tooltip>
             <ToggleButtonGroup
               size="small"
               exclusive
@@ -613,30 +590,6 @@ function PortfolioDashboard({ onOpenMovers }: { onOpenMovers: () => void }) {
   )
 }
 
-type AppRoute = 'portfolio' | 'healthcare-movers'
-
-function routeFromHash(): AppRoute {
-  return window.location.hash === '#/healthcare-movers'
-    ? 'healthcare-movers'
-    : 'portfolio'
-}
-
 export default function App() {
-  const [route, setRoute] = useState<AppRoute>(routeFromHash)
-
-  useEffect(() => {
-    const onHashChange = () => setRoute(routeFromHash())
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
-  }, [])
-
-  const navigate = (next: AppRoute) => {
-    window.location.hash = next === 'healthcare-movers' ? '#/healthcare-movers' : '#/'
-  }
-
-  return route === 'healthcare-movers' ? (
-    <HealthcareMoversPage onNavigatePortfolio={() => navigate('portfolio')} />
-  ) : (
-    <PortfolioDashboard onOpenMovers={() => navigate('healthcare-movers')} />
-  )
+  return <PortfolioDashboard />
 }
