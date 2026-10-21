@@ -15,6 +15,10 @@ import re
 import httpx
 
 from .provider import LLMError
+from .web_search import TOOL_SPEC, run_web_search, web_search_available
+
+# Max web_search tool rounds per answer.
+MAX_TOOL_ROUNDS = 4
 
 # Default model slug requested by the PM; overridable via OPENROUTER_MODEL.
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-1017"
@@ -38,7 +42,8 @@ def openrouter_model() -> str:
 
 # LLMProvider implementation that calls OpenRouter.
 class OpenRouterProvider:
-    def __init__(self, *, model: str | None = None):
+    def __init__(self, *, model: str | None = None, web_search: bool = False):
+        self.web_search = web_search and web_search_available()
         self.model = model or openrouter_model()
         self.model_label = self.model
 
@@ -77,10 +82,59 @@ class OpenRouterProvider:
             raise LLMError("OpenRouter returned an empty response")
         return text.strip()
 
-    # Free-text completion.
+    # Free-text completion. With web_search=True the model may call a web_search
+    # tool (Perplexity) up to MAX_TOOL_ROUNDS times before answering.
     def complete_text(self, *, system: str, user: str, max_tokens: int = 600,
                       timeout_s: int | None = None) -> str:
+        if self.web_search:
+            return self._chat_with_tools(system=system, user=user, max_tokens=max_tokens,
+                                         timeout_s=timeout_s)
         return self._chat(system=system, user=user, max_tokens=max_tokens, timeout_s=timeout_s)
+
+    # POST a raw chat-completions body and return the first choice message.
+    def _post(self, body: dict, timeout_s: int | None) -> dict:
+        key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        if not key:
+            raise LLMError("OPENROUTER_API_KEY is not set")
+        try:
+            resp = httpx.post(API_URL, json=body, headers={"Authorization": f"Bearer {key}"},
+                              timeout=timeout_s or CALL_TIMEOUT_S)
+        except httpx.HTTPError as e:
+            raise LLMError(f"OpenRouter request failed: {e}") from e
+        if resp.status_code >= 400:
+            raise LLMError(f"OpenRouter HTTP {resp.status_code}: {resp.text[:300]}")
+        try:
+            return resp.json()["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            raise LLMError(f"OpenRouter response unreadable: {resp.text[:300]}") from e
+
+    # Tool-calling loop: execute requested searches, feed results back, return final text.
+    def _chat_with_tools(self, *, system: str, user: str, max_tokens: int,
+                         timeout_s: int | None) -> str:
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        for round_no in range(MAX_TOOL_ROUNDS + 1):
+            body: dict = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
+            if round_no < MAX_TOOL_ROUNDS:
+                body["tools"] = [TOOL_SPEC]
+            msg = self._post(body, timeout_s)
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                text = (msg.get("content") or "").strip()
+                if not text:
+                    raise LLMError("OpenRouter returned an empty response")
+                return text
+            messages.append(msg)
+            for call in calls:
+                try:
+                    args = json.loads(call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                result = run_web_search(str(args.get("query", "")))
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+        raise LLMError("web search tool loop did not finish")
 
     # JSON-object completion; schema is appended to the prompt as guidance.
     def complete_json(self, *, system: str, user: str, schema: dict | None = None,

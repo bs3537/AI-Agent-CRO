@@ -164,7 +164,7 @@ def get_provider(
     from .openrouter_client import OpenRouterProvider, openrouter_available
 
     if openrouter_available():
-        return OpenRouterProvider()
+        return OpenRouterProvider(web_search=stage == "chat")
 
     from .codex_client import CodexProvider, codex_available
 
