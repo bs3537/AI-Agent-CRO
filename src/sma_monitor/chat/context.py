@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
-from ..decision.store import latest_decision, latest_rating, latest_ratings
+from ..analyst_targets.store import latest_target_state
 from ..decision.technicals import technical_state
+from ..news.catalyst_outlook import latest_catalyst_outlook
 from ..news.fmp_client import latest_fmp_metrics, latest_price_series
 from ..news.store import recent_articles
 from ..portfolio.joined import latest_joined
@@ -18,20 +18,6 @@ from ..scorer.store import recent_scores
 
 MAX_CONTEXT_CHARS = 42_000
 MAX_DETAIL_TICKERS = 6
-LIVE_WEB_TERMS = (
-    "catalyst",
-    "catalysts",
-    "latest",
-    "recent",
-    "news",
-    "filing",
-    "fda",
-    "pdufa",
-    "trial",
-    "data",
-    "approval",
-    "earnings",
-)
 
 
 @dataclass
@@ -65,10 +51,6 @@ def build_chat_context(
         sections.append(_ticker_detail(h))
         cited.append({"type": "holding_detail", "ticker": ticker, "label": f"{ticker} saved data"})
 
-    live_web = _live_web_context(message, [by_ticker[t] for t in tickers if t in by_ticker])
-    if live_web["text"]:
-        sections.append(live_web["text"])
-        cited.append({"type": "native_web_search_request", "label": "Codex native web search request"})
 
     text = "\n\n".join(sections) or "(No portfolio context is currently available.)"
     if len(text) > MAX_CONTEXT_CHARS:
@@ -80,8 +62,6 @@ def build_chat_context(
         data_freshness={
             "positions_pulled_at": pulled_at.isoformat() if pulled_at else None,
             "missing_sidecars": missing,
-            "live_web_search": live_web["status"],
-            "live_web_search_at": live_web["searched_at"],
         },
     )
 
@@ -101,7 +81,6 @@ def _detect_tickers(message: str, held: set[str], explicit_ticker: str | None) -
 
 def _portfolio_overview(holdings, missing: list[str], pulled_at) -> str:
     rows = sorted(holdings, key=lambda h: h.pct_nav, reverse=True)
-    rating_rows = {r["ticker"]: r for r in latest_ratings()}
     lines = [
         "CURRENT DASHBOARD PORTFOLIO SNAPSHOT",
         f"Positions pulled at: {pulled_at.isoformat() if pulled_at else 'unknown'}",
@@ -111,17 +90,12 @@ def _portfolio_overview(holdings, missing: list[str], pulled_at) -> str:
         lines.append(f"Positions missing sidecars: {', '.join(missing[:30])}")
     lines.append("Holdings sorted by % NAV:")
     for h in rows:
-        rating = rating_rows.get(h.ticker)
-        grade = rating["grade"] if rating else "none"
-        action = rating["action"] if rating else "none"
-        conf = f"{float(rating['confidence']) * 100:.0f}%" if rating else "n/a"
-        model = rating["model_used"] if rating else "n/a"
-        decided = rating["decided_at"] if rating else "n/a"
         pnl = _fmt_pnl(h.market_value, h.cost_basis)
-        tech = _rating_technical_summary(rating)
+        tech = _technical_summary(h.ticker)
         lines.append(
-            f"- {h.ticker}: {h.pct_nav * 100:.1f}% NAV, {action.upper()} {grade}, "
-            f"conf {conf}, P&L {pnl}, {tech}, model {model}, computed {decided}; "
+            f"- {h.ticker}: {h.pct_nav * 100:.1f}% NAV, P&L {pnl}, {tech}, "
+            f"price target: {_target_summary(h.ticker)}, "
+            f"catalysts: {_catalyst_summary(h.ticker)}; "
             f"thesis: {_one_line(h.thesis, 220)}"
         )
     return "\n".join(lines)
@@ -145,24 +119,9 @@ def _ticker_detail(h) -> str:
     lines.append(f"Uploaded thesis docs ({len(files)} files):")
     lines.append(_block(docs or "(none)", 4_000))
 
-    rating = latest_rating(h.ticker)
-    if rating:
-        lines.append("")
-        lines.append("Latest CRO rating:")
-        lines.append(_row_json_line(rating, [
-            "grade", "action", "attention_state", "risk_score", "risk_components",
-            "technical_state", "deterministic_grade", "llm_grade", "final_grade",
-            "note", "drivers", "confidence", "model_used", "compute_source", "decided_at",
-        ]))
-
-    decision = latest_decision(h.ticker)
-    if decision:
-        lines.append("")
-        lines.append("Latest legacy thesis-drift decision:")
-        lines.append(_row_json_line(decision, [
-            "verdict", "color", "note", "drivers", "confidence",
-            "model_used", "compute_source", "decided_at",
-        ]))
+    lines.append("")
+    lines.append(f"Analyst price target: {_target_summary(h.ticker)}")
+    lines.append(f"Upcoming catalysts: {_catalyst_summary(h.ticker, limit=12)}")
 
     fmp = latest_fmp_metrics(h.ticker)
     lines.append("")
@@ -213,17 +172,6 @@ def _technical_summary(ticker: str) -> str:
     return f"technical {tech.technical_state}, close {tech.latest_close}, EMA20 {tech.latest_ema20}, vs EMA20 {pct}"
 
 
-def _rating_technical_summary(rating) -> str:
-    if rating is None:
-        return "technical n/a"
-    pct_raw = rating["price_vs_ema20_pct"] if "price_vs_ema20_pct" in rating.keys() else None
-    pct = f"{float(pct_raw) * 100:+.1f}%" if pct_raw is not None else "n/a"
-    return (
-        f"technical {rating['technical_state']}, close {rating['latest_close']}, "
-        f"EMA20 {rating['ema20']}, vs EMA20 {pct}"
-    )
-
-
 def _fmt_pnl(market_value: float, cost_basis: float | None) -> str:
     if cost_basis is None:
         return "n/a cost basis"
@@ -254,31 +202,22 @@ def _block(text: str, n: int) -> str:
     return text[: n - 1] + "…" if len(text) > n else text
 
 
-def _live_web_context(message: str, holdings) -> dict[str, str | None]:
-    searched_at = datetime.now(UTC).isoformat()
-    if not holdings:
-        return {"text": "", "status": "skipped_no_detected_ticker", "searched_at": None}
-    if not _wants_live_web(message):
-        return {"text": "", "status": "skipped_question_not_time_sensitive", "searched_at": None}
-
-    lines = [
-        "CODEX NATIVE WEB SEARCH REQUEST",
-        f"Requested at: {searched_at}",
-        "Use Codex GPT-5.5 native web search for current leads; verify against primary sources before treating fresh snippets as decisive.",
-    ]
-    for h in list(holdings)[:3]:
-        entity = h.company_name or h.ticker
-        query = f"{h.ticker} {entity} next catalyst FDA trial data stock latest news"
-        lines.append("")
-        lines.append(f"Search request for {h.ticker} {entity}:")
-        lines.append(f"- Query: {query}")
-    return {
-        "text": "\n".join(lines),
-        "status": "codex_native_web_search_requested",
-        "searched_at": searched_at,
-    }
+# One-line analyst price-target summary for a ticker.
+def _target_summary(ticker: str) -> str:
+    t = latest_target_state(ticker)
+    if not t or t.get("status") not in ("current", "stale"):
+        return "n/a"
+    return ", ".join(f"{k}={t[k]}" for k in t if k in ("mean_price_target", "high_price_target", "low_price_target", "analyst_count", "status") and t.get(k) is not None) or "n/a"
 
 
-def _wants_live_web(message: str) -> bool:
-    lowered = message.lower()
-    return any(term in lowered for term in LIVE_WEB_TERMS)
+# Compact catalyst list (dashboard catalyst column) for a ticker.
+def _catalyst_summary(ticker: str, limit: int = 4) -> str:
+    items = latest_catalyst_outlook(ticker)[:limit]
+    if not items:
+        return "none"
+    parts = []
+    for it in items:
+        if isinstance(it, dict):
+            when = it.get("date_label") or it.get("date") or "?"
+            parts.append(f"{when} {_one_line(str(it.get('label') or ''), 90)}")
+    return "; ".join(parts) or "none"
