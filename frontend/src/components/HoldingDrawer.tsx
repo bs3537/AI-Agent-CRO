@@ -29,7 +29,6 @@ import type {
   PositionSummary,
   QuoteInfo,
 } from '../types'
-import DecisionChip from './DecisionChip'
 import FileUpload from './FileUpload'
 import PnL from './PnL'
 import PriceTargetMetric from './PriceTargetMetric'
@@ -49,7 +48,6 @@ export default function HoldingDrawer({
   onClose,
   onOpenThesis,
   onUpload,
-  onRecompute,
   onDelete,
   onChanged,
 }: {
@@ -61,14 +59,11 @@ export default function HoldingDrawer({
   onClose: () => void
   onOpenThesis: (ticker: string) => void
   onUpload: (ticker: string, file: File) => Promise<void>
-  onRecompute: (ticker: string) => Promise<void>
   onDelete: (ticker: string) => Promise<void>
   onChanged: () => void
 }) {
   const [detail, setDetail] = useState<PositionDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [recomputing, setRecomputing] = useState(false)
-  const [recomputingSeconds, setRecomputingSeconds] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
@@ -78,18 +73,6 @@ export default function HoldingDrawer({
     if (!ticker) return
     api.detail(ticker).then(setDetail).catch((reason) => setError(String(reason)))
   }, [ticker])
-
-  useEffect(() => {
-    if (!recomputing) {
-      setRecomputingSeconds(0)
-      return
-    }
-    const timer = window.setInterval(
-      () => setRecomputingSeconds((seconds) => seconds + 1),
-      1000,
-    )
-    return () => window.clearInterval(timer)
-  }, [recomputing])
 
   const signal = position?.rating ?? position?.decision
   const thesisLabel = (position?.thesis ?? '').trim().toUpperCase()
@@ -113,20 +96,6 @@ export default function HoldingDrawer({
     intradayPnl !== null && position?.cost_basis
       ? intradayPnl / position.cost_basis
       : null
-
-  const recompute = async () => {
-    if (!ticker) return
-    setRecomputing(true)
-    setError(null)
-    try {
-      await onRecompute(ticker)
-      setDetail(await api.detail(ticker))
-    } catch (reason) {
-      setError(String(reason))
-    } finally {
-      setRecomputing(false)
-    }
-  }
 
   const upload = async (file: File) => {
     if (!ticker) return
@@ -188,10 +157,6 @@ export default function HoldingDrawer({
               {position?.company_name ?? '-'}
             </Typography>
           </Box>
-          <DecisionChip
-            rating={position?.rating}
-            decision={position?.decision ?? null}
-          />
           <Tooltip title="Close details">
             <IconButton onClick={onClose} size="small" aria-label="Close details">
               <CloseIcon />
@@ -294,22 +259,11 @@ export default function HoldingDrawer({
               Thesis
             </Button>
             <FileUpload onUpload={upload} />
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<RefreshIcon />}
-              disabled={recomputing}
-              onClick={() => void recompute()}
-            >
-              {recomputing
-                ? `Recomputing ${recomputingSeconds}s`
-                : 'Recompute'}
-            </Button>
             <Tooltip title="Delete holding and ticker-owned monitor data">
               <IconButton
                 size="small"
                 color="error"
-                disabled={deleting || recomputing}
+                disabled={deleting}
                 onClick={() => setConfirmDeleteOpen(true)}
                 aria-label={`Delete ${ticker}`}
               >
@@ -374,37 +328,6 @@ export default function HoldingDrawer({
                   <EmptyRow text="No sourced upcoming catalysts cached yet." />
                 )}
               </List>
-            </Section>
-
-            <Section title="Rating detail">
-              {detail.rating ? (
-                <List dense disablePadding>
-                  <ListItem disableGutters>
-                    <ListItemText
-                      primary={`${detail.rating.action.toUpperCase()} ${detail.rating.grade} | ${detail.rating.attention_state}`}
-                      secondary={`Risk score ${detail.rating.risk_score.toFixed(1)} | ${sourceLabel(detail.rating.compute_source)} | ${detail.rating.model_used}`}
-                    />
-                  </ListItem>
-                  {Object.entries(detail.rating.risk_components).map(
-                    ([key, value]) => (
-                      <MetricRow
-                        key={key}
-                        label={RISK_LABELS[key] ?? key}
-                        value={Number(value).toFixed(1)}
-                      />
-                    ),
-                  )}
-                  <MetricRow
-                    label="20-day EMA"
-                    value={formatTechnical(
-                      detail.rating.price_vs_ema20_pct,
-                      detail.rating.technical_state,
-                    )}
-                  />
-                </List>
-              ) : (
-                <EmptyRow text="No rating yet." />
-              )}
             </Section>
 
             <Section title={`Scored articles (${detail.scores.length})`}>

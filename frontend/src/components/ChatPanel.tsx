@@ -329,7 +329,7 @@ export default function ChatPanel({
       <Box ref={scrollerRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 1.5 }}>
         {visibleMessages.length === 0 && (
           <Typography variant="body2" sx={{ opacity: 0.55, mt: 2 }}>
-            Ask about a holding, grade change, thesis drift, stored news, or portfolio risk.
+            Ask about a holding, thesis, catalysts, stored news, or portfolio risk.
           </Typography>
         )}
         <Stack spacing={1.25}>

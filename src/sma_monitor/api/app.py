@@ -215,7 +215,6 @@ async def _lifespan(app: FastAPI):
     tasks: list[asyncio.Task] = []
     if settings.is_combined_role():
         tasks.append(asyncio.create_task(_ibkr_sync_loop()))
-        tasks.append(asyncio.create_task(_scheduler_loop()))
     else:
         _log.info("api_background_loops_disabled", extra={"role": settings.deployment_role()})
     try:

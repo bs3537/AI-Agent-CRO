@@ -34,8 +34,6 @@ import StatusBar from './components/StatusBar'
 const POLL_MS = 30_000
 // Intraday quotes refresh every 30 min during trading hours.
 const QUOTES_POLL_MS = 30 * 60 * 1_000
-const RECOMPUTE_STATUS_POLL_MS = 1_500
-const RECOMPUTE_STATUS_TIMEOUT_MS = 10 * 60 * 1000
 const VIEW_STORAGE_KEY = 'ai-cro-dashboard-view-v1'
 
 function initialViewMode(): 'grid' | 'table' {
@@ -46,27 +44,8 @@ function initialViewMode(): 'grid' | 'table' {
   }
 }
 
-async function waitForQueuedRecompute(requestId: string): Promise<void> {
-  const deadline = Date.now() + RECOMPUTE_STATUS_TIMEOUT_MS
-  let lastStatus: string = 'queued'
-  while (Date.now() < deadline) {
-    await sleep(RECOMPUTE_STATUS_POLL_MS)
-    const status = await api.recomputeStatus(requestId)
-    lastStatus = status.status
-    if (status.status === 'succeeded') return
-    if (status.status === 'failed') {
-      throw new Error(status.error || 'VPS Codex recompute request failed')
-    }
-  }
-  throw new Error(`VPS Codex recompute request is still ${lastStatus}; try again in a minute.`)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
 // Dashboard root: loads positions + status, polls on an interval, and wires
-// the per-card mutations (thesis edit, upload, recompute) back to the API,
+// the per-card mutations (thesis edit, upload) back to the API,
 // refreshing the grid after each.
 function PortfolioDashboard() {
   const [data, setData] = useState<PositionsResponse | null>(null)
@@ -77,13 +56,6 @@ function PortfolioDashboard() {
   const [addPositionOpen, setAddPositionOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(480)
-  const [recomputingAll, setRecomputingAll] = useState(false)
-  const [recomputeAllSecs, setRecomputeAllSecs] = useState(0)
-  const [recomputeQueue, setRecomputeQueue] = useState<{
-    ticker: string
-    index: number
-    total: number
-  } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [quotes, setQuotes] = useState<QuotesResponse | null>(null)
   const [quotesAt, setQuotesAt] = useState<Date | null>(null)
@@ -96,13 +68,6 @@ function PortfolioDashboard() {
       // Browser privacy settings may disable storage; the in-memory choice still works.
     }
   }, [viewMode])
-
-  useEffect(() => {
-    if (!recomputingAll) { setRecomputeAllSecs(0); return }
-    setRecomputeAllSecs(0)
-    const id = setInterval(() => setRecomputeAllSecs((s) => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [recomputingAll])
 
   // Resets intraday state so the UI reverts to EOD data immediately.
   // Called on market close, fetch error, or unmount.
@@ -208,57 +173,19 @@ function PortfolioDashboard() {
       for (const file of files) {
         await api.uploadFile(ticker, file)
       }
-      const recompute = await api.recompute(ticker, true)
       await refresh()
       setThesisTicker(null)
-      setNotice(
-        recompute.scheduled
-          ? `${ticker} thesis package saved; VPS Codex recompute queued.`
-          : `${ticker} thesis package saved and analysis recomputed.`,
-      )
+      setNotice(`${ticker} thesis package saved.`)
     },
     [refresh],
   )
 
-  // Upload a doc, then rerun the holding analysis because uploaded text feeds
-  // the next LLM decision candidate.
+  // Upload a supporting document for a holding.
   const onUpload = useCallback(
     async (ticker: string, file: File) => {
       await api.uploadFile(ticker, file)
-      const recompute = await api.recompute(ticker, true)
-      if (recompute.scheduled && recompute.request_id) {
-        setNotice(`${ticker} document uploaded and recompute queued for VPS runner; waiting for completion.`)
-        await waitForQueuedRecompute(recompute.request_id)
-      }
       await refresh()
-      setNotice(
-        recompute.scheduled
-          ? `${ticker} document uploaded and analysis recomputed by VPS runner.`
-          : `${ticker} document uploaded and analysis recomputed.`,
-      )
-    },
-    [refresh],
-  )
-
-  // Refresh latest ticker evidence, then recompute one position synchronously.
-  const onRecompute = useCallback(
-    async (ticker: string) => {
-      try {
-        const recompute = await api.recompute(ticker, true)
-        if (recompute.scheduled && recompute.request_id) {
-          setNotice(`${ticker} recompute queued for VPS runner; waiting for completion.`)
-          await waitForQueuedRecompute(recompute.request_id)
-        }
-        await refresh()
-        setNotice(
-          recompute.scheduled
-            ? `${ticker} analysis recomputed by VPS runner.`
-            : `${ticker} analysis recomputed.`,
-        )
-      } catch (e) {
-        setError(`${ticker} recompute failed: ${String(e)}`)
-        await refresh().catch(() => undefined)
-      }
+      setNotice(`${ticker} document uploaded.`)
     },
     [refresh],
   )
@@ -287,35 +214,6 @@ function PortfolioDashboard() {
     },
     [refresh],
   )
-
-  // Recompute the portfolio one ticker at a time, largest %NAV first. This
-  // avoids stacking many Codex/LLM calls at once and refreshes the grid after
-  // each finished holding so the tile updates immediately.
-  const onRecomputeAll = useCallback(async () => {
-    const queue = [...(data?.positions ?? [])].sort((a, b) => b.pct_nav - a.pct_nav)
-    if (queue.length === 0) return
-    setRecomputingAll(true)
-    setNotice(null)
-    try {
-      for (let i = 0; i < queue.length; i += 1) {
-        const pos = queue[i]
-        setRecomputeQueue({ ticker: pos.ticker, index: i + 1, total: queue.length })
-        setNotice(`Recomputing ${i + 1}/${queue.length}: ${pos.ticker}`)
-        const recompute = await api.recompute(pos.ticker, true, 'manual_all')
-        if (recompute.scheduled && recompute.request_id) {
-          setNotice(`Recompute queued for ${pos.ticker}; waiting for VPS runner (${i + 1}/${queue.length}).`)
-          await waitForQueuedRecompute(recompute.request_id)
-        }
-        await refresh()
-      }
-      setNotice(`Evidence refresh + recompute finished for ${queue.length} position${queue.length === 1 ? '' : 's'}.`)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setRecomputingAll(false)
-      setRecomputeQueue(null)
-    }
-  }, [refresh, data])
 
   // Book-wide staleness: true while the orchestrator's stale_positions flag is
   // active (failed/old Flex pull). Passed to every tile as a STALE DATA badge.
@@ -378,7 +276,6 @@ function PortfolioDashboard() {
                 color="primary"
                 size="small"
                 startIcon={<AddIcon />}
-                disabled={recomputingAll}
                 onClick={() => setAddPositionOpen(true)}
                 aria-label="Add position"
                 sx={{
@@ -404,37 +301,6 @@ function PortfolioDashboard() {
               >
                 <AutoAwesomeIcon />
               </IconButton>
-            </Tooltip>
-            <Tooltip title="Recompute all positions">
-              <span>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  startIcon={<RefreshIcon />}
-                  disabled={
-                    recomputingAll || !data || data.positions.length === 0
-                  }
-                  onClick={() => void onRecomputeAll()}
-                  aria-label="Recompute all positions"
-                  sx={{
-                    minWidth: { xs: 34, sm: 'auto' },
-                    px: { xs: 1, sm: 1.5 },
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                    '& .MuiButton-startIcon': { mr: { xs: 0, sm: 1 } },
-                  }}
-                >
-                  <Box
-                    component="span"
-                    sx={{ display: { xs: 'none', sm: 'inline' } }}
-                  >
-                    {recomputingAll && recomputeQueue
-                      ? `${recomputeQueue.index}/${recomputeQueue.total} ${recomputeQueue.ticker} · ${recomputeAllSecs}s`
-                      : 'Recompute all'}
-                  </Box>
-                </Button>
-              </span>
             </Tooltip>
           </Box>
         </Toolbar>
@@ -508,7 +374,6 @@ function PortfolioDashboard() {
                 liveQuote={isMarketOpen ? (liveQuotes[pos.ticker] ?? null) : null}
                 stale={stale}
                 onUpload={onUpload}
-                onRecompute={onRecompute}
                 onDelete={onDeleteHolding}
                 onOpenThesis={setThesisTicker}
                 onOpenDetail={setDetailTicker}
@@ -568,7 +433,6 @@ function PortfolioDashboard() {
         onClose={() => setDetailTicker(null)}
         onOpenThesis={setThesisTicker}
         onUpload={onUpload}
-        onRecompute={onRecompute}
         onDelete={onDeleteHolding}
         onChanged={() => void refresh()}
       />

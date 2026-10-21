@@ -19,7 +19,6 @@ import type {
   QuoteInfo,
 } from '../types'
 import { signedPercent } from '../format'
-import DecisionChip from './DecisionChip'
 import Sparkline from './Sparkline'
 
 const AMBER = '#F5B14C'
@@ -47,11 +46,9 @@ type SortKey =
   | 'upside'
   | 'ema'
   | 'catalyst'
-  | 'rating'
 type SortState = { key: SortKey; dir: 'asc' | 'desc' }
 
 const DEFAULT_DESC = new Set<SortKey>(['weight', 'gl', 'upside', 'ema'])
-const GRADE_RANK: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 }
 
 function targetUpside(pos: PositionSummary): number | null {
   if (pos.is_etf || !pos.analyst_target) return null
@@ -94,14 +91,6 @@ function soonestCatalyst(pos: PositionSummary): number | null {
   return timestamps.length > 0 ? Math.min(...timestamps) : null
 }
 
-function ratingRank(pos: PositionSummary): number | null {
-  const grade = pos.rating?.grade ?? pos.decision?.grade ?? null
-  if (!grade) return null
-  const action =
-    pos.rating?.action ?? (pos.decision?.verdict === 'sell' ? 'sell' : 'hold')
-  return (GRADE_RANK[grade] ?? 3) * 2 + (action === 'sell' ? 1 : 0)
-}
-
 function sortValue(
   pos: PositionSummary,
   key: SortKey,
@@ -124,8 +113,6 @@ function sortValue(
       )
     case 'catalyst':
       return soonestCatalyst(pos)
-    case 'rating':
-      return ratingRank(pos)
   }
 }
 
@@ -336,7 +323,6 @@ export default function PositionsTable({
             <TableCell sx={headCellSx}>Trend</TableCell>
             <SortHeader label="vs 20-EMA" sortKey="ema" sort={sort} onSort={onSort} align="right" />
             <TableCell sx={headCellSx}>Upcoming catalysts</TableCell>
-            <SortHeader label="Rating" sortKey="rating" sort={sort} onSort={onSort} />
             <TableCell align="right" sx={headCellSx} />
           </TableRow>
         </TableHead>
@@ -422,9 +408,6 @@ export default function PositionsTable({
                   color={emaColor(emaState)}
                 />
                 <CatalystCell items={pos.catalyst_outlook} />
-                <TableCell>
-                  <DecisionChip rating={pos.rating} decision={pos.decision} />
-                </TableCell>
                 <TableCell align="right">
                   <Tooltip title={`Open ${pos.ticker} details`}>
                     <IconButton

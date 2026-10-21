@@ -93,7 +93,6 @@ export default function ThesisDrawer({
     setError(null)
     try {
       await api.deleteFile(ticker, file.event_id)
-      await api.recompute(ticker, true)
       const fresh = await api.detail(ticker)
       setDetail(fresh)
       onChanged()
@@ -274,7 +273,7 @@ export default function ThesisDrawer({
                 onClick={() => void save()}
                 disabled={busy || tooLong || !ticker}
               >
-                {busy ? 'Saving...' : 'Save and recompute'}
+                {busy ? 'Saving...' : 'Save'}
               </Button>
               <Button onClick={onClose} disabled={busy}>
                 Cancel

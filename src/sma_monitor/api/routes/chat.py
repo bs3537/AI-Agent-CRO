@@ -8,9 +8,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ...chat.files import ChatFileError, parse_upload
 from ...chat.service import complete_chat_response
-from ...config import settings
 from ...llm import LLMError, get_provider
-from ...orchestrator.store import enqueue_runner_request, get_runner_request
+from ...orchestrator.store import get_runner_request
 from ..schemas import (
     ChatAttachmentOut,
     ChatHistoryMessage,
@@ -52,25 +51,7 @@ async def chat(
     attachment_payload = _attachment_payload(attachments)
     clean_ticker = ticker.strip().upper() if ticker and ticker.strip() else None
 
-    # Replit/dashboard deployments do not carry Codex auth. They write the chat
-    # request to shared Turso and the trusted VPS/Hermes runner completes it with
-    # the same Codex CLI stack used for thesis drift.
-    if settings.is_dashboard_role():
-        queued = enqueue_runner_request(
-            command="chat_complete",
-            ticker=clean_ticker,
-            payload={
-                "message": msg,
-                "history": [m.model_dump() for m in parsed_history],
-                "ticker": clean_ticker,
-                "include_portfolio": include_portfolio,
-                "attachment_context": attachment_context,
-                "attachments": attachment_payload,
-            },
-        )
-        return ChatQueuedResponse(**queued)
-
-    # Run the blocking synchronous LLM call in a thread pool so it does not
+    # Run the blocking synchronous OpenRouter call in a thread pool so it does not
     # stall the asyncio event loop (and avoid proxy-layer timeouts on long calls).
     try:
         result = await asyncio.to_thread(

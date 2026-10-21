@@ -20,8 +20,6 @@ import EditNoteIcon from '@mui/icons-material/EditNote'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { PositionSummary, QuoteInfo } from '../types'
-import { GRADE_HEX, VERDICT_HEX } from '../theme'
-import DecisionChip from './DecisionChip'
 import PnL from './PnL'
 import PriceTargetMetric from './PriceTargetMetric'
 import Sparkline from './Sparkline'
@@ -32,13 +30,12 @@ import { TechnicalChip } from './TechnicalChip'
 
 // One position tile: header (ticker + decision chip), economics row, the
 // decision note + drivers, the inline thesis editor, and the action row
-// (upload, recompute, details). All mutations call back up to App.
+// (upload, details). All mutations call back up to App.
 export default function PositionCard({
   pos,
   liveQuote = null,
   stale = false,
   onUpload,
-  onRecompute,
   onDelete,
   onOpenThesis,
   onOpenDetail,
@@ -47,13 +44,10 @@ export default function PositionCard({
   liveQuote?: QuoteInfo | null
   stale?: boolean
   onUpload: (ticker: string, file: File) => Promise<void>
-  onRecompute: (ticker: string) => Promise<void>
   onDelete: (ticker: string) => Promise<void>
   onOpenThesis: (ticker: string) => void
   onOpenDetail: (ticker: string) => void
 }) {
-  const [recomputing, setRecomputing] = useState(false)
-  const [recomputingSecs, setRecomputingSecs] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -76,32 +70,13 @@ export default function PositionCard({
   const modelUsed = signal?.model_used
   const decidedAt = signal?.decided_at
   const computeSource = signal?.compute_source
-  const accent = pos.rating
-    ? GRADE_HEX[pos.rating.grade] ?? '#888'
-    : pos.decision ? VERDICT_HEX[pos.decision.color] ?? '#888' : '#444'
+  const accent = '#444'
   // A thesis is a placeholder until the manager replaces the scaffolded stub.
   const thesisLabel = pos.thesis.trim().toUpperCase()
   const isStub = pos.thesis_source === 'system_stub' || thesisLabel.startsWith('STUB') || thesisLabel.startsWith('PLACEHOLDER')
   const isAiDraft = pos.is_ai_generated_thesis || (pos.thesis_source === 'ai_generated' && pos.thesis_status === 'draft')
   const thesisPreview = previewText(pos.thesis)
   const preliminary = isAiDraft ? pos.preliminary_thesis : null
-
-  useEffect(() => {
-    if (!recomputing) { setRecomputingSecs(0); return }
-    setRecomputingSecs(0)
-    const id = setInterval(() => setRecomputingSecs((s) => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [recomputing])
-
-  // Recompute this position's decision, showing a busy label meanwhile.
-  const recompute = async () => {
-    setRecomputing(true)
-    try {
-      await onRecompute(pos.ticker)
-    } finally {
-      setRecomputing(false)
-    }
-  }
 
   const deleteHolding = async () => {
     setDeleting(true)
@@ -127,9 +102,6 @@ export default function PositionCard({
               </Typography>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <DecisionChip rating={pos.rating} decision={pos.decision} />
-          </Stack>
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
@@ -153,7 +125,7 @@ export default function PositionCard({
               size="small"
               color="info"
               variant="outlined"
-              label={`PRELIMINARY THESIS${pos.draft_rating_grade ? ` · ${pos.draft_rating_grade}` : ''}`}
+              label="PRELIMINARY THESIS"
             />
           )}
           {isStub && <Chip size="small" color="warning" variant="outlined" label="STUB THESIS" />}
@@ -254,15 +226,6 @@ export default function PositionCard({
             <FileUpload onUpload={(file) => onUpload(pos.ticker, file)} />
             <Button
               size="small"
-              variant="contained"
-              startIcon={<RefreshIcon />}
-              disabled={recomputing}
-              onClick={() => void recompute()}
-            >
-              {recomputing ? `Recomputing… ${recomputingSecs}s` : 'Recompute'}
-            </Button>
-            <Button
-              size="small"
               startIcon={<InfoOutlinedIcon />}
               onClick={() => onOpenDetail(pos.ticker)}
             >
@@ -273,7 +236,7 @@ export default function PositionCard({
               color="error"
               variant="outlined"
               startIcon={<DeleteOutlineIcon />}
-              disabled={deleting || recomputing}
+              disabled={deleting}
               onClick={() => setConfirmDeleteOpen(true)}
             >
               Delete

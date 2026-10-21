@@ -160,7 +160,12 @@ def get_provider(
     if prefer_offline:
         return None
     # Import backends lazily so missing CLIs/SDKs never break modules that only
-    # might use an LLM.
+    # might use an LLM. OpenRouter wins whenever its API key is configured.
+    from .openrouter_client import OpenRouterProvider, openrouter_available
+
+    if openrouter_available():
+        return OpenRouterProvider()
+
     from .codex_client import CodexProvider, codex_available
 
     if not codex_available():

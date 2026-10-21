@@ -6,12 +6,10 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import type { Grade, PositionSummary, QuoteInfo } from '../types'
-import { GRADE_HEX } from '../theme'
+import type { PositionSummary, QuoteInfo } from '../types'
 
 const AMBER = '#F5B14C'
 const BELOW_EMA_STATES = new Set(['below_ema20', 'extended_below_ema20'])
-const GRADE_ORDER: Grade[] = ['A', 'B', 'C', 'D']
 
 const valueSx = {
   fontVariantNumeric: 'tabular-nums',
@@ -84,16 +82,10 @@ export default function KpiStrip({
   marketOpen: boolean
 }) {
   const stats = useMemo(() => {
-    const grades: Record<Grade, number> = { A: 0, B: 0, C: 0, D: 0 }
-    let unrated = 0
     let belowEma = 0
     let catalystSoon = 0
 
     for (const pos of positions) {
-      const grade = pos.rating?.grade ?? pos.decision?.grade ?? null
-      if (grade) grades[grade] += 1
-      else unrated += 1
-
       const technical =
         pos.rating?.technical_state ?? pos.spark?.technical_state ?? null
       if (technical && BELOW_EMA_STATES.has(technical)) belowEma += 1
@@ -101,8 +93,6 @@ export default function KpiStrip({
     }
 
     return {
-      grades,
-      unrated,
       belowEma,
       catalystSoon,
       overdue: positions.some((pos) => pos.has_overdue_catalyst),
@@ -124,44 +114,6 @@ export default function KpiStrip({
         divider={<Divider orientation="vertical" flexItem />}
         sx={{ minWidth: 'min-content' }}
       >
-        <StatGroup label="Grades">
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            {GRADE_ORDER.map((grade) => (
-              <Chip
-                key={grade}
-                size="small"
-                variant="outlined"
-                sx={{
-                  borderColor: GRADE_HEX[grade],
-                  opacity: stats.grades[grade] === 0 ? 0.4 : 1,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-                label={
-                  <Box component="span">
-                    <Box
-                      component="span"
-                      sx={{ color: GRADE_HEX[grade], fontWeight: 800 }}
-                    >
-                      {grade}
-                    </Box>{' '}
-                    <Box component="span" sx={{ color: 'text.primary' }}>
-                      {stats.grades[grade]}
-                    </Box>
-                  </Box>
-                }
-              />
-            ))}
-            {stats.unrated > 0 && (
-              <Chip
-                size="small"
-                variant="outlined"
-                sx={{ opacity: 0.5, fontVariantNumeric: 'tabular-nums' }}
-                label={`unrated ${stats.unrated}`}
-              />
-            )}
-          </Stack>
-        </StatGroup>
-
         <StatGroup label="Below EMA">
           <Typography
             component="span"

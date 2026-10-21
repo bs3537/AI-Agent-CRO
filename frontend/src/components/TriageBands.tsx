@@ -14,7 +14,6 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import type { PositionSummary, QuoteInfo } from '../types'
 import { signedPercent } from '../format'
-import DecisionChip from './DecisionChip'
 
 type Triage = 'attention' | 'watch'
 
@@ -29,21 +28,18 @@ const BAND_META: Record<Triage, { icon: ElementType; title: string }> = {
 }
 
 export function triageOf(pos: PositionSummary): Triage | null {
-  const grade = pos.rating?.grade ?? pos.decision?.grade ?? null
   const attentionState = pos.rating?.attention_state
   const technical =
     pos.rating?.technical_state ?? pos.spark?.technical_state ?? null
 
   if (
     attentionState === 'broken' ||
-    grade === 'D' ||
     pos.has_overdue_catalyst
   ) {
     return 'attention'
   }
   if (
     attentionState === 'watch' ||
-    grade === 'C' ||
     technical === 'extended_below_ema20'
   ) {
     return 'watch'
@@ -126,7 +122,6 @@ function BandRow({
       >
         {gainLoss === null ? '-' : signedPercent(gainLoss)}
       </Typography>
-      <DecisionChip rating={pos.rating} decision={pos.decision} />
       {pos.has_overdue_catalyst && (
         <Chip
           size="small"
