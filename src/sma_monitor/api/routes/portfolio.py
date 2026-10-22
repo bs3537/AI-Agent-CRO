@@ -82,6 +82,9 @@ async def pull_from_ibkr() -> PullResponse:
     new_tickers = sorted(new_tickers_set - prev_tickers)
     removed_tickers = sorted(prev_tickers - new_tickers_set)
 
+    from .positions import invalidate_positions_cache
+
+    invalidate_positions_cache()
     return PullResponse(
         pull_id=pull_id,
         nav=nav,

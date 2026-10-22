@@ -38,15 +38,6 @@ def test_codex_available_with_stub(stub_codex):
     assert codex_available() is True
 
 
-# get_provider() returns a CodexProvider and honors prefer_offline by returning None.
-def test_get_provider_selects_codex(stub_codex):
-    from sma_monitor.llm import get_provider
-    p = get_provider()
-    assert p is not None
-    assert p.model_label == "codex-cli"
-    assert get_provider(prefer_offline=True) is None
-
-
 # complete_json shells out to the stub and returns a schema-conforming object.
 def test_complete_json_against_stub(stub_codex):
     from sma_monitor.llm.codex_client import CodexProvider
@@ -71,13 +62,6 @@ def test_unavailable_without_binary(monkeypatch):
     monkeypatch.setenv("SMA_CODEX_BIN", "/nonexistent/codex-xyz")
     from sma_monitor.llm.codex_client import codex_available
     assert codex_available() is False
-
-
-def test_get_provider_returns_none_when_codex_unavailable(monkeypatch):
-    import sma_monitor.llm.provider as provider_mod
-
-    monkeypatch.setattr("sma_monitor.llm.codex_client.codex_available", lambda: False)
-    assert provider_mod.get_provider(stage="decision") is None
 
 
 def test_fallback_provider_uses_fallback_after_primary_error():
@@ -173,3 +157,13 @@ def test_red_team_with_llm_enriches_and_drops_fabricated():
     ids = [m.id for m in result.matched_warning_signs]
     assert real_id in ids and "totally_made_up_id" not in ids  # fabricated dropped
     assert result.matched_warning_signs[0].name  # enriched from catalog
+
+
+# Chat/catalyst/draft stages resolve to the OpenRouter DeepSeek provider.
+def test_get_provider_selects_openrouter(monkeypatch):
+    from sma_monitor.llm import provider
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    got = provider.get_provider(stage="chat")
+    assert got is not None
+    assert "deepseek" in got.model_label

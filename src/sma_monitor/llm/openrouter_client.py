@@ -15,6 +15,7 @@ import re
 import httpx
 
 from .provider import LLMError
+from .usage_cap import UsageCapExceeded, record_call
 from .web_search import TOOL_SPEC, run_web_search, web_search_available
 
 # Max web_search tool rounds per answer.
@@ -102,6 +103,10 @@ class OpenRouterProvider:
         key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
         if not key:
             raise LLMError("OPENROUTER_API_KEY is not set")
+        try:
+            record_call("openrouter")
+        except UsageCapExceeded as e:
+            raise LLMError(str(e)) from e
         try:
             resp = httpx.post(API_URL, json=body, headers={"Authorization": f"Bearer {key}"},
                               timeout=timeout_s or CALL_TIMEOUT_S)

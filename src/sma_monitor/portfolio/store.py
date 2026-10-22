@@ -229,6 +229,23 @@ def backfill_manual_positions_from_ibkr(positions: list[Position]) -> int:
     return updated
 
 
+# Tickers added by hand that are absent from the latest IBKR pull.
+def manual_only_tickers() -> set[str]:
+    init_portfolio_schema()
+    with connection() as conn:
+        head = conn.execute(
+            "SELECT pull_id FROM position_pulls ORDER BY pulled_at DESC LIMIT 1"
+        ).fetchone()
+        broker = (
+            {r["ticker"] for r in conn.execute(
+                "SELECT ticker FROM positions WHERE pull_id = ?", (head["pull_id"],)
+            ).fetchall()}
+            if head else set()
+        )
+        manual = {r["ticker"] for r in conn.execute("SELECT ticker FROM manual_positions").fetchall()}
+    return manual - broker
+
+
 def latest_pull_at() -> datetime | None:
     """Timestamp of the latest broker/Flex position pull, excluding manual rows."""
     init_portfolio_schema()

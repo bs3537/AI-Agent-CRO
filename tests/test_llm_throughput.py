@@ -106,23 +106,6 @@ def test_map_concurrent_runs_in_parallel():
 
 # --- Stage-aware provider construction --------------------------------------
 
-# get_provider(stage=...) builds a Codex provider carrying that stage's model +
-# effort; with no stage it returns the bare account-default provider.
-def test_get_provider_stage_sets_model_and_effort(monkeypatch):
-    import sma_monitor.llm.provider as provider_mod
-    monkeypatch.setattr("sma_monitor.llm.codex_client.codex_available", lambda: True)
-    monkeypatch.setenv("SMA_CODEX_MODEL_SCORER", "gpt-5.5")
-    monkeypatch.setenv("SMA_CODEX_EFFORT_SCORER", "low")
-    p = provider_mod.get_provider(stage="scorer")
-    assert p is not None and p.model == "gpt-5.5" and p.effort == "low"
-    bare = provider_mod.get_provider()
-    assert bare.model is None and bare.effort is None
-    catalyst = provider_mod.get_provider(stage="catalyst_outlook")
-    assert catalyst.web_search is True
-    assert p.web_search is False
-    assert provider_mod.get_provider(prefer_offline=True) is None
-
-
 # --- Codex CLI flag injection + 429 backoff ---------------------------------
 
 # _run injects -m <model> and -c model_reasoning_effort=<effort> right after the

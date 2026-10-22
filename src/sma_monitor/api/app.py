@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from ..config import settings
 from ..db import init_db
 from ..paths import ensure_dirs
-from .routes import chat, healthcare_movers, portfolio, positions, quotes, status
+from .routes import chat, jobs, portfolio, positions, quotes, status
 
 _log = logging.getLogger(__name__)
 
@@ -50,79 +50,10 @@ def _seconds_until_next(target: dtime) -> float:
     return (candidate - now_et).total_seconds()
 
 
-async def _scheduler_loop() -> None:
-    """Background task: fire the four daily orchestrator cycles at their scheduled ET times.
-
-    Mirrors orchestrator/schedule.py run_loop() but runs inside the API process
-    as an asyncio background task so it works in Replit deployments where systemd
-    and cron are unavailable.
-
-    Firing times (Eastern, DST-aware):
-      06:00  — morning thesis recompute (smart news/SEC/EMA/P&L gate)
-      09:15  — morning thesis email delivery
-      18:00  — evening collect cycle (positions + news + score + decisions)
-      21:00  — evening dispatch cycle (digest assembly + delivery)
-    """
-    from ..orchestrator.pipeline import (
-        run_collect_cycle,
-        run_dispatch_cycle,
-        run_morning_thesis_delivery_cycle,
-        run_morning_thesis_recompute_cycle,
-    )
-    from ..orchestrator.schedule import (
-        COLLECT_TIME_ET,
-        DISPATCH_TIME_ET,
-        MORNING_EMAIL_TIME_ET,
-        MORNING_RECOMPUTE_TIME_ET,
-        next_firing_at,
-    )
-
-    firings = [
-        (
-            MORNING_RECOMPUTE_TIME_ET,
-            "morning_thesis_recompute",
-            run_morning_thesis_recompute_cycle,
-        ),
-        (
-            MORNING_EMAIL_TIME_ET,
-            "morning_thesis_email",
-            run_morning_thesis_delivery_cycle,
-        ),
-        (COLLECT_TIME_ET, "collect", run_collect_cycle),
-        (DISPATCH_TIME_ET, "dispatch", run_dispatch_cycle),
-    ]
-
-    _log.info("scheduler_loop_started")
-
-    while True:
-        now_utc = datetime.now(tz=ZoneInfo("UTC"))
-        target_dt, cycle_name, cycle_fn = min(
-            ((next_firing_at(t, now_utc=now_utc), name, fn) for t, name, fn in firings),
-            key=lambda x: x[0],
-        )
-        sleep_secs = max(60, (target_dt - now_utc).total_seconds())
-        _log.info(
-            "scheduler_sleeping",
-            extra={
-                "next_cycle": cycle_name,
-                "next_fire_utc": target_dt.isoformat(),
-                "sleep_secs": int(sleep_secs),
-            },
-        )
-        await asyncio.sleep(sleep_secs)
-
-        _log.info("scheduler_cycle_start", extra={"cycle": cycle_name})
-        try:
-            await asyncio.to_thread(cycle_fn)
-        except Exception as exc:
-            _log.exception("scheduler_cycle_error", extra={"cycle": cycle_name, "err": str(exc)})
-        else:
-            _log.info("scheduler_cycle_done", extra={"cycle": cycle_name})
-
-
 async def _run_ibkr_sync() -> None:
     """Pull holdings + weights from the IBKR Flex query and persist them."""
     from ..config import settings
+    from ..orchestrator.job_status import record_job_run
     from ..portfolio.flex import FlexError, fetch_statement, parse_positions
     from ..portfolio.ir_urls import populate_ir_urls_for_tickers
     from ..portfolio.store import (
@@ -136,6 +67,9 @@ async def _run_ibkr_sync() -> None:
         _log.warning(
             "ibkr_sync_skipped",
             extra={"reason": "missing_credentials", "keys": missing},
+        )
+        await asyncio.to_thread(
+            record_job_run, "ibkr_pull", False, f"missing credentials: {', '.join(missing)}"
         )
         return
 
@@ -157,6 +91,9 @@ async def _run_ibkr_sync() -> None:
             source="ibkr_flex_scheduled",
             raw_xml=None,
         )
+        await asyncio.to_thread(
+            record_job_run, "ibkr_pull", True, f"{len(positions_list)} positions, NAV {nav:,.0f}"
+        )
         _log.info(
             "ibkr_sync_done",
             extra={"pull_id": pull_id, "nav": nav, "ticker_count": len(positions_list)},
@@ -176,8 +113,10 @@ async def _run_ibkr_sync() -> None:
             asyncio.create_task(asyncio.to_thread(_research_new_holdings, new_tickers))
     except FlexError as exc:
         _log.error("ibkr_sync_failed", extra={"err": str(exc)})
+        await asyncio.to_thread(record_job_run, "ibkr_pull", False, str(exc))
     except Exception as exc:
         _log.exception("ibkr_sync_unexpected_error", extra={"err": str(exc)})
+        await asyncio.to_thread(record_job_run, "ibkr_pull", False, repr(exc))
 
 
 # Refresh every FMP-sourced dashboard input for the current holdings: profile
@@ -187,27 +126,38 @@ def _refresh_market_data() -> None:
     from ..analyst_targets.service import refresh_fmp_targets
     from ..news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
 
+    from ..orchestrator.job_status import record_job_run
+
     key = settings.fmp_api_key
     if not key:
         _log.warning("market_data_refresh_skipped", extra={"reason": "FMP_API_KEY missing"})
+        record_job_run("fmp_market_data", False, "FMP_API_KEY missing")
         return
     steps = (
         ("fmp_metrics", lambda: refresh_for_holdings(api_key=key)),
         ("fmp_prices", lambda: refresh_prices_for_holdings(api_key=key)),
         ("fmp_targets", lambda: refresh_fmp_targets(api_key=key)),
     )
+    failures: list[str] = []
     for name, fn in steps:
         try:
             result = fn()
             _log.info("market_data_step_done", extra={"step": name, "result": str(result)[:300]})
         except Exception as exc:
             _log.exception("market_data_step_failed", extra={"step": name, "err": str(exc)})
+            failures.append(f"{name}: {exc}")
+    record_job_run(
+        "fmp_market_data", not failures, "; ".join(failures) or "metrics, prices, targets refreshed"
+    )
 
 
 async def _run_daily_refresh() -> None:
     """6 AM job: IBKR holdings + weights first, then FMP prices/targets for them."""
+    from .routes.positions import invalidate_positions_cache
+
     await _run_ibkr_sync()
     await asyncio.to_thread(_refresh_market_data)
+    invalidate_positions_cache()
 
 
 def _research_new_holdings(tickers: list[str]) -> None:
@@ -269,6 +219,7 @@ def _seconds_until_next_sunday_6pm() -> float:
 async def _catalyst_refresh_loop() -> None:
     """Background task: web-search catalysts for all holdings every Sunday 6 PM ET."""
     from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
+    from ..orchestrator.job_status import record_job_run
 
     while True:
         wait = _seconds_until_next_sunday_6pm()
@@ -277,9 +228,17 @@ async def _catalyst_refresh_loop() -> None:
         _log.info("catalyst_refresh_start")
         try:
             state = await asyncio.to_thread(refresh_catalyst_outlooks_for_holdings)
+            await asyncio.to_thread(
+                record_job_run, "catalyst_search", state.get("errors", 0) == 0,
+                f"{state.get('updated', 0)} updated, {state.get('errors', 0)} failed",
+            )
+            from .routes.positions import invalidate_positions_cache
+
+            invalidate_positions_cache()
             _log.info("catalyst_refresh_done", extra={"state": str(state)[:300]})
         except Exception as exc:
             _log.exception("catalyst_refresh_failed", extra={"err": str(exc)})
+            await asyncio.to_thread(record_job_run, "catalyst_search", False, repr(exc))
 
 
 # Resolve allowed CORS origins from the environment, falling back to the Vite
@@ -328,7 +287,6 @@ def _init_served_phase_schemas() -> None:
     # run a full collect cycle yet. Initialize all served schemas at startup.
     from ..analyst_targets.store import init_analyst_target_schema
     from ..decision.store import init_decision_schema
-    from ..healthcare_movers.store import init_healthcare_movers_schema
     from ..news.catalyst_outlook import init_catalyst_schema
     from ..news.fmp_client import init_fmp_schema
     from ..news.store import init_news_schema
@@ -344,7 +302,6 @@ def _init_served_phase_schemas() -> None:
     init_uploads_schema()
     init_news_schema()
     init_fmp_schema()
-    init_healthcare_movers_schema()
     init_analyst_target_schema()
     init_catalyst_schema()
     init_scores_schema()
@@ -375,8 +332,8 @@ def create_app() -> FastAPI:
     app.include_router(portfolio.router)
     app.include_router(chat.router)
     app.include_router(status.router)
+    app.include_router(jobs.router)
     app.include_router(quotes.router)
-    app.include_router(healthcare_movers.router)
 
     # Serve the built SPA at the root when it exists (production). html=True
     # makes client-side routing fall back to index.html.

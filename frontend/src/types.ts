@@ -179,6 +179,7 @@ export interface PositionSummary {
   thesis_source: ThesisSource
   thesis_status: ThesisStatus
   is_ai_generated_thesis: boolean
+  is_manual_only: boolean
   thesis_generated_by: string | null
   thesis_generated_at: string | null
   thesis_compute_source: string | null
@@ -203,46 +204,6 @@ export interface PositionsResponse {
   missing_sidecars: string[]
 }
 
-export interface HealthcareMover {
-  rank: number
-  ticker: string
-  company_name: string
-  industry: string | null
-  exchange: string | null
-  market_cap: number | null
-  price: number
-  return_pct: number
-  window_days: number
-  start_date: string
-  end_date: string
-  start_close: number
-  end_close: number
-  latest_volume: number | null
-  average_volume_20d: number | null
-  volume_ratio: number | null
-  flags: string[]
-  spark_dates: string[]
-  spark_closes: Array<number | null>
-  is_held: boolean
-}
-
-export interface HealthcareMoverDirections {
-  gainers: HealthcareMover[]
-  decliners: HealthcareMover[]
-}
-
-export interface HealthcareMoversResponse {
-  status: 'current' | 'unavailable'
-  source: 'fmp'
-  as_of_date: string | null
-  generated_at: string | null
-  universe_count: number
-  covered_count: number
-  coverage_fraction: number
-  rankings: Record<string, HealthcareMoverDirections>
-  message: string | null
-}
-
 // GET /api/positions/{ticker} detail.
 export interface PositionDetail extends PositionSummary {
   catalysts: Catalyst[]
@@ -250,38 +211,6 @@ export interface PositionDetail extends PositionSummary {
   red_team: RedTeamItem[]
   files: FileMeta[]
   financials: Record<string, unknown> | null
-}
-
-// POST recompute response.
-export interface RecomputeResponse {
-  ticker: string
-  scheduled: boolean
-  request_id: string | null
-  queue_status: string | null
-  rating: Rating | null
-  decision: Decision | null
-  refresh?: Record<string, unknown> | null
-}
-
-export interface RecomputeStatusResponse {
-  request_id: string
-  command: string
-  ticker: string | null
-  status: 'queued' | 'running' | 'succeeded' | 'failed'
-  refresh: Record<string, unknown> | null
-  error: string | null
-}
-
-// POST /api/positions/recompute (whole-portfolio) response.
-export interface RecomputeAllResponse {
-  scheduled: boolean
-  request_id: string | null
-  queue_status: string | null
-  decided: number
-  skipped: number
-  errors: number
-  holdings: number
-  refresh?: Record<string, unknown> | null
 }
 
 export interface DeleteHoldingResponse {
@@ -375,4 +304,15 @@ export interface Status {
   flags: Array<Record<string, unknown>>
   dead_letters: { pending: number; recent: Array<Record<string, unknown>> }
   positions: { count: number; pulled_at: string | null; missing_sidecars: string[] }
+}
+
+// One scheduled data job's health (GET /api/jobs).
+export interface JobStatus {
+  job: string
+  label: string
+  last_run_at: string | null
+  last_success_at: string | null
+  ok: boolean | null
+  detail: string | null
+  overdue: boolean
 }

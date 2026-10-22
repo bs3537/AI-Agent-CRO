@@ -193,6 +193,8 @@ class PositionSummary(BaseModel):
     thesis_source: Literal["pm", "ai_generated", "system_stub"] = "pm"
     thesis_status: Literal["active", "draft"] = "active"
     is_ai_generated_thesis: bool = False
+    # True for a hand-added position that the latest IBKR pull does not contain.
+    is_manual_only: bool = False
     thesis_generated_by: str | None = None
     thesis_generated_at: str | None = None
     thesis_compute_source: str | None = None
@@ -215,46 +217,6 @@ class PositionsResponse(BaseModel):
     pulled_at: str | None
     positions: list[PositionSummary]
     missing_sidecars: list[str] = Field(default_factory=list)
-
-
-class HealthcareMoverOut(BaseModel):
-    rank: int
-    ticker: str
-    company_name: str
-    industry: str | None = None
-    exchange: str | None = None
-    market_cap: float | None = None
-    price: float
-    return_pct: float
-    window_days: int
-    start_date: str
-    end_date: str
-    start_close: float
-    end_close: float
-    latest_volume: int | None = None
-    average_volume_20d: float | None = None
-    volume_ratio: float | None = None
-    flags: list[str] = Field(default_factory=list)
-    spark_dates: list[str] = Field(default_factory=list)
-    spark_closes: list[float | None] = Field(default_factory=list)
-    is_held: bool = False
-
-
-class HealthcareMoverDirectionsOut(BaseModel):
-    gainers: list[HealthcareMoverOut] = Field(default_factory=list)
-    decliners: list[HealthcareMoverOut] = Field(default_factory=list)
-
-
-class HealthcareMoversResponse(BaseModel):
-    status: Literal["current", "unavailable"]
-    source: Literal["fmp"] = "fmp"
-    as_of_date: str | None = None
-    generated_at: str | None = None
-    universe_count: int = 0
-    covered_count: int = 0
-    coverage_fraction: float = 0
-    rankings: dict[str, HealthcareMoverDirectionsOut] = Field(default_factory=dict)
-    message: str | None = None
 
 
 # GET /api/positions/{ticker}: the summary plus the full evidence trail.
@@ -308,38 +270,6 @@ class ManualPositionCreate(BaseModel):
 
 class ManualPositionResponse(BaseModel):
     position: PositionSummary
-    refresh: dict[str, Any] | None = None
-
-
-# POST /api/positions/{ticker}/recompute response.
-class RecomputeResponse(BaseModel):
-    ticker: str
-    scheduled: bool                    # True when run in the background
-    request_id: str | None = None       # populated when queued for Hermes/runner
-    queue_status: str | None = None
-    rating: RatingOut | None = None
-    decision: DecisionOut | None = None  # populated only when ?wait=true
-    refresh: dict[str, Any] | None = None
-
-
-class RecomputeStatusResponse(BaseModel):
-    request_id: str
-    command: str
-    ticker: str | None = None
-    status: Literal["queued", "running", "succeeded", "failed"]
-    refresh: dict[str, Any] | None = None
-    error: str | None = None
-
-
-# POST /api/positions/recompute response — summary of a whole-portfolio run.
-class RecomputeAllResponse(BaseModel):
-    scheduled: bool                    # True when run in the background
-    request_id: str | None = None       # populated when queued for Hermes/runner
-    queue_status: str | None = None
-    decided: int = 0                   # counts populated only when ?wait=true
-    skipped: int = 0
-    errors: int = 0
-    holdings: int = 0
     refresh: dict[str, Any] | None = None
 
 

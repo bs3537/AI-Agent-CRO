@@ -5,6 +5,8 @@ import os
 
 import httpx
 
+from .usage_cap import UsageCapExceeded, record_call
+
 # Perplexity Search API endpoint.
 SEARCH_URL = "https://api.perplexity.ai/search"
 
@@ -36,6 +38,10 @@ def run_web_search(query: str, max_results: int = 6) -> str:
     key = (os.environ.get("PERPLEXITY_API_KEY") or "").strip()
     if not key:
         return "web search unavailable: PERPLEXITY_API_KEY not set"
+    try:
+        record_call("perplexity")
+    except UsageCapExceeded as e:
+        return f"web search unavailable: {e}"
     try:
         resp = httpx.post(
             SEARCH_URL,

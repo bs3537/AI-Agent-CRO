@@ -71,6 +71,7 @@ def test_store_orders_clamps_and_preserves_sources():
         "2027-03-01",
         "2027-06-01",
         "2027-09-01",
+        None,  # undated (guided) items sort last
     ]
     assert got[0]["source_title"] == "Company investor relations"
     assert got[0]["source_url"].startswith("https://")
@@ -84,10 +85,9 @@ def test_operating_company_prompt_is_multi_sector_and_source_required():
     )
 
     assert "multi-sector" in system
-    assert "product launches" in user
-    assert "earnings" in user
+    assert "ONLY the single next earnings date" in user
     assert "Technology Test Company" in user
-    assert "2028-01-18" in user
+    assert "2027-07-18" in user
     assert "direct source_url" in user
     assert "healthcare-only" not in (system + user).lower()
 

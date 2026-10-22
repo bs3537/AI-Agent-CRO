@@ -57,3 +57,15 @@ init_db()
 init_portfolio_schema()
 save_pull(_SEED_POSITIONS, nav=_SEED_NAV, pulled_at=_SEED_AT,
           source="test_seed", raw_xml=None)
+
+
+import pytest  # noqa: E402
+
+
+# Each test starts with an empty dashboard-grid cache (tests swap DB state).
+@pytest.fixture(autouse=True)
+def _clear_positions_cache():
+    from sma_monitor.api.routes.positions import invalidate_positions_cache
+
+    invalidate_positions_cache()
+    yield

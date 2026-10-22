@@ -12,10 +12,11 @@ Wraps the existing pipeline functions — no new business logic:
 from __future__ import annotations
 
 import json
-import re
+import threading
+import time
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 
 from ...analyst_targets.store import latest_target_state, target_state_from_row
 from ...config import settings
@@ -25,17 +26,12 @@ from ...decision.store import latest_decision, latest_rating
 from ...decision.technicals import technical_state
 from ...news.catalyst_outlook import latest_catalyst_outlook
 from ...news.fmp_client import latest_fmp_metrics, latest_price_series
-from ...orchestrator.manual_recompute import (
-    recompute_all_with_refresh,
-    recompute_one_with_refresh,
-)
-from ...orchestrator.store import enqueue_runner_request, get_runner_request
 from ...portfolio.delete import delete_holding_data
 from ...portfolio.ir_urls import populate_ir_urls_for_tickers
 from ...portfolio.joined import latest_joined
 from ...portfolio.schema import Holding
 from ...portfolio.sidecar import ensure_sidecar, set_thesis
-from ...portfolio.store import latest_positions, save_manual_position
+from ...portfolio.store import latest_positions, manual_only_tickers, save_manual_position
 from ...portfolio.uploads import (
     UploadError,
     delete_file,
@@ -57,27 +53,25 @@ from ..schemas import (
     PositionsResponse,
     PositionSummary,
     RatingOut,
-    RecomputeAllResponse,
-    RecomputeResponse,
-    RecomputeStatusResponse,
     RedTeamOut,
     ScoreOut,
     SparklineOut,
     ThesisUpdate,
 )
 
-router = APIRouter(prefix="/api/positions", tags=["positions"])
-UPLOAD_FILE = File(...)
-RECOMPUTE_COMMANDS = {
-    "manual_recompute_one",
-    "manual_recompute_all",
-    "preliminary_thesis_one",
-    "preliminary_thesis_backfill",
-    "thesis_recompute",
-}
-SECRETISH_ERROR_RE = re.compile(
-    r"(?i)(api[_-]?key|auth[_-]?token|access[_-]?token|token|password|secret)=([^\s&]+)"
+# Router dependency: after any non-GET request finishes, drop the cached grid.
+async def _invalidate_after_write(request: Request):
+    yield
+    if request.method != "GET":
+        invalidate_positions_cache()
+
+
+router = APIRouter(
+    prefix="/api/positions",
+    tags=["positions"],
+    dependencies=[Depends(_invalidate_after_write)],
 )
+UPLOAD_FILE = File(...)
 
 
 # Map a decision (+ its strongest red-team bear severity) to an A/B/C/D letter
@@ -364,14 +358,6 @@ def _summary(h: Holding, cache: dict[str, dict[str, Any]] | None = None) -> Posi
     )
 
 
-def _safe_runner_error(value: str | None) -> str | None:
-    if not value:
-        return None
-    safe = SECRETISH_ERROR_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", str(value))
-    safe = re.sub(r"([?&])([^\s=&#/?]+)=([^\s&#]+)", r"\1\2=[REDACTED]", safe)
-    return safe[:1000]
-
-
 # Resolve one ticker to its current Holding, or raise 404.
 def _holding_or_404(ticker: str) -> Holding:
     want = ticker.strip().upper()
@@ -389,16 +375,42 @@ def _position_tickers() -> set[str]:
     return {p.ticker for p in positions}
 
 
+# Short-lived cache of the assembled dashboard grid. Building it takes several
+# seconds of remote-database round trips, so repeat loads reuse the last result.
+# Every mutating route below calls invalidate_positions_cache().
+POSITIONS_CACHE_TTL_S = 60.0
+_positions_cache: dict[str, Any] = {"at": 0.0, "value": None}
+_positions_lock = threading.Lock()
+
+
+# Drop the cached grid so the next GET rebuilds it from the database.
+def invalidate_positions_cache() -> None:
+    with _positions_lock:
+        _positions_cache["value"] = None
+
+
 # GET /api/positions — the dashboard grid.
 @router.get("", response_model=PositionsResponse)
 def list_positions() -> PositionsResponse:
+    with _positions_lock:
+        cached = _positions_cache["value"]
+        if cached is not None and time.monotonic() - _positions_cache["at"] < POSITIONS_CACHE_TTL_S:
+            return cached
     holdings, missing, pulled_at = latest_joined()
     cache = _dashboard_cache([h.ticker for h in holdings])
-    return PositionsResponse(
+    manual_only = manual_only_tickers()
+    summaries = [_summary(h, cache) for h in holdings]
+    for summary in summaries:
+        summary.is_manual_only = summary.ticker in manual_only
+    response = PositionsResponse(
         pulled_at=pulled_at.isoformat() if pulled_at else None,
-        positions=[_summary(h, cache) for h in holdings],
+        positions=summaries,
         missing_sidecars=missing,
     )
+    with _positions_lock:
+        _positions_cache["value"] = response
+        _positions_cache["at"] = time.monotonic()
+    return response
 
 
 # POST /api/positions — manually add a position by ticker + portfolio weight.
@@ -407,6 +419,7 @@ def list_positions() -> PositionsResponse:
 @router.post("", response_model=ManualPositionResponse, status_code=201)
 def add_manual_position(
     body: ManualPositionCreate,
+    background: BackgroundTasks,
     offline: bool = False,
 ) -> ManualPositionResponse:
     from ...portfolio.store import latest_positions as _latest_positions_store
@@ -438,44 +451,14 @@ def add_manual_position(
     else:
         ensure_sidecar(want)
     ir_state = _populate_ir_urls_best_effort(want, offline=offline)
-    if settings.is_dashboard_role() and supplied_thesis:
-        state = {
-            "queued": enqueue_runner_request(
-                command="manual_recompute_one",
-                ticker=want,
-                payload={
-                    "offline": offline,
-                    "compute_source": "hermes_manual_single",
-                },
-            )
-        }
-    elif settings.is_dashboard_role():
-        state = {
-            "queued": enqueue_runner_request(
-                command="preliminary_thesis_one",
-                ticker=want,
-                payload={
-                    "ticker": want,
-                    "upgrade_existing_ai": True,
-                    "refresh_inputs": not offline,
-                    "compute_source": "hermes_manual_preliminary_thesis",
-                },
-            )
-        }
-    elif supplied_thesis:
-        state = recompute_one_with_refresh(
-            want,
-            offline=offline,
-            compute_source="manual_single",
-        )
-    else:
-        from ...orchestrator.preliminary_thesis import run_preliminary_thesis_workflow
-
-        state = run_preliminary_thesis_workflow(
-            tickers=[want],
-            upgrade_existing_ai=True,
-            refresh_inputs=not offline,
-            compute_source="manual_preliminary_thesis",
+    # Fetch FMP data and write the AI preliminary thesis + catalysts in the
+    # background so the row fills in without blocking the request.
+    state: dict[str, Any] = {"queued": "market_data"}
+    if not offline:
+        background.add_task(_research_added_position, want, bool(supplied_thesis))
+        state["queued"] = (
+            "market_data_and_catalysts" if supplied_thesis
+            else "market_data_thesis_and_catalysts"
         )
     if ir_state is not None:
         state["ir_urls"] = ir_state
@@ -483,6 +466,37 @@ def add_manual_position(
         position=_summary(_holding_or_404(want)),
         refresh=state,
     )
+
+
+# Background job for a manually added ticker: FMP prices/targets, an AI
+# preliminary thesis when the PM supplied none, then the 12-month catalyst search.
+def _research_added_position(ticker: str, has_thesis: bool) -> None:
+    import logging
+
+    from ...analyst_targets.service import refresh_fmp_targets
+    from ...news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
+    from ...news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
+    from ...orchestrator.preliminary_thesis import run_preliminary_thesis_workflow
+
+    log = logging.getLogger(__name__)
+    key = settings.fmp_api_key
+    steps = [
+        lambda: refresh_for_holdings(api_key=key, tickers=[ticker]),
+        lambda: refresh_prices_for_holdings(api_key=key, tickers=[ticker]),
+        lambda: refresh_fmp_targets(api_key=key, tickers=[ticker]),
+    ] if key else []
+    if not has_thesis:
+        steps.append(lambda: run_preliminary_thesis_workflow(
+            tickers=[ticker], refresh_inputs=False,
+            compute_source="web_search_new_holding",
+        ))
+    steps.append(lambda: refresh_catalyst_outlooks_for_holdings(tickers=[ticker]))
+    for step in steps:
+        try:
+            step()
+        except Exception:  # noqa: BLE001 - one failed step must not block the rest.
+            log.exception("added_position_research_failed", extra={"ticker": ticker})
+        invalidate_positions_cache()
 
 
 def _populate_ir_urls_best_effort(ticker: str, *, offline: bool = False) -> dict | None:
@@ -633,120 +647,3 @@ def delete_holding(ticker: str) -> DeleteHoldingResponse:
         raise HTTPException(status_code=404, detail=f"no held position for {want}")
     result = delete_holding_data(want)
     return DeleteHoldingResponse(ticker=want, deleted=result["deleted"])
-
-
-# POST /api/positions/{ticker}/recompute — refresh ticker evidence, score and
-# red-team new rows, then run the decision engine for one ticker. Background by
-# default; ?wait=true runs inline and returns the saved result.
-@router.post("/{ticker}/recompute", response_model=RecomputeResponse)
-def recompute(
-    ticker: str,
-    background: BackgroundTasks,
-    wait: bool = False,
-    offline: bool = False,
-    compute_source: str = "manual_single",
-) -> RecomputeResponse:
-    want = ticker.strip().upper()
-    _holding_or_404(want)  # 404 if not a current holding
-    if settings.is_dashboard_role():
-        req = enqueue_runner_request(
-            command="manual_recompute_one",
-            ticker=want,
-            payload={
-                "offline": offline,
-                "compute_source": compute_source or "hermes_manual_single",
-            },
-        )
-        return RecomputeResponse(
-            ticker=want,
-            scheduled=True,
-            request_id=req["request_id"],
-            queue_status=req["status"],
-            refresh={"queued": req},
-        )
-    if wait:
-        state = recompute_one_with_refresh(
-            want,
-            offline=offline,
-            compute_source=compute_source,
-        )
-        row = latest_decision(want)
-        rating = _rating_out(latest_rating(want))
-        return RecomputeResponse(
-            ticker=want,
-            scheduled=False,
-            rating=rating,
-            decision=_decision_out(row, _max_severity(want) if row else 0, rating),
-            refresh=state,
-        )
-    background.add_task(
-        recompute_one_with_refresh,
-        want,
-        offline=offline,
-        compute_source=compute_source,
-    )
-    return RecomputeResponse(ticker=want, scheduled=True, decision=None)
-
-
-# GET /api/positions/recompute/{request_id} — status for dashboard-queued
-# recompute requests completed by the trusted VPS runner.
-@router.get("/recompute/{request_id}", response_model=RecomputeStatusResponse)
-def recompute_status(request_id: str) -> RecomputeStatusResponse:
-    row = get_runner_request(request_id)
-    if row is None or row.get("command") not in RECOMPUTE_COMMANDS:
-        raise HTTPException(status_code=404, detail="recompute request not found")
-
-    refresh = None
-    if row.get("summary_json"):
-        try:
-            parsed = json.loads(row.get("summary_json") or "{}")
-        except (json.JSONDecodeError, TypeError) as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"recompute result unreadable: {str(e)[:200]}",
-            ) from e
-        refresh = parsed if isinstance(parsed, dict) else {"result": parsed}
-
-    return RecomputeStatusResponse(
-        request_id=row["request_id"],
-        command=row["command"],
-        ticker=row.get("ticker"),
-        status=row["status"],
-        refresh=refresh,
-        error=_safe_runner_error(row.get("error")),
-    )
-
-
-# POST /api/positions/recompute — refresh evidence and recompute EVERY holding
-# in one call. Background by default; ?wait=true runs inline and returns the
-# {decided, skipped, errors, holdings} summary. This can be slow because it may
-# run live search, scoring, red team, and decision LLM calls.
-@router.post("/recompute", response_model=RecomputeAllResponse)
-def recompute_all(
-    background: BackgroundTasks,
-    wait: bool = False,
-    force: bool = True,
-    offline: bool = False,
-) -> RecomputeAllResponse:
-    if settings.is_dashboard_role():
-        req = enqueue_runner_request(
-            command="manual_recompute_all",
-            payload={"offline": offline, "force": force},
-        )
-        return RecomputeAllResponse(
-            scheduled=True,
-            request_id=req["request_id"],
-            queue_status=req["status"],
-            refresh={"queued": req},
-        )
-    if wait:
-        state = recompute_all_with_refresh(offline=offline, force=force)
-        s = state.get("decisions", {})
-        return RecomputeAllResponse(
-            scheduled=False,
-            decided=s.get("decided", 0), skipped=s.get("skipped", 0),
-            errors=s.get("errors", 0), holdings=s.get("holdings", 0),
-            refresh=state,
-        )
-    background.add_task(recompute_all_with_refresh, offline=offline, force=force)
-    return RecomputeAllResponse(scheduled=True)

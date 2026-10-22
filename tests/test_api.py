@@ -37,10 +37,10 @@ def test_dashboard_role_does_not_start_background_loops(monkeypatch):
     import sma_monitor.api.app as app_mod
     from sma_monitor.config import settings
 
-    started = {"scheduler": False, "ibkr": False}
+    started = {"ibkr": False, "catalyst": False}
 
-    async def fake_scheduler():
-        started["scheduler"] = True
+    async def fake_catalyst():
+        started["catalyst"] = True
         await asyncio.sleep(0)
 
     async def fake_ibkr():
@@ -48,13 +48,14 @@ def test_dashboard_role_does_not_start_background_loops(monkeypatch):
         await asyncio.sleep(0)
 
     monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
-    monkeypatch.setattr(app_mod, "_scheduler_loop", fake_scheduler)
+    monkeypatch.setattr(app_mod, "_catalyst_refresh_loop", fake_catalyst)
+    monkeypatch.delenv("REPLIT_DEPLOYMENT", raising=False)
     monkeypatch.setattr(app_mod, "_ibkr_sync_loop", fake_ibkr)
 
     with TestClient(app_mod.create_app()) as c:
         assert c.get("/api/health").status_code == 200
 
-    assert started == {"scheduler": False, "ibkr": False}
+    assert started == {"ibkr": False, "catalyst": False}
 
 
 # The A/B/C/D rubric: verdict sets the band; within a hold, bear severity then
@@ -162,62 +163,6 @@ def test_upload_unsupported_type(client):
     assert client.post(f"/api/positions/{HELD}/files", files=files).status_code == 415
 
 
-# Synchronous recompute returns a fresh decision with a valid verdict.
-def test_recompute_wait(client):
-    r = client.post(f"/api/positions/{HELD}/recompute", params={"wait": True, "offline": True})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["scheduled"] is False
-    assert body["rating"]["grade"] in {"A", "B", "C", "D"}
-    assert body["rating"]["compute_source"] == "manual_single"
-    assert body["rating"]["action"] == ("sell" if body["rating"]["grade"] == "D" else "hold")
-    assert body["rating"]["technical_state"] in {
-        "above_ema20",
-        "below_ema20",
-        "extended_below_ema20",
-        "no_price_data",
-    }
-    assert body["decision"]["verdict"] in {"hold", "watch", "sell"}
-    assert body["decision"]["color"] in {"green", "yellow", "red"}
-    assert body["decision"]["compute_source"] == "manual_single"
-
-
-def test_recompute_dashboard_role_enqueues(client, monkeypatch):
-    from sma_monitor.api.routes.positions import settings
-    from sma_monitor.db import connection
-
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
-
-    r = client.post(f"/api/positions/{HELD}/recompute")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["scheduled"] is True
-    assert body["request_id"]
-    assert body["queue_status"] == "queued"
-
-    status = client.get("/api/status").json()
-    queued = [q for q in status["runner_requests"] if q["request_id"] == body["request_id"]]
-    assert queued and queued[0]["command"] == "manual_recompute_one"
-
-
-def test_recompute_all_dashboard_role_enqueues(client, monkeypatch):
-    from sma_monitor.api.routes.positions import settings
-    from sma_monitor.db import connection
-
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
-
-    r = client.post("/api/positions/recompute", params={"force": True})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["scheduled"] is True
-    assert body["request_id"]
-    assert body["queue_status"] == "queued"
-
-
 def test_add_manual_position_runs_analysis(client):
     r = client.post(
         "/api/positions",
@@ -232,21 +177,12 @@ def test_add_manual_position_runs_analysis(client):
     body = r.json()
     assert body["position"]["ticker"] == "MANU"
     assert body["position"]["pct_nav"] == pytest.approx(0.0125)
-    assert body["position"]["rating"]["grade"] in {"A", "B", "C", "D"}
-    assert body["position"]["rating"]["compute_source"] == "manual_single"
 
     tickers = {p["ticker"] for p in client.get("/api/positions").json()["positions"]}
     assert "MANU" in tickers
 
 
-def test_add_manual_position_without_thesis_queues_preliminary_research(client, monkeypatch):
-    from sma_monitor.api.routes.positions import settings
-    from sma_monitor.db import connection
-
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
-
+def test_add_manual_position_without_thesis_creates_stub(client):
     r = client.post(
         "/api/positions",
         params={"offline": True},
@@ -261,8 +197,7 @@ def test_add_manual_position_without_thesis_queues_preliminary_research(client, 
     body = r.json()
     assert body["position"]["ticker"] == "AIRS"
     assert body["position"]["thesis_source"] == "system_stub"
-    assert body["refresh"]["queued"]["command"] == "preliminary_thesis_one"
-    assert body["refresh"]["queued"]["ticker"] == "AIRS"
+    assert body["refresh"]["queued"] == "market_data"
 
 
 def test_chat_portfolio_context(client, monkeypatch):
@@ -316,33 +251,6 @@ def test_chat_upload_text_file(client, monkeypatch):
     assert "AQST thesis update" in captured["user"]
 
 
-def test_dashboard_chat_enqueues_vps_runner_request(client, monkeypatch):
-    from sma_monitor.config import settings
-    from sma_monitor.db import connection
-    from sma_monitor.orchestrator.store import init_orchestrator_schema, recent_runner_requests
-
-    init_orchestrator_schema()
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    monkeypatch.setattr(settings, "sma_deployment_role", "dashboard")
-
-    r = client.post(
-        "/api/chat",
-        data={"message": "Use the VPS Codex runner for VRTX chat", "history": "[]"},
-    )
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["scheduled"] is True
-    assert body["command"] == "chat_complete"
-    req = recent_runner_requests(limit=1)[0]
-    assert req["request_id"] == body["request_id"]
-    assert req["command"] == "chat_complete"
-    payload = json.loads(req["payload_json"])
-    assert payload["message"] == "Use the VPS Codex runner for VRTX chat"
-    assert payload["include_portfolio"] is True
-
-
 def test_chat_status_returns_completed_runner_result(client):
     from sma_monitor.db import connection
     from sma_monitor.orchestrator.store import (
@@ -374,62 +282,6 @@ def test_chat_status_returns_completed_runner_result(client):
     assert body["status"] == "succeeded"
     assert body["result"]["answer"] == "VPS Codex answered."
     assert body["result"]["model_used"] == "codex-cli"
-
-
-# Dashboard recompute is queued to the VPS runner. The frontend needs a safe
-# status endpoint so it can wait until the LLM rating has actually landed (or
-# surface a runner failure) before telling the PM the tile is updated.
-def test_recompute_status_returns_completed_runner_summary(client):
-    from sma_monitor.db import connection
-    from sma_monitor.orchestrator.store import (
-        enqueue_runner_request,
-        finish_runner_request,
-        init_orchestrator_schema,
-    )
-
-    init_orchestrator_schema()
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    req = enqueue_runner_request(command="manual_recompute_one", ticker=HELD, payload={})
-    finish_runner_request(
-        req["request_id"],
-        summary={
-            "tickers": [HELD],
-            "decisions": {"decided": 1, "skipped": 0, "errors": 0, "holdings": 1},
-        },
-    )
-
-    r = client.get(f"/api/positions/recompute/{req['request_id']}")
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["request_id"] == req["request_id"]
-    assert body["status"] == "succeeded"
-    assert body["ticker"] == HELD
-    assert body["refresh"]["decisions"]["decided"] == 1
-    assert body["error"] is None
-
-
-def test_recompute_status_returns_failed_runner_error(client):
-    from sma_monitor.db import connection
-    from sma_monitor.orchestrator.store import (
-        enqueue_runner_request,
-        finish_runner_request,
-        init_orchestrator_schema,
-    )
-
-    init_orchestrator_schema()
-    with connection() as conn:
-        conn.execute("DELETE FROM runner_requests")
-    req = enqueue_runner_request(command="manual_recompute_one", ticker=HELD, payload={})
-    finish_runner_request(req["request_id"], error="decision stage failed: 1 error")
-
-    r = client.get(f"/api/positions/recompute/{req['request_id']}")
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "failed"
-    assert "decision stage failed" in body["error"]
 
 
 def test_thesis_word_limit(client):

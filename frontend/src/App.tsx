@@ -21,6 +21,9 @@ import { api } from './api'
 import type { ManualPositionPayload, PositionsResponse, QuotesResponse, Status } from './types'
 import AddPositionDrawer from './components/AddPositionDrawer'
 import BrandLogo from './components/BrandLogo'
+import CatalystCalendar from './components/CatalystCalendar'
+import JobHealth from './components/JobHealth'
+import WeightCheck from './components/WeightCheck'
 import ChatPanel from './components/ChatPanel'
 import PositionCard from './components/PositionCard'
 import HoldingDrawer from './components/HoldingDrawer'
@@ -60,6 +63,7 @@ function PortfolioDashboard() {
   const [quotes, setQuotes] = useState<QuotesResponse | null>(null)
   const [quotesAt, setQuotesAt] = useState<Date | null>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(initialViewMode)
+  const [reviewOnly, setReviewOnly] = useState(false)
 
   useEffect(() => {
     try {
@@ -222,6 +226,10 @@ function PortfolioDashboard() {
   )
   const isMarketOpen = quotes?.is_market_open ?? false
   const liveQuotes = quotes?.quotes ?? {}
+  const aiDraftCount = (data?.positions ?? []).filter((p) => p.is_ai_generated_thesis).length
+  const tablePositions = (data?.positions ?? []).filter(
+    (p) => !reviewOnly || p.is_ai_generated_thesis,
+  )
   const thesisPosition =
     data?.positions.find((p) => p.ticker === thesisTicker) ?? null
   const detailPosition =
@@ -250,6 +258,10 @@ function PortfolioDashboard() {
               ml: { xs: 0, md: 1.5 },
             }}
           >
+            <CatalystCalendar
+              positions={data?.positions ?? []}
+              onOpenDetail={setDetailTicker}
+            />
             <ToggleButtonGroup
               size="small"
               exclusive
@@ -332,6 +344,9 @@ function PortfolioDashboard() {
           </Alert>
         )}
 
+        <JobHealth />
+        <WeightCheck positions={data?.positions ?? []} />
+
         {isMarketOpen && Object.keys(liveQuotes).length > 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <Box
@@ -394,8 +409,23 @@ function PortfolioDashboard() {
               marketOpen={isMarketOpen}
               onOpenDetail={setDetailTicker}
             />
+            {aiDraftCount > 0 && (
+              <Box sx={{ mb: 1 }}>
+                <Chip
+                  size="small"
+                  color="info"
+                  variant={reviewOnly ? 'filled' : 'outlined'}
+                  label={
+                    reviewOnly
+                      ? `Showing ${aiDraftCount} AI drafts needing review (click to show all)`
+                      : `${aiDraftCount} AI drafts need review`
+                  }
+                  onClick={() => setReviewOnly((v) => !v)}
+                />
+              </Box>
+            )}
             <PositionsTable
-              positions={data?.positions ?? []}
+              positions={tablePositions}
               stale={stale}
               liveQuotes={liveQuotes}
               marketOpen={isMarketOpen}

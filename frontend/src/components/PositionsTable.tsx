@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Table from '@mui/material/Table'
@@ -281,6 +282,17 @@ export default function PositionsTable({
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
                       {pos.ticker}
                     </Typography>
+                    {pos.is_ai_generated_thesis && (
+                      <Tooltip title="AI-written preliminary thesis, not yet reviewed. Edit it to mark it as yours.">
+                        <Chip
+                          size="small"
+                          label="AI draft"
+                          color="info"
+                          variant="outlined"
+                          sx={{ height: 16, fontSize: 9, '& .MuiChip-label': { px: 0.6 } }}
+                        />
+                      </Tooltip>
+                    )}
                     {quote && (
                       <Tooltip title="Intraday FMP quote">
                         <Typography component="span" sx={{ color: 'success.main', fontSize: 10 }}>

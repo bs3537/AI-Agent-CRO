@@ -110,8 +110,6 @@ DRAFT_OUTPUT_SCHEMA: dict[str, Any] = {
         "risks",
         "monitoring_points",
         "sources",
-        "initial_grade",
-        "grade_rationale",
         "drivers",
         "confidence",
     ],
@@ -294,14 +292,6 @@ def _persist_draft_result(
             state["updated_placeholders"] += 1
             state["updated_tickers"].append(position.ticker)
 
-        if reason != "legacy_ai" and _save_initial_rating(
-            position,
-            sidecar,
-            dict(payload or {}),
-            provider,
-            compute_source=compute_source,
-        ):
-            state["ratings_created"] += 1
     except Exception as exc:  # noqa: BLE001 - one bad draft must not block the book.
         msg = str(exc)[:240]
         state["failed"].append({"ticker": position.ticker, "error": msg})

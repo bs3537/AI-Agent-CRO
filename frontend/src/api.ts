@@ -3,6 +3,7 @@
 // work without a configured base URL.
 
 import type {
+  JobStatus,
   PositionDetail,
   PositionsResponse,
   PositionSummary,
@@ -10,14 +11,10 @@ import type {
   ChatHistoryMessage,
   ChatStatusResponse,
   ChatSubmitResponse,
-  HealthcareMoversResponse,
   IBKRPullResponse,
   ManualPositionPayload,
   ManualPositionResponse,
   QuotesResponse,
-  RecomputeAllResponse,
-  RecomputeResponse,
-  RecomputeStatusResponse,
   Status,
 } from './types'
 
@@ -112,31 +109,6 @@ export const api = {
   deleteHolding: (ticker: string) =>
     fetch(`/api/positions/${ticker}`, { method: 'DELETE' }).then(json<DeleteHoldingResponse>),
 
-  // Recompute one ticker's decision. wait=true runs inline and returns it.
-  recompute: (ticker: string, wait = true, computeSource = 'manual_single') => {
-    const params = new URLSearchParams({
-      wait: String(wait),
-      compute_source: computeSource,
-    })
-    return fetchJsonWithTimeout<RecomputeResponse>(
-      `/api/positions/${ticker}/recompute?${params}`,
-      { method: 'POST' },
-      10 * 60 * 1000,
-    )
-  },
-
-  // Poll a dashboard-queued recompute request completed by the VPS runner.
-  recomputeStatus: (requestId: string) =>
-    fetch(`/api/positions/recompute/${requestId}`).then(json<RecomputeStatusResponse>),
-
-  // Recompute every holding's decision in one call. Defaults to background
-  // (wait=false) so the request returns immediately; the grid poll surfaces
-  // each decision as it lands.
-  recomputeAll: (wait = false) =>
-    fetch(`/api/positions/recompute?wait=${wait}`, { method: 'POST' }).then(
-      json<RecomputeAllResponse>,
-    ),
-
   // Trigger a live IBKR Flex pull and persist results. Returns a diff of
   // new vs removed tickers relative to the previous pull.
   pullFromIBKR: () =>
@@ -149,12 +121,12 @@ export const api = {
   // Operational snapshot for the status bar.
   status: () => fetch('/api/status').then(json<Status>),
 
+  // Health of the scheduled IBKR / FMP / catalyst jobs.
+  jobs: () => fetch('/api/jobs').then(json<{ jobs: JobStatus[] }>),
+
   // Intraday quotes for all held tickers (+ is_market_open flag).
   quotes: () => fetch('/api/quotes').then(json<QuotesResponse>),
 
-  // Latest complete 1-5 trading-session US healthcare mover rankings.
-  healthcareMovers: () =>
-    fetch('/api/healthcare-movers').then(json<HealthcareMoversResponse>),
 
   // Portfolio chatbot. Uses multipart even with no files so uploads share the
   // same endpoint.

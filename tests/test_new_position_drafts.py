@@ -127,7 +127,7 @@ def _save_positions(*tickers: str) -> list[Position]:
     return positions
 
 
-def test_bootstrap_creates_ai_draft_sidecar_and_initial_rating_for_missing_position():
+def test_bootstrap_creates_ai_draft_sidecar_for_missing_position():
     from sma_monitor.portfolio.draft_thesis import bootstrap_ai_draft_sidecars
 
     positions = _save_positions("NEWD")
@@ -146,7 +146,7 @@ def test_bootstrap_creates_ai_draft_sidecar_and_initial_rating_for_missing_posit
 
     assert state["created"] == 1
     assert state["created_tickers"] == ["NEWD"]
-    assert state["ratings_created"] == 1
+    assert state["ratings_created"] == 0  # hidden grades are no longer saved
     assert provider.calls, "Codex/draft provider should be asked to create the draft"
 
     sc = load_sidecar("NEWD")
@@ -163,13 +163,8 @@ def test_bootstrap_creates_ai_draft_sidecar_and_initial_rating_for_missing_posit
     assert sc.preliminary_thesis.research_sources[0].url == "https://example.com/investors"
     assert "multi-sector long-only SMA" in provider.calls[0]["system"]
     assert "Never reject or weaken" in provider.calls[0]["system"]
-    assert "Codex native web search" in provider.calls[0]["system"]
-
-    rating = latest_rating("NEWD")
-    assert rating is not None
-    assert rating["grade"] == "B"
-    assert rating["model_used"] == "fake-codex-draft"
-    assert rating["compute_source"] == "test_new_position_draft"
+    assert "web_search" in provider.calls[0]["system"]
+    assert latest_rating("NEWD") is None
 
     holdings, missing, _ = latest_joined()
     assert "NEWD" in {h.ticker for h in holdings}
@@ -244,7 +239,7 @@ def test_dashboard_api_surfaces_ai_draft_metadata(client):
     assert row["thesis_generated_by"] == "fake-codex-draft"
     assert row["preliminary_thesis"]["moat"].startswith("A differentiated")
     assert row["preliminary_thesis"]["research_sources"][0]["source_type"] == "company"
-    assert row["rating"]["grade"] == "B"
+    assert row["rating"] is None
 
 
 def test_legacy_ai_drafts_upgrade_only_when_explicitly_requested():
