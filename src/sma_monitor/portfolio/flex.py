@@ -243,7 +243,7 @@ def _parse_get_error_code(xml_text: str) -> str | None:
 # Locate the account NAV from one of three possible Flex sections. Tries
 # EquitySummaryInBase first (most templates), then by-date variant, then
 # ChangeInNAV as a fallback. Returns None when no section is present.
-def _extract_nav(root: ET.Element) -> float | None:
+def _extract_statement_nav(root: ET.Element) -> float | None:
     eq = next(iter(root.iter("EquitySummaryInBase")), None)
     if eq is not None:
         v = _to_float(eq.get("total"))
@@ -264,6 +264,17 @@ def _extract_nav(root: ET.Element) -> float | None:
         if v:
             return v
     return None
+
+
+# Combined NAV across every account statement in the response (advisor queries
+# return one FlexStatement per client account). Falls back to whole-document
+# extraction when the response has no per-account statements.
+def _extract_nav(root: ET.Element) -> float | None:
+    statements = list(root.iter("FlexStatement"))
+    if not statements:
+        return _extract_statement_nav(root)
+    total = sum(_extract_statement_nav(st) or 0.0 for st in statements)
+    return total or None
 
 
 # Tolerant float parser — returns None for missing/empty/non-numeric input.
