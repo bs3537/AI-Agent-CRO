@@ -33,9 +33,9 @@ _log = logging.getLogger(__name__)
 # Default dev origins (Vite). Override with SMA_API_CORS_ORIGINS (comma-sep).
 _DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-# Scheduled automatic IBKR position sync — midnight Eastern every day so
-# positions are fresh before the 6 AM recompute and 9:15 AM email.
-_IBKR_SYNC_TIME_ET = dtime(0, 0)
+# Scheduled automatic IBKR position sync — 6:00 AM Eastern every day (DST-aware)
+# so holdings and weights on the dashboard are fresh each morning.
+_IBKR_SYNC_TIME_ET = dtime(6, 0)
 _ET = ZoneInfo("America/New_York")
 
 
@@ -120,12 +120,74 @@ async def _scheduler_loop() -> None:
             _log.info("scheduler_cycle_done", extra={"cycle": cycle_name})
 
 
-async def _ibkr_sync_loop() -> None:
-    """Background task: pull IBKR positions at 8 PM ET daily, fire-and-forget."""
+async def _run_ibkr_sync() -> None:
+    """Pull holdings + weights from the IBKR Flex query and persist them."""
     from ..config import settings
     from ..portfolio.flex import FlexError, fetch_statement, parse_positions
     from ..portfolio.ir_urls import populate_ir_urls_for_tickers
-    from ..portfolio.store import save_pull
+    from ..portfolio.store import backfill_manual_positions_from_ibkr, save_pull
+
+    missing = settings.missing_for(1)
+    if missing:
+        _log.warning(
+            "ibkr_sync_skipped",
+            extra={"reason": "missing_credentials", "keys": missing},
+        )
+        return
+
+    _log.info("ibkr_sync_start")
+    try:
+        raw = await asyncio.to_thread(
+            fetch_statement, settings.ibkr_flex_token, settings.ibkr_flex_query_id
+        )
+        positions_list, nav = await asyncio.to_thread(
+            parse_positions, raw.xml, pulled_at=raw.pulled_at
+        )
+        pull_id = await asyncio.to_thread(
+            save_pull,
+            positions_list,
+            nav=nav,
+            pulled_at=raw.pulled_at,
+            source="ibkr_flex_scheduled",
+            raw_xml=None,
+        )
+        _log.info(
+            "ibkr_sync_done",
+            extra={"pull_id": pull_id, "nav": nav, "ticker_count": len(positions_list)},
+        )
+        filled = await asyncio.to_thread(
+            backfill_manual_positions_from_ibkr, positions_list
+        )
+        if filled:
+            _log.info("ibkr_sync_backfilled_manual", extra={"count": filled})
+        tickers = [p.ticker for p in positions_list]
+        asyncio.create_task(
+            asyncio.to_thread(populate_ir_urls_for_tickers, tickers, create_missing=True)
+        )
+    except FlexError as exc:
+        _log.error("ibkr_sync_failed", extra={"err": str(exc)})
+    except Exception as exc:
+        _log.exception("ibkr_sync_unexpected_error", extra={"err": str(exc)})
+
+
+async def _ibkr_sync_loop() -> None:
+    """Background task: pull IBKR positions at 6 AM ET daily.
+
+    On startup it also catches up: if today's 6 AM pull was missed (restart,
+    redeploy), it pulls immediately instead of waiting until tomorrow.
+    """
+    from ..portfolio.store import latest_pull_at
+
+    now_et = datetime.now(tz=_ET)
+    today_sync = now_et.replace(
+        hour=_IBKR_SYNC_TIME_ET.hour, minute=_IBKR_SYNC_TIME_ET.minute,
+        second=0, microsecond=0,
+    )
+    if now_et >= today_sync:
+        last = await asyncio.to_thread(latest_pull_at)
+        if last is None or last.astimezone(_ET) < today_sync:
+            _log.info("ibkr_sync_catch_up")
+            await _run_ibkr_sync()
 
     while True:
         wait = _seconds_until_next(_IBKR_SYNC_TIME_ET)
@@ -135,57 +197,7 @@ async def _ibkr_sync_loop() -> None:
             extra={"next_sync_et": next_et.strftime("%Y-%m-%d %H:%M ET")},
         )
         await asyncio.sleep(wait)
-
-        missing = settings.missing_for(1)
-        if missing:
-            _log.warning(
-                "ibkr_sync_skipped",
-                extra={"reason": "missing_credentials", "keys": missing},
-            )
-            continue
-
-        _log.info("ibkr_sync_start")
-        try:
-            raw = await asyncio.to_thread(
-                fetch_statement,
-                settings.ibkr_flex_token,
-                settings.ibkr_flex_query_id,
-            )
-            positions_list, nav = await asyncio.to_thread(
-                parse_positions, raw.xml, pulled_at=raw.pulled_at
-            )
-            pull_id = await asyncio.to_thread(
-                save_pull,
-                positions_list,
-                nav=nav,
-                pulled_at=raw.pulled_at,
-                source="ibkr_flex_scheduled",
-                raw_xml=None,
-            )
-            _log.info(
-                "ibkr_sync_done",
-                extra={
-                    "pull_id": pull_id,
-                    "nav": nav,
-                    "ticker_count": len(positions_list),
-                },
-            )
-            from ..portfolio.store import backfill_manual_positions_from_ibkr
-            filled = await asyncio.to_thread(
-                backfill_manual_positions_from_ibkr, positions_list
-            )
-            if filled:
-                _log.info("ibkr_sync_backfilled_manual", extra={"count": filled})
-            tickers = [p.ticker for p in positions_list]
-            asyncio.create_task(
-                asyncio.to_thread(
-                    populate_ir_urls_for_tickers, tickers, create_missing=True
-                )
-            )
-        except FlexError as exc:
-            _log.error("ibkr_sync_failed", extra={"err": str(exc)})
-        except Exception as exc:
-            _log.exception("ibkr_sync_unexpected_error", extra={"err": str(exc)})
+        await _run_ibkr_sync()
 
 
 # Resolve allowed CORS origins from the environment, falling back to the Vite
@@ -213,7 +225,9 @@ async def _lifespan(app: FastAPI):
     init_db()
     _init_served_phase_schemas()
     tasks: list[asyncio.Task] = []
-    if settings.is_combined_role():
+    # The daily IBKR sync runs only in the published deployment (or combined
+    # role) so the dev workspace never double-pulls into the shared database.
+    if settings.is_combined_role() or os.environ.get("REPLIT_DEPLOYMENT"):
         tasks.append(asyncio.create_task(_ibkr_sync_loop()))
     else:
         _log.info("api_background_loops_disabled", extra={"role": settings.deployment_role()})
