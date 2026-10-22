@@ -180,6 +180,36 @@ async def _run_ibkr_sync() -> None:
         _log.exception("ibkr_sync_unexpected_error", extra={"err": str(exc)})
 
 
+# Refresh every FMP-sourced dashboard input for the current holdings: profile
+# metrics, daily closes (trend + 20-EMA are derived from these), and sell-side
+# consensus targets (PT upside is computed against the latest close).
+def _refresh_market_data() -> None:
+    from ..analyst_targets.service import refresh_fmp_targets
+    from ..news.fmp_client import refresh_for_holdings, refresh_prices_for_holdings
+
+    key = settings.fmp_api_key
+    if not key:
+        _log.warning("market_data_refresh_skipped", extra={"reason": "FMP_API_KEY missing"})
+        return
+    steps = (
+        ("fmp_metrics", lambda: refresh_for_holdings(api_key=key)),
+        ("fmp_prices", lambda: refresh_prices_for_holdings(api_key=key)),
+        ("fmp_targets", lambda: refresh_fmp_targets(api_key=key)),
+    )
+    for name, fn in steps:
+        try:
+            result = fn()
+            _log.info("market_data_step_done", extra={"step": name, "result": str(result)[:300]})
+        except Exception as exc:
+            _log.exception("market_data_step_failed", extra={"step": name, "err": str(exc)})
+
+
+async def _run_daily_refresh() -> None:
+    """6 AM job: IBKR holdings + weights first, then FMP prices/targets for them."""
+    await _run_ibkr_sync()
+    await asyncio.to_thread(_refresh_market_data)
+
+
 def _research_new_holdings(tickers: list[str]) -> None:
     """Web-search a preliminary thesis and the catalyst calendar for new holdings."""
     from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
@@ -213,7 +243,7 @@ async def _ibkr_sync_loop() -> None:
         last = await asyncio.to_thread(latest_pull_at)
         if last is None or last.astimezone(_ET) < today_sync:
             _log.info("ibkr_sync_catch_up")
-            await _run_ibkr_sync()
+            await _run_daily_refresh()
 
     while True:
         wait = _seconds_until_next(_IBKR_SYNC_TIME_ET)
@@ -223,7 +253,7 @@ async def _ibkr_sync_loop() -> None:
             extra={"next_sync_et": next_et.strftime("%Y-%m-%d %H:%M ET")},
         )
         await asyncio.sleep(wait)
-        await _run_ibkr_sync()
+        await _run_daily_refresh()
 
 
 # Seconds until the next Sunday 6:00 PM Eastern (DST-aware).
