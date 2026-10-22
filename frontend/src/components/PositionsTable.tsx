@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -19,25 +18,11 @@ import type {
   QuoteInfo,
 } from '../types'
 import { signedPercent } from '../format'
+import CatalystPopup from './CatalystPopup'
 import Sparkline from './Sparkline'
 
 const AMBER = '#F5B14C'
-const PRIMARY = '#FF6A00'
-const PRICE_BLUE = '#2F80FF'
 
-const CATALYST_TAG: Record<
-  CatalystOutlookItem['type'],
-  { text: string; color: string }
-> = {
-  regulatory: { text: 'REG', color: PRIMARY },
-  clinical_data: { text: 'DATA', color: PRICE_BLUE },
-  product_launch: { text: 'LAUNCH', color: '#39D98A' },
-  earnings: { text: 'ER', color: 'text.secondary' },
-  investor_event: { text: 'EVENT', color: 'text.secondary' },
-  contract_milestone: { text: 'MILESTONE', color: AMBER },
-  fund_event: { text: 'FUND', color: '#A3D977' },
-  other: { text: 'OTHER', color: 'text.secondary' },
-}
 
 type SortKey =
   | 'symbol'
@@ -75,13 +60,6 @@ function emaColor(state: string | null | undefined): string | undefined {
   if (state === 'above_ema20') return 'success.main'
   if (state === 'below_ema20' || state === 'extended_below_ema20') return AMBER
   return undefined
-}
-
-function daysUntil(dateString: string | null): number | null {
-  if (!dateString) return null
-  const timestamp = Date.parse(dateString)
-  if (Number.isNaN(timestamp)) return null
-  return (timestamp - Date.now()) / 86_400_000
 }
 
 function soonestCatalyst(pos: PositionSummary): number | null {
@@ -198,72 +176,10 @@ function NumericCell({
   )
 }
 
-function CatalystCell({ items }: { items: CatalystOutlookItem[] }) {
-  if (items.length === 0) {
-    return <TableCell sx={{ color: 'text.disabled' }}>-</TableCell>
-  }
+function CatalystCell({ ticker, items }: { ticker: string; items: CatalystOutlookItem[] }) {
   return (
-    <TableCell sx={{ py: 0.5, minWidth: 190 }}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
-        {items.slice(0, 3).map((item, index) => {
-          const tag = CATALYST_TAG[item.type] ?? CATALYST_TAG.other
-          const days = daysUntil(item.date)
-          const imminent = days !== null && days >= 0 && days <= 30
-          const isManual = item.source_url === 'manual' || !item.source_url
-          return (
-            <Tooltip
-              key={`${item.source_url}-${index}`}
-              title={`${item.label} | ${item.source_title}${item.confirmed ? '' : ' | estimated window'}`}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.65 }}>
-                <Typography
-                  component="span"
-                  variant="caption"
-                  sx={{
-                    width: 58,
-                    flexShrink: 0,
-                    color: tag.color,
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: 0,
-                  }}
-                >
-                  {tag.text}
-                </Typography>
-                {isManual ? (
-                  <Typography
-                    component="span"
-                    sx={{
-                      color: imminent ? AMBER : 'text.primary',
-                      fontSize: 11,
-                      lineHeight: 1.4,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {item.confirmed ? '' : '~'}{item.date_label}
-                  </Typography>
-                ) : (
-                  <Link
-                    href={item.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    underline="hover"
-                    onClick={(event) => event.stopPropagation()}
-                    sx={{
-                      color: imminent ? AMBER : 'text.primary',
-                      fontSize: 11,
-                      lineHeight: 1.4,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {item.confirmed ? '' : '~'}{item.date_label}
-                  </Link>
-                )}
-              </Box>
-            </Tooltip>
-          )
-        })}
-      </Box>
+    <TableCell sx={{ py: 0.5 }}>
+      <CatalystPopup ticker={ticker} items={items} />
     </TableCell>
   )
 }
@@ -407,7 +323,7 @@ export default function PositionsTable({
                   format={signedPercent}
                   color={emaColor(emaState)}
                 />
-                <CatalystCell items={pos.catalyst_outlook} />
+                <CatalystCell ticker={pos.ticker} items={pos.catalyst_outlook} />
                 <TableCell align="right">
                   <Tooltip title={`Open ${pos.ticker} details`}>
                     <IconButton

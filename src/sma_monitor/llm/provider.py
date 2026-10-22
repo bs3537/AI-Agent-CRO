@@ -14,6 +14,9 @@ from typing import Protocol, runtime_checkable
 
 log = logging.getLogger("sma_monitor.llm.provider")
 
+# Stages whose OpenRouter provider may call the web_search tool.
+WEB_SEARCH_STAGES = frozenset({"chat", "catalyst_outlook", "draft_thesis"})
+
 
 # Raised for any provider-side failure (process error, parse error, timeout).
 # Callers catch this to dead-letter the unit of work and/or fall back.
@@ -164,7 +167,7 @@ def get_provider(
     from .openrouter_client import OpenRouterProvider, openrouter_available
 
     if openrouter_available():
-        return OpenRouterProvider(web_search=stage == "chat")
+        return OpenRouterProvider(web_search=stage in WEB_SEARCH_STAGES)
 
     from .codex_client import CodexProvider, codex_available
 

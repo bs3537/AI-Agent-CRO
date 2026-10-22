@@ -10,21 +10,18 @@ import Typography from '@mui/material/Typography'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import VisibilityIcon from '@mui/icons-material/Visibility'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import type { PositionSummary, QuoteInfo } from '../types'
 import { signedPercent } from '../format'
 
-type Triage = 'attention' | 'watch'
+type Triage = 'attention'
 
 const BAND_COLOR: Record<Triage, string> = {
   attention: '#FF5470',
-  watch: '#F5B14C',
 }
 
 const BAND_META: Record<Triage, { icon: ElementType; title: string }> = {
   attention: { icon: WarningAmberIcon, title: 'Needs attention' },
-  watch: { icon: VisibilityIcon, title: 'Watch' },
 }
 
 export function triageOf(pos: PositionSummary): Triage | null {
@@ -37,12 +34,6 @@ export function triageOf(pos: PositionSummary): Triage | null {
     pos.has_overdue_catalyst
   ) {
     return 'attention'
-  }
-  if (
-    attentionState === 'watch' ||
-    technical === 'extended_below_ema20'
-  ) {
-    return 'watch'
   }
   return null
 }
@@ -226,20 +217,17 @@ export default function TriageBands({
   marketOpen: boolean
   onOpenDetail: (ticker: string) => void
 }) {
-  const { attention, watch } = useMemo(() => {
+  const { attention } = useMemo(() => {
     const attention: PositionSummary[] = []
-    const watch: PositionSummary[] = []
     for (const pos of positions) {
       const triage = triageOf(pos)
       if (triage === 'attention') attention.push(pos)
-      if (triage === 'watch') watch.push(pos)
     }
     attention.sort((left, right) => right.pct_nav - left.pct_nav)
-    watch.sort((left, right) => right.pct_nav - left.pct_nav)
-    return { attention, watch }
+    return { attention }
   }, [positions])
 
-  if (attention.length === 0 && watch.length === 0) {
+  if (attention.length === 0) {
     return (
       <Stack
         direction="row"
@@ -263,16 +251,6 @@ export default function TriageBands({
           marketOpen={marketOpen}
           onOpenDetail={onOpenDetail}
           defaultExpanded={true}
-        />
-      )}
-      {watch.length > 0 && (
-        <Band
-          triage="watch"
-          rows={watch}
-          liveQuotes={liveQuotes}
-          marketOpen={marketOpen}
-          onOpenDetail={onOpenDetail}
-          defaultExpanded={false}
         />
       )}
     </Box>

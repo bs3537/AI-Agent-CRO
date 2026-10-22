@@ -125,7 +125,11 @@ async def _run_ibkr_sync() -> None:
     from ..config import settings
     from ..portfolio.flex import FlexError, fetch_statement, parse_positions
     from ..portfolio.ir_urls import populate_ir_urls_for_tickers
-    from ..portfolio.store import backfill_manual_positions_from_ibkr, save_pull
+    from ..portfolio.store import (
+        backfill_manual_positions_from_ibkr,
+        latest_positions,
+        save_pull,
+    )
 
     missing = settings.missing_for(1)
     if missing:
@@ -137,6 +141,8 @@ async def _run_ibkr_sync() -> None:
 
     _log.info("ibkr_sync_start")
     try:
+        prev_positions, _ = await asyncio.to_thread(latest_positions)
+        prev_tickers = {p.ticker for p in prev_positions}
         raw = await asyncio.to_thread(
             fetch_statement, settings.ibkr_flex_token, settings.ibkr_flex_query_id
         )
@@ -164,10 +170,30 @@ async def _run_ibkr_sync() -> None:
         asyncio.create_task(
             asyncio.to_thread(populate_ir_urls_for_tickers, tickers, create_missing=True)
         )
+        new_tickers = sorted(set(tickers) - prev_tickers) if prev_tickers else []
+        if new_tickers:
+            _log.info("ibkr_new_holdings_detected", extra={"tickers": new_tickers})
+            asyncio.create_task(asyncio.to_thread(_research_new_holdings, new_tickers))
     except FlexError as exc:
         _log.error("ibkr_sync_failed", extra={"err": str(exc)})
     except Exception as exc:
         _log.exception("ibkr_sync_unexpected_error", extra={"err": str(exc)})
+
+
+def _research_new_holdings(tickers: list[str]) -> None:
+    """Web-search a preliminary thesis and the catalyst calendar for new holdings."""
+    from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
+    from ..orchestrator.preliminary_thesis import run_preliminary_thesis_workflow
+
+    try:
+        run_preliminary_thesis_workflow(
+            tickers=tickers,
+            refresh_inputs=True,
+            compute_source="web_search_new_holding",
+        )
+        refresh_catalyst_outlooks_for_holdings(tickers=tickers)
+    except Exception as exc:
+        _log.exception("new_holding_research_failed", extra={"err": str(exc)})
 
 
 async def _ibkr_sync_loop() -> None:
@@ -200,6 +226,32 @@ async def _ibkr_sync_loop() -> None:
         await _run_ibkr_sync()
 
 
+# Seconds until the next Sunday 6:00 PM Eastern (DST-aware).
+def _seconds_until_next_sunday_6pm() -> float:
+    now_et = datetime.now(tz=_ET)
+    candidate = now_et.replace(hour=18, minute=0, second=0, microsecond=0)
+    candidate += timedelta(days=(6 - now_et.weekday()) % 7)
+    if candidate <= now_et:
+        candidate += timedelta(days=7)
+    return (candidate - now_et).total_seconds()
+
+
+async def _catalyst_refresh_loop() -> None:
+    """Background task: web-search catalysts for all holdings every Sunday 6 PM ET."""
+    from ..news.catalyst_outlook import refresh_catalyst_outlooks_for_holdings
+
+    while True:
+        wait = _seconds_until_next_sunday_6pm()
+        _log.info("catalyst_refresh_scheduled", extra={"in_seconds": int(wait)})
+        await asyncio.sleep(wait)
+        _log.info("catalyst_refresh_start")
+        try:
+            state = await asyncio.to_thread(refresh_catalyst_outlooks_for_holdings)
+            _log.info("catalyst_refresh_done", extra={"state": str(state)[:300]})
+        except Exception as exc:
+            _log.exception("catalyst_refresh_failed", extra={"err": str(exc)})
+
+
 # Resolve allowed CORS origins from the environment, falling back to the Vite
 # dev server. "*" (any value containing it) opens CORS to all origins.
 def _cors_origins() -> list[str]:
@@ -229,6 +281,7 @@ async def _lifespan(app: FastAPI):
     # role) so the dev workspace never double-pulls into the shared database.
     if settings.is_combined_role() or os.environ.get("REPLIT_DEPLOYMENT"):
         tasks.append(asyncio.create_task(_ibkr_sync_loop()))
+        tasks.append(asyncio.create_task(_catalyst_refresh_loop()))
     else:
         _log.info("api_background_loops_disabled", extra={"role": settings.deployment_role()})
     try:

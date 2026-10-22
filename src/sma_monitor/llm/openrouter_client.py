@@ -18,7 +18,13 @@ from .provider import LLMError
 from .web_search import TOOL_SPEC, run_web_search, web_search_available
 
 # Max web_search tool rounds per answer.
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_ROUNDS = 6
+
+# Sent when searching must stop and the model has to give its final answer.
+FINAL_NUDGE = (
+    "Stop searching now. Using what you have found so far, give your final answer in the "
+    "requested format. Do not call any tool."
+)
 
 # Default model slug requested by the PM; overridable via OPENROUTER_MODEL.
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-1017"
@@ -115,9 +121,13 @@ class OpenRouterProvider:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-        for round_no in range(MAX_TOOL_ROUNDS + 1):
+        force_final = False
+        for round_no in range(MAX_TOOL_ROUNDS + 2):
             body: dict = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
-            if round_no < MAX_TOOL_ROUNDS:
+            if round_no >= MAX_TOOL_ROUNDS and not force_final:
+                force_final = True
+                messages.append({"role": "user", "content": FINAL_NUDGE})
+            if not force_final:
                 body["tools"] = [TOOL_SPEC]
             msg = self._post(body, timeout_s)
             calls = msg.get("tool_calls") or []
@@ -125,6 +135,11 @@ class OpenRouterProvider:
                 text = (msg.get("content") or "").strip()
                 if not text:
                     raise LLMError("OpenRouter returned an empty response")
+                # The model sometimes prints a raw tool call as text; make it answer instead.
+                if "DSML" in text and not force_final:
+                    force_final = True
+                    messages.append({"role": "user", "content": FINAL_NUDGE})
+                    continue
                 return text
             messages.append(msg)
             for call in calls:
@@ -141,8 +156,14 @@ class OpenRouterProvider:
                       max_tokens: int = 512, timeout_s: int | None = None) -> dict:
         if schema is not None:
             system = f"{system}\n\nReturn only a JSON object matching this schema:\n{json.dumps(schema)}"
-        text = self._chat(system=system, user=user, max_tokens=max_tokens,
-                          timeout_s=timeout_s, json_mode=True)
+        if self.web_search:
+            text = self._chat_with_tools(
+                system=system + "\n\nReturn only the JSON object, no prose or code fences.",
+                user=user, max_tokens=max_tokens, timeout_s=timeout_s,
+            )
+        else:
+            text = self._chat(system=system, user=user, max_tokens=max_tokens,
+                              timeout_s=timeout_s, json_mode=True)
         match = re.search(r"\{.*\}", text, flags=re.S)
         try:
             return json.loads(match.group(0) if match else text)

@@ -18,7 +18,8 @@ from .fmp_client import latest_fmp_metrics
 
 log = logging.getLogger("sma_monitor.news.catalyst_outlook")
 
-MAX_ITEMS = 3
+MAX_ITEMS = 12
+WINDOW_MONTHS = 12
 CATALYST_STAGE = "catalyst_outlook"
 CATALYST_TIMEOUT_S = 300
 CATALYST_TYPES = (
@@ -189,7 +190,7 @@ def build_catalyst_prompt(
 ) -> tuple[str, str]:
     """Build a source-required, sector-neutral 18-month catalyst prompt."""
     today = today or datetime.now(UTC).date()
-    window_end = _plus_months(today, 18)
+    window_end = _plus_months(today, WINDOW_MONTHS)
     company = holding.company_name or holding.ticker
     sector = (
         holding.preliminary_thesis.sector
@@ -203,14 +204,16 @@ def build_catalyst_prompt(
         "price targets."
         if is_etf
         else
-        "This is an operating company. Qualifying events include earnings, officially "
-        "guided product launches, clinical data, regulatory decisions/submissions, "
-        "investor days, and contract or commercial milestones. Select the events most "
-        "material to this specific company and sector."
+        "This is an operating company. First decide whether it is a biotech/pharma/"
+        "healthcare company. If YES, report all material events in the window: clinical "
+        "data readouts, PDUFA/regulatory decision dates and submissions, advisory "
+        "committee meetings, and investor/R&D days, plus the single next earnings "
+        "date. If NO, report ONLY the single next earnings date (type=earnings). "
+        "Never report more than one earnings item."
     )
     system = (
         "You research upcoming catalysts for a multi-sector long-only portfolio. "
-        "Use Codex native web search. Include only future events supported by an "
+        "Use the web_search tool (run several searches). Include only future events supported by an "
         "official company, regulator, exchange, trial registry, or fund-issuer source. "
         "Never invent a date or treat analyst speculation as confirmation. Return only "
         "the requested JSON."
@@ -220,9 +223,9 @@ def build_catalyst_prompt(
         f"Company/fund: {company}\n"
         f"Sector: {sector or 'unknown'}\n"
         f"Portfolio stage label: {holding.stage}\n"
-        f"Research window: {today.isoformat()} through {window_end.isoformat()}\n\n"
+        f"Research window: {today.isoformat()} through {window_end.isoformat()} (next 12 months)\n\n"
         f"{security_rules}\n\n"
-        f"Return at most {MAX_ITEMS} material events, soonest first. For an exact "
+        f"Return at most {MAX_ITEMS} events, soonest first. For an exact "
         "date, use ISO YYYY-MM-DD and set confirmed=true only when the primary source "
         "publishes that date. For a guided quarter/half/year, set date=null, put the "
         "window in date_label, and confirmed=false. Include a concise source_title and "
@@ -242,7 +245,7 @@ def research_catalyst_outlook(
         system=system,
         user=user,
         schema=CATALYST_JSON_SCHEMA,
-        max_tokens=1200,
+        max_tokens=3000,
         timeout_s=CATALYST_TIMEOUT_S,
     )
     items = raw.get("items") if isinstance(raw, dict) else []
@@ -272,7 +275,7 @@ def refresh_catalyst_outlooks_for_holdings(
         "updated": 0,
         "errors": 0,
         "failed": [],
-        "source": "fixture" if from_file is not None else "codex",
+        "source": "fixture" if from_file is not None else "llm",
     }
     if not selected:
         return state
@@ -296,7 +299,7 @@ def refresh_catalyst_outlooks_for_holdings(
         return {
             **state,
             "status": "skipped",
-            "reason": "codex unavailable",
+            "reason": "llm unavailable",
         }
 
     worker_count = max(1, min(4, workers or llm_concurrency()))
@@ -330,9 +333,14 @@ def refresh_catalyst_outlooks_for_holdings(
                     extra={"ticker": holding.ticker, "error": str(error)[:240]},
                 )
                 continue
+            # Weekly refreshes replace automated items but keep PM manual entries.
+            manual = [
+                it for it in latest_catalyst_outlook(holding.ticker)
+                if isinstance(it, dict) and it.get("source_url") == "manual"
+            ]
             save_catalyst_outlook(
                 holding.ticker,
-                items,
+                [*items, *manual],
                 model_used=state["model_used"],
             )
             state["updated"] += 1
@@ -354,7 +362,16 @@ def _ordered_clamped(
             continue
     dated = sorted((item for item in valid if item.date), key=lambda item: item.date or "")
     undated = [item for item in valid if item.date is None]
-    return (dated + undated)[:MAX_ITEMS]
+    # Only the soonest automated earnings date is kept; manual entries are never dropped.
+    seen_earnings = False
+    kept: list[CatalystOutlookItem] = []
+    for item in dated + undated:
+        if item.type == "earnings" and item.source_url != "manual":
+            if seen_earnings:
+                continue
+            seen_earnings = True
+        kept.append(item)
+    return kept[:MAX_ITEMS]
 
 
 def _plus_months(value: date, months: int) -> date:

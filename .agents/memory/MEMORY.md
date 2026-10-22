@@ -1,3 +1,4 @@
 - [Workflow waitForPort pitfall](workflow-port-detection.md) — compound shell commands need waitForPort removed or Replit's port tracker misses the child server process.
 - [Deployment build fix](deployment-build.md) — uv sync no-op via empty pyproject.toml deps; pip install with --no-user into .venv for the actual build.
 - [Corrupted node_modules d.ts](frontend-mui-dts.md) — partial npm installs drop some .d.ts files; tsc -b build fails though dev works. Clean reinstall fixes it.
+- [LLM + schedules](llm-and-schedules.md) — chat/catalyst/draft-thesis use OpenRouter DeepSeek + Perplexity web_search; IBKR 6AM ET and Sunday 6PM ET catalyst loops run only under REPLIT_DEPLOYMENT.
